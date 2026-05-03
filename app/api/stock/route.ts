@@ -1,5 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { bollingerBands, makeFearGreedScore, makeSignal, macd, obv, rsi, simpleForecast, sma } from "@/lib/indicators";
+import {
+  bollingerBands,
+  makeFearGreedScore,
+  makeSignal,
+  macd,
+  obv,
+  rsi,
+  simpleForecast,
+  sma,
+} from "@/lib/indicators";
+import { getKisInvestorSummary } from "@/lib/kis";
 
 export const runtime = "nodejs";
 
@@ -8,14 +18,43 @@ type CacheEntry = {
   expiresAt: number;
 };
 
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5분
-const stockCache = new Map<string, CacheEntry>();
-
 type StockMeta = {
   name: string;
   exchange: string;
   currency: string;
 };
+
+type SupplyData = {
+  available: boolean;
+  warning?: string;
+  code?: string;
+  rowCount?: number;
+  recent5?: {
+    individualNetBuy: number;
+    foreignNetBuy: number;
+    institutionNetBuy: number;
+    smartMoneyNetBuy: number;
+  };
+  recent20?: {
+    individualNetBuy: number;
+    foreignNetBuy: number;
+    institutionNetBuy: number;
+    smartMoneyNetBuy: number;
+  };
+  foreignPositiveStreak5?: boolean;
+  institutionPositiveStreak5?: boolean;
+  smartMoneyPositiveStreak5?: boolean;
+  latestRows?: Array<{
+    date: string;
+    individualNetBuy: number | null;
+    foreignNetBuy: number | null;
+    institutionNetBuy: number | null;
+    programNetBuy: number | null;
+  }>;
+};
+
+const CACHE_TTL_MS = 5 * 60 * 1000;
+const stockCache = new Map<string, CacheEntry>();
 
 const KNOWN_KOREAN_STOCK_NAMES: Record<string, string> = {
   "005930.KS": "삼성전자",
@@ -38,6 +77,7 @@ export async function GET(req: NextRequest) {
   const cacheKey = `${symbol}:${range}`;
 
   const cached = stockCache.get(cacheKey);
+
   if (cached && cached.expiresAt > Date.now()) {
     return NextResponse.json({
       ...cached.data,
@@ -59,10 +99,10 @@ export async function GET(req: NextRequest) {
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
-        "Accept": "application/json,text/plain,*/*",
+        Accept: "application/json,text/plain,*/*",
         "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
         "Cache-Control": "no-cache",
-        "Pragma": "no-cache",
+        Pragma: "no-cache",
       },
       cache: "no-store",
     });
@@ -104,6 +144,7 @@ export async function GET(req: NextRequest) {
     }
 
     let json: any;
+
     try {
       json = JSON.parse(text);
     } catch {
@@ -150,13 +191,18 @@ export async function GET(req: NextRequest) {
     const chartRows = timestamps
       .map((ts, i) => {
         const close = closesRaw[i] ?? adjclose[i] ?? null;
+
         return {
           date: new Date(ts * 1000).toISOString().slice(0, 10),
           close: close != null ? Number(close) : null,
           volume: volumesRaw[i] != null ? Number(volumesRaw[i]) : 0,
         };
       })
-      .filter((row) => row.close != null) as Array<{ date: string; close: number; volume: number }>;
+      .filter((row) => row.close != null) as Array<{
+      date: string;
+      close: number;
+      volume: number;
+    }>;
 
     if (!chartRows.length) {
       if (cached) {
@@ -210,9 +256,7 @@ export async function GET(req: NextRequest) {
 
     const changePrice = Number((currentPrice - prevPrice).toFixed(2));
     const change =
-      prevPrice !== 0
-        ? Number(((changePrice / prevPrice) * 100).toFixed(2))
-        : 0;
+      prevPrice !== 0 ? Number(((changePrice / prevPrice) * 100).toFixed(2)) : 0;
 
     const latestSma20 = sma20[sma20.length - 1] ?? null;
     const latestSma60 = sma60[sma60.length - 1] ?? null;
@@ -252,6 +296,7 @@ export async function GET(req: NextRequest) {
         : "신호 분석 데이터가 아직 충분하지 않습니다.";
 
     const stockMeta = await getStockMeta(symbol, chartMeta);
+    const supply = await getSupplyData(symbol);
 
     const responseData = {
       symbol,
@@ -266,6 +311,7 @@ export async function GET(req: NextRequest) {
       chartData,
       forecast,
       fearGreed,
+      supply,
       cached: false,
     };
 
@@ -298,6 +344,38 @@ export async function GET(req: NextRequest) {
   }
 }
 
+async function getSupplyData(symbol: string): Promise<SupplyData> {
+  try {
+    const supply = await getKisInvestorSummary(symbol);
+
+    return {
+      available: true,
+      code: supply.code,
+      rowCount: supply.rows.length,
+      recent5: supply.recent5,
+      recent20: supply.recent20,
+      foreignPositiveStreak5: supply.foreignPositiveStreak5,
+      institutionPositiveStreak5: supply.institutionPositiveStreak5,
+      smartMoneyPositiveStreak5: supply.smartMoneyPositiveStreak5,
+      latestRows: supply.rows.slice(-10).reverse().map((row) => ({
+        date: row.date,
+        individualNetBuy: row.individualNetBuy,
+        foreignNetBuy: row.foreignNetBuy,
+        institutionNetBuy: row.institutionNetBuy,
+        programNetBuy: row.programNetBuy,
+      })),
+    };
+  } catch (error) {
+    return {
+      available: false,
+      warning:
+        error instanceof Error
+          ? `한투 수급 데이터를 불러오지 못했습니다: ${error.message}`
+          : "한투 수급 데이터를 불러오지 못했습니다.",
+    };
+  }
+}
+
 async function getStockMeta(symbol: string, chartMeta: any): Promise<StockMeta> {
   const normalizedSymbol = symbol.trim().toUpperCase();
   const fallbackName =
@@ -308,20 +386,25 @@ async function getStockMeta(symbol: string, chartMeta: any): Promise<StockMeta> 
     "종목명 정보 없음";
 
   const fallbackExchange =
-    normalizeExchange(chartMeta?.exchangeName || chartMeta?.fullExchangeName || chartMeta?.exchangeTimezoneName) ||
-    guessExchange(normalizedSymbol);
+    normalizeExchange(
+      chartMeta?.exchangeName ||
+        chartMeta?.fullExchangeName ||
+        chartMeta?.exchangeTimezoneName
+    ) || guessExchange(normalizedSymbol);
 
   const fallbackCurrency = chartMeta?.currency || "KRW";
 
   try {
-    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbol)}`;
+    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(
+      symbol
+    )}`;
 
     const res = await fetch(url, {
       method: "GET",
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
-        "Accept": "application/json,text/plain,*/*",
+        Accept: "application/json,text/plain,*/*",
         "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
       },
       cache: "no-store",
