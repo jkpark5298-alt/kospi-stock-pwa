@@ -13,6 +13,7 @@ import {
   getKisInvestorSummary,
   getKisStockFundamentals,
 } from "@/lib/kis";
+import { calculateQuantModel } from "@/lib/quant";
 import { calculateCompositeScore } from "@/lib/score";
 
 export const runtime = "nodejs";
@@ -400,6 +401,13 @@ export async function GET(req: NextRequest) {
     const targetBasis = score?.targetPrice?.targetBasis ?? null;
     const normalizedCode = normalizeStockCode(symbol);
 
+    const quant = calculateQuantModel({
+      rows: chartData,
+      supply,
+      fundamentals,
+      targetRange,
+    });
+
     const targetProgress =
       targetRange && targetRange.baseTarget > 0
         ? Number(((targetRange.currentPrice / targetRange.baseTarget) * 100).toFixed(1))
@@ -414,7 +422,6 @@ export async function GET(req: NextRequest) {
 
       /*
        * 기존 화면 호환용 필드
-       * app/page.tsx가 아직 이 필드들을 읽고 있으므로 유지합니다.
        */
       symbol,
       name: stockMeta.name,
@@ -431,11 +438,11 @@ export async function GET(req: NextRequest) {
       fundamentals,
       supply,
       score,
+      quant,
       cached: false,
 
       /*
        * 신규 구조화 응답
-       * 이후 화면은 이 구조로 천천히 이전하면 됩니다.
        */
       stock: {
         symbol,
@@ -488,7 +495,8 @@ export async function GET(req: NextRequest) {
         warning: null,
         updatedAt: new Date().toISOString(),
         range,
-        source: "Yahoo Finance chart + KIS investor summary + KIS fundamentals",
+        source:
+          "Yahoo Finance chart + KIS investor summary + KIS fundamentals + quant model",
       },
     };
 
