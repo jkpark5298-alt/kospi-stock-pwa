@@ -98,6 +98,11 @@ type WeightedBaseTargetResult = {
   basis: TargetBasis;
 };
 
+type RecentHighResult = {
+  value: number;
+  date: string;
+};
+
 export const DEFAULT_SCORE_WEIGHTS: ScoreWeights = {
   technical: 0.35,
   volume: 0.2,
@@ -114,10 +119,12 @@ export function calculateCompositeScore({
   supply?: ScoreSupplyData;
   weights?: ScoreWeights;
 }): CompositeScore {
-  const technical = calculateTechnicalScore(rows);
-  const volume = calculateVolumeScore(rows);
+  const sortedRows = sortRowsByDate(rows);
+
+  const technical = calculateTechnicalScore(sortedRows);
+  const volume = calculateVolumeScore(sortedRows);
   const supplyScore = calculateSupplyScore(supply);
-  const targetPrice = calculateTargetPriceScore(rows, technical, volume, supplyScore);
+  const targetPrice = calculateTargetPriceScore(sortedRows, technical, volume, supplyScore);
 
   const parts = {
     technical,
@@ -164,7 +171,8 @@ export function calculateCompositeScore({
 }
 
 export function calculateTechnicalScore(rows: ScoreChartRow[]): ScorePart {
-  const latest = getLatestRow(rows);
+  const sortedRows = sortRowsByDate(rows);
+  const latest = getLatestRow(sortedRows);
 
   if (!latest) {
     return {
@@ -260,8 +268,9 @@ export function calculateTechnicalScore(rows: ScoreChartRow[]): ScorePart {
 }
 
 export function calculateVolumeScore(rows: ScoreChartRow[]): ScorePart {
-  const latest = getLatestRow(rows);
-  const previous = rows.length >= 2 ? rows[rows.length - 2] : null;
+  const sortedRows = sortRowsByDate(rows);
+  const latest = getLatestRow(sortedRows);
+  const previous = sortedRows.length >= 2 ? sortedRows[sortedRows.length - 2] : null;
 
   if (!latest) {
     return {
@@ -276,8 +285,8 @@ export function calculateVolumeScore(rows: ScoreChartRow[]): ScorePart {
   const reasons: string[] = [];
 
   const latestVolume = latest.volume ?? null;
-  const avg5 = averageVolume(rows.slice(-5));
-  const avg20 = averageVolume(rows.slice(-20));
+  const avg5 = averageVolume(sortedRows.slice(-5));
+  const avg20 = averageVolume(sortedRows.slice(-20));
 
   if (latestVolume != null && avg5 != null && avg5 > 0) {
     const ratio5 = latestVolume / avg5;
@@ -426,7 +435,8 @@ export function calculateTargetPriceScore(
   volume: ScorePart,
   supply: ScorePart
 ): TargetPriceScore {
-  const result = calculateTechnicalTargetRange(rows, technical, volume, supply);
+  const sortedRows = sortRowsByDate(rows);
+  const result = calculateTechnicalTargetRange(sortedRows, technical, volume, supply);
 
   if (!result) {
     return {
@@ -523,7 +533,7 @@ function calculateTechnicalTargetRange(
   volume: ScorePart,
   supply: ScorePart
 ): { range: TargetPriceRange; basis: TargetBasis } | null {
-  const validRows = rows.filter(
+  const validRows = sortRowsByDate(rows).filter(
     (row) => typeof row.close === "number" && Number.isFinite(row.close)
   );
 
@@ -535,13 +545,18 @@ function calculateTechnicalTargetRange(
   if (currentPrice == null || currentPrice <= 0) return null;
 
   const recentRows = validRows.slice(-60);
+  const recentHighResult = getRecentHighClose(recentRows);
+
+  if (!recentHighResult) return null;
+
   const closes = recentRows
     .map((row) => row.close)
     .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
 
   if (closes.length < 10) return null;
 
-  const recentHigh = Math.max(...closes);
+  const recentHigh = recentHighResult.value;
+  const recentHighDate = recentHighResult.date;
   const recentLow = Math.min(...closes);
   const volatility = averageAbsoluteDailyChangePercent(recentRows);
   const bbUpper = latest.bbUpper ?? null;
@@ -569,6 +584,7 @@ function calculateTechnicalTargetRange(
     calculateWeightedBaseTarget({
       conservativeTarget,
       recentHigh,
+      recentHighDate,
       bbUpper,
       volatilityUpper,
       currentPrice,
@@ -579,7 +595,8 @@ function calculateTechnicalTargetRange(
       target: conservativeTarget,
       basis: {
         method: "가중 평균",
-        summary: "기준 목표가는 최근 고점, 볼린저밴드, 변동성, 보수적 목표가를 가중 평균해 계산했습니다.",
+        summary:
+          "기준 목표가는 최근 고점, 볼린저밴드, 변동성, 보수적 목표가를 가중 평균해 계산했습니다.",
         candidates: [
           {
             label: "보수적 목표가",
@@ -610,9 +627,7 @@ function calculateTechnicalTargetRange(
   });
 
   const riskLineRaw =
-    downsideCandidates.length > 0
-      ? Math.max(...downsideCandidates)
-      : currentPrice * 0.95;
+    downsideCandidates.length > 0 ? Math.max(...downsideCandidates) : currentPrice * 0.95;
 
   const roundedConservative = roundPrice(conservativeTarget);
   const roundedBase = roundPrice(Math.max(baseTargetRaw, roundedConservative));
@@ -638,6 +653,7 @@ function calculateTechnicalTargetRange(
 function calculateWeightedBaseTarget({
   conservativeTarget,
   recentHigh,
+  recentHighDate,
   bbUpper,
   volatilityUpper,
   currentPrice,
@@ -647,6 +663,7 @@ function calculateWeightedBaseTarget({
 }: {
   conservativeTarget: number;
   recentHigh: number;
+  recentHighDate: string;
   bbUpper: number | null;
   volatilityUpper: number;
   currentPrice: number;
@@ -701,6 +718,10 @@ function calculateWeightedBaseTarget({
     adjustments.push("추가 보정 없이 기본 비중을 적용했습니다.");
   }
 
+  const recentHighLabel = recentHighDate
+    ? `최근 60일 고점 (${recentHighDate})`
+    : "최근 60일 고점";
+
   const candidates = [
     {
       label: "보수적 목표가",
@@ -708,7 +729,7 @@ function calculateWeightedBaseTarget({
       weight: weights.conservative,
     },
     {
-      label: "최근 60일 고점",
+      label: recentHighLabel,
       value: recentHigh,
       weight: weights.recentHigh,
     },
@@ -756,11 +777,49 @@ function calculateWeightedBaseTarget({
     target,
     basis: {
       method: "가중 평균",
-      summary: "기준 목표가는 최근 고점, 볼린저밴드, 변동성, 보수적 목표가를 가중 평균해 계산했습니다.",
+      summary:
+        "기준 목표가는 최근 고점, 볼린저밴드, 변동성, 보수적 목표가를 가중 평균해 계산했습니다.",
       candidates: normalizedCandidates,
       adjustments,
     },
   };
+}
+
+function getRecentHighClose(rows: ScoreChartRow[]): RecentHighResult | null {
+  const validRows = sortRowsByDate(rows).filter(
+    (row) => typeof row.close === "number" && Number.isFinite(row.close)
+  );
+
+  if (validRows.length === 0) return null;
+
+  return validRows.reduce<RecentHighResult>((max, row) => {
+    const close = row.close as number;
+
+    if (close > max.value) {
+      return {
+        value: close,
+        date: row.date,
+      };
+    }
+
+    return max;
+  }, {
+    value: validRows[0].close as number,
+    date: validRows[0].date,
+  });
+}
+
+function sortRowsByDate(rows: ScoreChartRow[]) {
+  return [...rows].sort((a, b) => {
+    const aTime = new Date(a.date).getTime();
+    const bTime = new Date(b.date).getTime();
+
+    if (Number.isNaN(aTime) && Number.isNaN(bTime)) return 0;
+    if (Number.isNaN(aTime)) return 1;
+    if (Number.isNaN(bTime)) return -1;
+
+    return aTime - bTime;
+  });
 }
 
 function calculateTargetStrengthBonus(
@@ -892,11 +951,12 @@ function averageVolume(rows: ScoreChartRow[]) {
 }
 
 function averageAbsoluteDailyChangePercent(rows: ScoreChartRow[]) {
+  const sortedRows = sortRowsByDate(rows);
   const changes: number[] = [];
 
-  for (let i = 1; i < rows.length; i++) {
-    const prev = rows[i - 1].close;
-    const current = rows[i].close;
+  for (let i = 1; i < sortedRows.length; i++) {
+    const prev = sortedRows[i - 1].close;
+    const current = sortedRows[i].close;
 
     if (
       typeof prev === "number" &&
