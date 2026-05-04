@@ -25,6 +25,22 @@ type StockMeta = {
   currency: string;
 };
 
+type ChartDataRow = {
+  date: string;
+  close: number | null;
+  sma20: number | null;
+  sma60: number | null;
+  rsi14: number | null;
+  macd: number | null;
+  signal: number | null;
+  histogram: number | null;
+  bbUpper: number | null;
+  bbMiddle: number | null;
+  bbLower: number | null;
+  volume: number;
+  obv: number | null;
+};
+
 type SupplyData = {
   available: boolean;
   warning?: string;
@@ -80,11 +96,12 @@ export async function GET(req: NextRequest) {
   const cached = stockCache.get(cacheKey);
 
   if (cached && cached.expiresAt > Date.now()) {
-    return NextResponse.json({
-      ...cached.data,
-      cached: true,
-      cacheSource: "memory",
-    });
+    return NextResponse.json(
+      withCacheMeta(cached.data, {
+        cached: true,
+        cacheSource: "memory",
+      })
+    );
   }
 
   try {
@@ -112,21 +129,30 @@ export async function GET(req: NextRequest) {
 
     if (res.status === 429 || text.includes("Too Many Requests")) {
       if (cached) {
-        return NextResponse.json({
-          ...cached.data,
-          cached: true,
-          cacheSource: "stale-memory",
-          warning: "외부 주가 서버가 요청을 제한하여 최근 저장 데이터로 표시 중입니다.",
-        });
+        return NextResponse.json(
+          withCacheMeta(cached.data, {
+            cached: true,
+            cacheSource: "stale-memory",
+            warning: "외부 주가 서버가 요청을 제한하여 최근 저장 데이터로 표시 중입니다.",
+          })
+        );
       }
 
       return NextResponse.json(
         {
+          ok: false,
           error: "외부 주가 서버가 현재 요청을 제한하고 있습니다.",
           detail: "Too Many Requests",
           blocked: true,
           status: 429,
           symbol,
+          meta: {
+            cached: false,
+            cacheSource: null,
+            warning: "외부 주가 서버가 현재 요청을 제한하고 있습니다.",
+            updatedAt: new Date().toISOString(),
+            range,
+          },
         },
         { status: 429 }
       );
@@ -135,10 +161,18 @@ export async function GET(req: NextRequest) {
     if (!res.ok) {
       return NextResponse.json(
         {
+          ok: false,
           error: "외부 주가 서버 호출에 실패했습니다.",
           detail: text.slice(0, 500),
           status: res.status,
           symbol,
+          meta: {
+            cached: false,
+            cacheSource: null,
+            warning: "외부 주가 서버 호출에 실패했습니다.",
+            updatedAt: new Date().toISOString(),
+            range,
+          },
         },
         { status: 500 }
       );
@@ -150,19 +184,28 @@ export async function GET(req: NextRequest) {
       json = JSON.parse(text);
     } catch {
       if (cached) {
-        return NextResponse.json({
-          ...cached.data,
-          cached: true,
-          cacheSource: "stale-memory",
-          warning: "외부 응답이 비정상이라 최근 저장 데이터로 표시 중입니다.",
-        });
+        return NextResponse.json(
+          withCacheMeta(cached.data, {
+            cached: true,
+            cacheSource: "stale-memory",
+            warning: "외부 응답이 비정상이라 최근 저장 데이터로 표시 중입니다.",
+          })
+        );
       }
 
       return NextResponse.json(
         {
+          ok: false,
           error: "외부 주가 서버 응답이 JSON 형식이 아닙니다.",
           detail: text.slice(0, 500),
           symbol,
+          meta: {
+            cached: false,
+            cacheSource: null,
+            warning: "외부 주가 서버 응답이 JSON 형식이 아닙니다.",
+            updatedAt: new Date().toISOString(),
+            range,
+          },
         },
         { status: 500 }
       );
@@ -175,9 +218,17 @@ export async function GET(req: NextRequest) {
     if (errorInfo) {
       return NextResponse.json(
         {
+          ok: false,
           error: "주가 데이터를 가져오지 못했습니다.",
           detail: errorInfo?.description || errorInfo?.code || "unknown error",
           symbol,
+          meta: {
+            cached: false,
+            cacheSource: null,
+            warning: "주가 데이터를 가져오지 못했습니다.",
+            updatedAt: new Date().toISOString(),
+            range,
+          },
         },
         { status: 500 }
       );
@@ -199,7 +250,8 @@ export async function GET(req: NextRequest) {
           volume: volumesRaw[i] != null ? Number(volumesRaw[i]) : 0,
         };
       })
-      .filter((row) => row.close != null) as Array<{
+      .filter((row) => row.close != null)
+      .sort((a, b) => a.date.localeCompare(b.date)) as Array<{
       date: string;
       close: number;
       volume: number;
@@ -207,18 +259,27 @@ export async function GET(req: NextRequest) {
 
     if (!chartRows.length) {
       if (cached) {
-        return NextResponse.json({
-          ...cached.data,
-          cached: true,
-          cacheSource: "stale-memory",
-          warning: "새 데이터를 받지 못해 최근 저장 데이터로 표시 중입니다.",
-        });
+        return NextResponse.json(
+          withCacheMeta(cached.data, {
+            cached: true,
+            cacheSource: "stale-memory",
+            warning: "새 데이터를 받지 못해 최근 저장 데이터로 표시 중입니다.",
+          })
+        );
       }
 
       return NextResponse.json(
         {
+          ok: false,
           error: "해당 종목 데이터를 찾지 못했습니다.",
           symbol,
+          meta: {
+            cached: false,
+            cacheSource: null,
+            warning: "해당 종목 데이터를 찾지 못했습니다.",
+            updatedAt: new Date().toISOString(),
+            range,
+          },
         },
         { status: 404 }
       );
@@ -236,7 +297,7 @@ export async function GET(req: NextRequest) {
     const obvData = obv(closes, volumes);
     const forecast = simpleForecast(closes, 5);
 
-    const chartData = dates.map((date, i) => ({
+    const chartData: ChartDataRow[] = dates.map((date, i) => ({
       date,
       close: closes[i] ?? null,
       sma20: sma20[i] ?? null,
@@ -304,7 +365,27 @@ export async function GET(req: NextRequest) {
       supply,
     });
 
+    const latestTechnical = chartData[chartData.length - 1] ?? null;
+    const targetRange = score?.targetPrice?.technicalTargetRange ?? null;
+    const targetBasis = score?.targetPrice?.targetBasis ?? null;
+    const normalizedCode = normalizeStockCode(symbol);
+
+    const targetProgress =
+      targetRange && targetRange.baseTarget > 0
+        ? Number(((targetRange.currentPrice / targetRange.baseTarget) * 100).toFixed(1))
+        : null;
+
+    const upsidePrice = targetRange
+      ? Number((targetRange.baseTarget - targetRange.currentPrice).toFixed(2))
+      : null;
+
     const responseData = {
+      ok: true,
+
+      /*
+       * 기존 화면 호환용 필드
+       * app/page.tsx가 아직 이 필드들을 읽고 있으므로 유지합니다.
+       */
       symbol,
       name: stockMeta.name,
       exchange: stockMeta.exchange,
@@ -320,6 +401,77 @@ export async function GET(req: NextRequest) {
       supply,
       score,
       cached: false,
+
+      /*
+       * 신규 구조화 응답
+       * 이후 화면은 이 구조로 천천히 이전하면 됩니다.
+       */
+      stock: {
+        symbol,
+        code: normalizedCode,
+        name: stockMeta.name,
+        exchange: stockMeta.exchange,
+        currency: stockMeta.currency,
+        market: stockMeta.exchange,
+        sector: null,
+        industry: null,
+      },
+
+      price: {
+        currentPrice,
+        prevPrice,
+        changePrice,
+        changeRate: change,
+        signalSummary,
+      },
+
+      fundamentals: {
+        marketCap: null,
+        per: null,
+        pbr: null,
+        eps: null,
+        bps: null,
+        dividendYield: null,
+        foreignOwnershipRate: null,
+        sharesOutstanding: null,
+        high52w: null,
+        low52w: null,
+      },
+
+      technical: {
+        chartData,
+        latest: latestTechnical,
+        fearGreed,
+      },
+
+      targetPrice: {
+        range: targetRange
+          ? {
+              currentPrice: targetRange.currentPrice,
+              conservativeTarget: targetRange.conservativeTarget,
+              baseTarget: targetRange.baseTarget,
+              aggressiveTarget: targetRange.aggressiveTarget,
+              riskLine: targetRange.riskLine,
+              targetProgress,
+              upsidePrice,
+              conservativeUpsidePercent: targetRange.conservativeUpsidePercent,
+              baseUpsidePercent: targetRange.baseUpsidePercent,
+              aggressiveUpsidePercent: targetRange.aggressiveUpsidePercent,
+              riskDownsidePercent: targetRange.riskDownsidePercent,
+            }
+          : null,
+        basis: targetBasis,
+        consensusTarget: null,
+      },
+
+      meta: {
+        cached: false,
+        cacheSource: null,
+        warning: null,
+        updatedAt: new Date().toISOString(),
+        range,
+        source: "Yahoo Finance chart + KIS investor summary",
+      },
     };
 
     stockCache.set(cacheKey, {
@@ -332,19 +484,27 @@ export async function GET(req: NextRequest) {
     console.error("stock api error:", error);
 
     if (cached) {
-      return NextResponse.json({
-        ...cached.data,
-        cached: true,
-        cacheSource: "stale-memory",
-        warning: "일시 오류로 최근 저장 데이터로 표시 중입니다.",
-      });
+      return NextResponse.json(
+        withCacheMeta(cached.data, {
+          cached: true,
+          cacheSource: "stale-memory",
+          warning: "일시 오류로 최근 저장 데이터로 표시 중입니다.",
+        })
+      );
     }
 
     return NextResponse.json(
       {
+        ok: false,
         error: "주가 데이터를 불러오지 못했습니다.",
         detail: error?.message || String(error),
         symbol,
+        meta: {
+          cached: false,
+          cacheSource: null,
+          warning: "주가 데이터를 불러오지 못했습니다.",
+          updatedAt: new Date().toISOString(),
+        },
       },
       { status: 500 }
     );
@@ -449,6 +609,29 @@ async function getStockMeta(symbol: string, chartMeta: any): Promise<StockMeta> 
   }
 }
 
+function withCacheMeta(
+  data: any,
+  options: {
+    cached: boolean;
+    cacheSource: string;
+    warning?: string;
+  }
+) {
+  return {
+    ...data,
+    cached: options.cached,
+    cacheSource: options.cacheSource,
+    warning: options.warning ?? data?.warning,
+    meta: {
+      ...(data?.meta || {}),
+      cached: options.cached,
+      cacheSource: options.cacheSource,
+      warning: options.warning ?? data?.meta?.warning ?? null,
+      updatedAt: data?.meta?.updatedAt || new Date().toISOString(),
+    },
+  };
+}
+
 function normalizeExchange(value?: string) {
   if (!value) return "";
 
@@ -470,6 +653,16 @@ function guessExchange(symbol: string) {
   if (symbol.endsWith(".KQ")) return "KOSDAQ";
   if (symbol === "^KS11") return "KOSPI";
   return "";
+}
+
+function normalizeStockCode(symbol: string) {
+  const normalized = symbol.trim().toUpperCase();
+
+  if (normalized.endsWith(".KS") || normalized.endsWith(".KQ")) {
+    return normalized.slice(0, -3);
+  }
+
+  return normalized;
 }
 
 function getPeriodStart(range: string) {
