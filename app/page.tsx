@@ -58,6 +58,31 @@ type ScoreWeights = {
   targetPrice: number;
 };
 
+type TargetPriceRange = {
+  currentPrice: number;
+  conservativeTarget: number;
+  baseTarget: number;
+  aggressiveTarget: number;
+  riskLine: number;
+  conservativeUpsidePercent: number;
+  baseUpsidePercent: number;
+  aggressiveUpsidePercent: number;
+  riskDownsidePercent: number;
+};
+
+type TargetBasisCandidate = {
+  label: string;
+  value: number;
+  weight: number;
+};
+
+type TargetBasis = {
+  method: string;
+  summary: string;
+  candidates: TargetBasisCandidate[];
+  adjustments: string[];
+};
+
 type CompositeScore = {
   total: number | null;
   grade: string;
@@ -66,10 +91,11 @@ type CompositeScore = {
   volume: ScorePart;
   supply: ScorePart;
   targetPrice: ScorePart & {
-    technicalTargetRange: null;
-    supplyAdjustedTarget: null;
+    technicalTargetRange: TargetPriceRange | null;
+    targetBasis: TargetBasis | null;
+    supplyAdjustedTarget: number | null;
     consensusTarget: null;
-    riskLine: null;
+    riskLine: number | null;
   };
   baseWeights: ScoreWeights;
   appliedWeights: Partial<ScoreWeights>;
@@ -327,7 +353,13 @@ export default function HomePage() {
           </InfoCard>
         </section>
 
+        <section className="score-section">
+          <CurrentStockSummaryCard data={data} />
+        </section>
+
         <ScoreSection score={data?.score} />
+
+        <TargetPriceSection score={data?.score} />
 
         <section className="supply-section">
           <Card>
@@ -468,26 +500,7 @@ export default function HomePage() {
           </section>
         </section>
 
-        <section className="bottom-grid bottom-grid-wide">
-          <Card>
-            <SectionTitleSmall>5일 단순 시뮬레이션</SectionTitleSmall>
-            {data?.forecast && data.forecast.length > 0 ? (
-              <ul className="forecast-list">
-                {data.forecast.map((value, idx) => (
-                  <li key={idx}>
-                    <span>Day {idx + 1}</span>
-                    <strong>{formatNumber(value)}</strong>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="muted-text">예측 데이터가 부족합니다.</p>
-            )}
-            <p className="notice-text">
-              이 값은 투자 예측이 아니라 최근 흐름을 단순 연장한 참고용 계산입니다.
-            </p>
-          </Card>
-
+        <section className="data-section">
           <Card>
             <SectionTitleSmall>주가 분석 TOOL</SectionTitleSmall>
             <div className="metric-list">
@@ -565,6 +578,69 @@ export default function HomePage() {
   );
 }
 
+function CurrentStockSummaryCard({ data }: { data: StockResponse | null }) {
+  const range = data?.score?.targetPrice?.technicalTargetRange;
+  const targetProgress =
+    range && range.baseTarget > 0
+      ? Number(((range.currentPrice / range.baseTarget) * 100).toFixed(1))
+      : null;
+  const upsidePrice = range ? Number((range.baseTarget - range.currentPrice).toFixed(2)) : null;
+
+  const displaySymbol = data?.symbol || "데이터 없음";
+  const displayName = data?.name || "종목명 없음";
+  const displayMeta = [displaySymbol, data?.exchange, data?.currency].filter(Boolean).join(" · ");
+
+  return (
+    <Card>
+      <SectionTitleSmall>현재 종목 요약</SectionTitleSmall>
+
+      <div className="stock-identity">
+        <div className="stock-name">{displayName}</div>
+        <div className="stock-meta">{displayMeta || "시장 정보 대기"}</div>
+      </div>
+
+      <div className="metric-list">
+        <MetricRow label="현재가" value={formatNumber(data?.currentPrice)} />
+        <MetricRow
+          label="전일 대비"
+          value={`${formatSignedNumber(data?.changePrice)} / ${formatPercent(data?.change)}`}
+        />
+        <MetricRow label="분석 신호" value={data?.signalSummary || "데이터 없음"} />
+        <MetricRow
+          label="종합 점수"
+          value={
+            data?.score?.total != null
+              ? `${data.score.total} / 100 · ${data.score.grade}`
+              : "데이터 없음"
+          }
+        />
+        <MetricRow
+          label="목표여력 점수"
+          value={
+            data?.score?.targetPrice?.score != null
+              ? `${data.score.targetPrice.score} / 100 · ${data.score.targetPrice.label}`
+              : "데이터 없음"
+          }
+        />
+        <MetricRow label="기준 목표가" value={formatNumber(range?.baseTarget)} />
+        <MetricRow label="목표 도달률" value={formatTargetProgress(targetProgress)} />
+        <MetricRow
+          label="상승 여력"
+          value={`${formatSignedNumber(upsidePrice)} / ${formatUpside(range?.baseUpsidePercent)}`}
+        />
+        <MetricRow
+          label="위험 기준선"
+          value={`${formatNumber(range?.riskLine)} / ${formatUpside(range?.riskDownsidePercent)}`}
+        />
+      </div>
+
+      <p className="notice-text">
+        이 요약은 현재 화면의 기술·수급·목표여력 데이터를 한 번에 확인하기 위한 참고 정보입니다.
+      </p>
+    </Card>
+  );
+}
+
 function StockIdentity({
   data,
   inputSymbol,
@@ -599,10 +675,12 @@ function ScoreSection({ score }: { score?: CompositeScore }) {
           <div>
             <SectionTitleSmall>종합 신뢰도 점수</SectionTitleSmall>
             <p className="score-subtitle">
-              기술·거래량·수급 점수를 합산해 현재 관심 구간 여부를 진단합니다.
+              기술·거래량·수급·목표여력 점수를 합산해 현재 관심 구간 여부를 진단합니다.
             </p>
           </div>
-          <div className="score-mode-badge">목표가 구조 준비</div>
+          <div className="score-mode-badge">
+            {score?.targetPrice?.available ? "목표여력 반영" : "목표여력 대기"}
+          </div>
         </div>
 
         <div className="score-main-grid">
@@ -621,7 +699,7 @@ function ScoreSection({ score }: { score?: CompositeScore }) {
             <ScorePartCard title="기술 점수" part={score?.technical} />
             <ScorePartCard title="거래량 점수" part={score?.volume} />
             <ScorePartCard title="수급 점수" part={score?.supply} />
-            <ScorePartCard title="목표가 점수" part={score?.targetPrice} />
+            <ScorePartCard title="목표여력 점수" part={score?.targetPrice} />
           </div>
         </div>
 
@@ -631,7 +709,7 @@ function ScoreSection({ score }: { score?: CompositeScore }) {
             <strong>{formatAppliedWeights(score?.appliedWeights)}</strong>
           </div>
           <p>
-            목표가 데이터가 없으면 목표가 비중은 제외하고, 기술·거래량·수급 가중치를 자동 재분배합니다.
+            목표여력 점수는 기준 목표가 대비 남은 상승 공간과 수급·거래량 보정을 함께 반영합니다. 컨센서스 목표가는 아직 연결하지 않았습니다.
           </p>
         </div>
 
@@ -642,10 +720,146 @@ function ScoreSection({ score }: { score?: CompositeScore }) {
 
         <div className="target-plan-box">
           <span>향후 목표가 자동 산정 구조</span>
-          <p>{score?.targetPricePlan?.status || "목표가 참고 범위는 다음 단계에서 추가 예정입니다."}</p>
+          <p>{score?.targetPricePlan?.status || "목표가 참고 범위는 분석 실행 후 표시됩니다."}</p>
         </div>
       </Card>
     </section>
+  );
+}
+
+function TargetPriceSection({ score }: { score?: CompositeScore }) {
+  const range = score?.targetPrice?.technicalTargetRange;
+  const basis = score?.targetPrice?.targetBasis;
+  const targetProgress =
+    range && range.baseTarget > 0
+      ? Number(((range.currentPrice / range.baseTarget) * 100).toFixed(1))
+      : null;
+  const upsidePrice = range ? Number((range.baseTarget - range.currentPrice).toFixed(2)) : null;
+
+  return (
+    <section className="target-section">
+      <Card>
+        <div className="target-header">
+          <div>
+            <SectionTitleSmall>목표가 참고 범위</SectionTitleSmall>
+            <p className="target-subtitle">
+              기준 목표가, 목표 도달률, 상승 여력 가격을 중심으로 현재 가격 위치를 확인합니다.
+            </p>
+          </div>
+          <div className={`target-badge ${range ? "available" : "unavailable"}`}>
+            {range ? "기술 목표가 계산" : "목표가 대기"}
+          </div>
+        </div>
+
+        <div className="target-grid">
+          <TargetMetricCard
+            title="현재가"
+            value={formatNumber(range?.currentPrice)}
+            subText="분석 기준 가격"
+            tone="neutral"
+          />
+          <TargetMetricCard
+            title="기준 목표가"
+            value={formatNumber(range?.baseTarget)}
+            subText={`상승 여력률 ${formatUpside(range?.baseUpsidePercent)}`}
+            tone={getTargetTone(range?.baseUpsidePercent)}
+          />
+          <TargetMetricCard
+            title="목표 도달률"
+            value={formatTargetProgress(targetProgress)}
+            subText="현재가 / 기준 목표가"
+            tone={getTargetProgressTone(targetProgress)}
+          />
+          <TargetMetricCard
+            title="상승 여력 가격"
+            value={formatSignedNumber(upsidePrice)}
+            subText={`상승 여력률 ${formatUpside(range?.baseUpsidePercent)}`}
+            tone={getTargetTone(upsidePrice)}
+          />
+          <TargetMetricCard
+            title="위험 기준선"
+            value={formatNumber(range?.riskLine)}
+            subText={`하락 여지 ${formatUpside(range?.riskDownsidePercent)}`}
+            tone="negative"
+          />
+        </div>
+
+        <div className="target-comment-box">
+          <span>해석</span>
+          <strong>{makeTargetComment(score)}</strong>
+        </div>
+
+        <TargetBasisBox basis={basis} />
+
+        <p className="notice-text">
+          이 값은 증권사 목표주가가 아니라 차트 기반 참고 범위입니다. 실제 목표가는 실적, 업종, 밸류에이션, 컨센서스 데이터가 추가되어야 더 안정적입니다.
+        </p>
+      </Card>
+    </section>
+  );
+}
+
+function TargetBasisBox({ basis }: { basis?: TargetBasis | null }) {
+  if (!basis) {
+    return null;
+  }
+
+  return (
+    <div className="target-basis-box">
+      <div className="target-basis-header">
+        <span>산정 근거</span>
+        <strong>산정 방식: {basis.method}</strong>
+      </div>
+
+      <p className="target-basis-summary">{basis.summary}</p>
+
+      <div className="target-basis-table-wrap">
+        <table className="target-basis-table">
+          <thead>
+            <tr>
+              <th>항목</th>
+              <th>가격</th>
+              <th>반영 비중</th>
+            </tr>
+          </thead>
+          <tbody>
+            {basis.candidates.map((candidate) => (
+              <tr key={candidate.label}>
+                <td>{candidate.label}</td>
+                <td>{formatNumber(candidate.value)}</td>
+                <td>{formatWeight(candidate.weight)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="target-basis-adjustments">
+        {basis.adjustments.map((adjustment) => (
+          <p key={adjustment}>{adjustment}</p>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TargetMetricCard({
+  title,
+  value,
+  subText,
+  tone,
+}: {
+  title: string;
+  value: string;
+  subText: string;
+  tone: "positive" | "negative" | "neutral";
+}) {
+  return (
+    <div className="target-metric-card">
+      <span>{title}</span>
+      <strong className={tone}>{value}</strong>
+      <em className={tone}>{subText}</em>
+    </div>
   );
 }
 
@@ -1222,13 +1436,47 @@ function formatAppliedWeights(weights?: Partial<ScoreWeights>) {
     ["technical", "기술"],
     ["volume", "거래량"],
     ["supply", "수급"],
-    ["targetPrice", "목표가"],
+    ["targetPrice", "목표여력"],
   ];
 
   return labels
     .filter(([key]) => weights[key] != null)
     .map(([key, label]) => `${label} ${((weights[key] ?? 0) * 100).toFixed(1)}%`)
     .join(" / ");
+}
+
+function makeTargetComment(score?: CompositeScore) {
+  const range = score?.targetPrice?.technicalTargetRange;
+
+  if (!range) {
+    return "분석 실행 후 목표가 참고 범위가 표시됩니다.";
+  }
+
+  const targetScore = score?.targetPrice?.score ?? 0;
+  const supplyScore = score?.supply?.score ?? 0;
+  const volumeScore = score?.volume?.score ?? 0;
+  const targetProgress = range.baseTarget > 0 ? (range.currentPrice / range.baseTarget) * 100 : null;
+  const upsidePrice = range.baseTarget - range.currentPrice;
+
+  if (targetProgress != null && targetProgress >= 97) {
+    return `현재가는 기준 목표가의 ${targetProgress.toFixed(1)}% 수준입니다. 상승 여력은 ${formatSignedNumber(
+      upsidePrice
+    )}로 크지 않으므로 목표 도달률을 우선 확인해야 합니다.`;
+  }
+
+  if (targetScore >= 70 && supplyScore >= 70 && volumeScore >= 65) {
+    return "수급과 거래량이 함께 받쳐주고 있어 기준 목표가까지는 관심 구간으로 볼 수 있습니다.";
+  }
+
+  if (targetScore >= 65 && supplyScore >= 70) {
+    return "수급은 긍정적이나 거래량 확인이 필요합니다. 기준 목표가는 참고하되 보수적 목표가를 먼저 확인하는 것이 좋습니다.";
+  }
+
+  if (targetScore < 50) {
+    return "상승 여력이 크지 않거나 위험 기준선이 가까운 구간입니다. 무리한 목표가 추정은 주의가 필요합니다.";
+  }
+
+  return "기술적 목표가 참고 범위가 계산되었습니다. 위험 기준선 이탈 여부를 함께 확인해야 합니다.";
 }
 
 function formatNumber(value?: number | null) {
@@ -1270,6 +1518,21 @@ function formatPercent(value?: number | null) {
   return `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
+function formatUpside(value?: number | null) {
+  if (value == null || Number.isNaN(value)) return "데이터 없음";
+  return `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
+
+function formatTargetProgress(value?: number | null) {
+  if (value == null || Number.isNaN(value)) return "데이터 없음";
+  return `${value.toFixed(1)}%`;
+}
+
+function formatWeight(value?: number | null) {
+  if (value == null || Number.isNaN(value)) return "데이터 없음";
+  return `${(value * 100).toFixed(1)}%`;
+}
+
 function formatDateLabel(date?: string) {
   if (!date) return "-";
   const [, month, day] = date.split("-");
@@ -1285,6 +1548,20 @@ function getChangeTone(value?: number | null): "positive" | "negative" | "neutra
   if (value > 0) return "positive";
   if (value < 0) return "negative";
   return "neutral";
+}
+
+function getTargetTone(value?: number | null): "positive" | "negative" | "neutral" {
+  if (value == null || Number.isNaN(value)) return "neutral";
+  if (value > 0) return "positive";
+  if (value < 0) return "negative";
+  return "neutral";
+}
+
+function getTargetProgressTone(value?: number | null): "positive" | "negative" | "neutral" {
+  if (value == null || Number.isNaN(value)) return "neutral";
+  if (value >= 97) return "negative";
+  if (value >= 90) return "neutral";
+  return "positive";
 }
 
 function Th({ children }: { children: ReactNode }) {
