@@ -10,6 +10,7 @@ import {
   sma,
 } from "@/lib/indicators";
 import { getKisInvestorSummary } from "@/lib/kis";
+import { calculateCompositeScore } from "@/lib/score";
 
 export const runtime = "nodejs";
 
@@ -298,6 +299,11 @@ export async function GET(req: NextRequest) {
     const stockMeta = await getStockMeta(symbol, chartMeta);
     const supply = await getSupplyData(symbol);
 
+    const score = calculateCompositeScore({
+      rows: chartData,
+      supply,
+    });
+
     const responseData = {
       symbol,
       name: stockMeta.name,
@@ -312,6 +318,7 @@ export async function GET(req: NextRequest) {
       forecast,
       fearGreed,
       supply,
+      score,
       cached: false,
     };
 
