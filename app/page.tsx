@@ -44,6 +44,19 @@ type SupplyData = {
   }>;
 };
 
+type Fundamentals = {
+  marketCap: number | null;
+  per: number | null;
+  pbr: number | null;
+  eps: number | null;
+  bps: number | null;
+  dividendYield: number | null;
+  foreignOwnershipRate: number | null;
+  sharesOutstanding: number | null;
+  high52w: number | null;
+  low52w: number | null;
+};
+
 type ScorePart = {
   available: boolean;
   score: number | null;
@@ -121,6 +134,7 @@ type StockResponse = {
     score: number;
     label: string;
   };
+  fundamentals?: Fundamentals;
   supply?: SupplyData;
   score?: CompositeScore;
   cached?: boolean;
@@ -345,7 +359,9 @@ export default function HomePage() {
           </InfoCard>
 
           <InfoCard title="전일 대비 가격">
-            <BigValue tone={getChangeTone(data?.changePrice)}>{formatSignedNumber(data?.changePrice)}</BigValue>
+            <BigValue tone={getChangeTone(data?.changePrice)}>
+              {formatSignedNumber(data?.changePrice)}
+            </BigValue>
           </InfoCard>
 
           <InfoCard title="분석 신호">
@@ -360,6 +376,8 @@ export default function HomePage() {
         <ScoreSection score={data?.score} />
 
         <TargetPriceSection score={data?.score} />
+
+        <FundamentalsSection fundamentals={data?.fundamentals} />
 
         <section className="supply-section">
           <Card>
@@ -638,6 +656,42 @@ function CurrentStockSummaryCard({ data }: { data: StockResponse | null }) {
         이 요약은 현재 화면의 기술·수급·목표여력 데이터를 한 번에 확인하기 위한 참고 정보입니다.
       </p>
     </Card>
+  );
+}
+
+function FundamentalsSection({ fundamentals }: { fundamentals?: Fundamentals }) {
+  return (
+    <section className="data-section">
+      <Card>
+        <SectionTitleSmall>종목 기본 정보</SectionTitleSmall>
+        <p className="target-subtitle">
+          시가총액, 밸류에이션, 배당, 52주 가격 범위를 확인합니다.
+        </p>
+
+        <div className="metric-list">
+          <MetricRow label="시가총액" value={formatMarketCap(fundamentals?.marketCap)} />
+          <MetricRow label="PER" value={formatRatio(fundamentals?.per, "배")} />
+          <MetricRow label="PBR" value={formatRatio(fundamentals?.pbr, "배")} />
+          <MetricRow label="EPS" value={formatCurrencyValue(fundamentals?.eps)} />
+          <MetricRow label="BPS" value={formatCurrencyValue(fundamentals?.bps)} />
+          <MetricRow label="배당수익률" value={formatNullablePercent(fundamentals?.dividendYield)} />
+          <MetricRow label="52주 고가" value={formatCurrencyValue(fundamentals?.high52w)} />
+          <MetricRow label="52주 저가" value={formatCurrencyValue(fundamentals?.low52w)} />
+          <MetricRow
+            label="외국인 보유율"
+            value={formatNullablePercent(fundamentals?.foreignOwnershipRate)}
+          />
+          <MetricRow
+            label="상장주식수"
+            value={formatShares(fundamentals?.sharesOutstanding)}
+          />
+        </div>
+
+        <p className="notice-text">
+          현재는 API 구조를 먼저 준비한 단계입니다. 값이 없는 항목은 데이터 연결 후 자동으로 표시됩니다.
+        </p>
+      </Card>
+    </section>
   );
 }
 
@@ -1029,8 +1083,23 @@ function MacdChart({ rows }: { rows: ChartRow[] }) {
 
       <svg className="chart-svg macd-svg" viewBox={`0 0 ${width} ${height}`}>
         <rect x="0" y="0" width={width} height={height} fill="#ffffff" />
-        <GridLines width={width} height={height} padTop={pad.top} padRight={pad.right} padBottom={pad.bottom} padLeft={pad.left} lines={4} />
-        <line x1={pad.left} y1={zeroY} x2={width - pad.right} y2={zeroY} stroke="#94a3b8" strokeDasharray="4 4" />
+        <GridLines
+          width={width}
+          height={height}
+          padTop={pad.top}
+          padRight={pad.right}
+          padBottom={pad.bottom}
+          padLeft={pad.left}
+          lines={4}
+        />
+        <line
+          x1={pad.left}
+          y1={zeroY}
+          x2={width - pad.right}
+          y2={zeroY}
+          stroke="#94a3b8"
+          strokeDasharray="4 4"
+        />
 
         {filtered.map((r, i) => {
           const xv = x(i);
@@ -1038,7 +1107,10 @@ function MacdChart({ rows }: { rows: ChartRow[] }) {
           const yv = y(hv);
           const top = Math.min(zeroY, yv);
           const barH = Math.max(1, Math.abs(zeroY - yv));
-          const barW = Math.max(4, (width - pad.left - pad.right) / Math.max(filtered.length * 1.8, 20));
+          const barW = Math.max(
+            4,
+            (width - pad.left - pad.right) / Math.max(filtered.length * 1.8, 20)
+          );
 
           return (
             <rect
@@ -1053,8 +1125,12 @@ function MacdChart({ rows }: { rows: ChartRow[] }) {
           );
         })}
 
-        {macdPoints.length > 0 && <path d={buildPath(macdPoints)} fill="none" stroke="#2563eb" strokeWidth="3" />}
-        {signalPoints.length > 0 && <path d={buildPath(signalPoints)} fill="none" stroke="#ef4444" strokeWidth="3" />}
+        {macdPoints.length > 0 && (
+          <path d={buildPath(macdPoints)} fill="none" stroke="#2563eb" strokeWidth="3" />
+        )}
+        {signalPoints.length > 0 && (
+          <path d={buildPath(signalPoints)} fill="none" stroke="#ef4444" strokeWidth="3" />
+        )}
         <DateLabels rows={filtered} width={width} height={height} padLeft={pad.left} padRight={pad.right} />
       </svg>
     </div>
@@ -1098,7 +1174,10 @@ function LineChart({
 
   const points = filtered.map((r, i) => {
     const value = r[dataKey] as number;
-    const x = filtered.length === 1 ? width / 2 : pad.left + (i / (filtered.length - 1)) * (width - pad.left - pad.right);
+    const x =
+      filtered.length === 1
+        ? width / 2
+        : pad.left + (i / (filtered.length - 1)) * (width - pad.left - pad.right);
     const y = pad.top + plotHeight - ((value - min) / range) * plotHeight;
     return { x, y, v: value };
   });
@@ -1106,11 +1185,29 @@ function LineChart({
   return (
     <svg className="chart-svg line-svg" viewBox={`0 0 ${width} ${height}`}>
       <rect x="0" y="0" width={width} height={height} fill="#ffffff" />
-      <GridLines width={width} height={height} padTop={pad.top} padRight={pad.right} padBottom={pad.bottom} padLeft={pad.left} lines={4} />
+      <GridLines
+        width={width}
+        height={height}
+        padTop={pad.top}
+        padRight={pad.right}
+        padBottom={pad.bottom}
+        padLeft={pad.left}
+        lines={4}
+      />
 
       {guides.map((g) => {
         const gy = pad.top + plotHeight - ((g - min) / range) * plotHeight;
-        return <line key={g} x1={pad.left} y1={gy} x2={width - pad.right} y2={gy} stroke="#cbd5e1" strokeDasharray="5 5" />;
+        return (
+          <line
+            key={g}
+            x1={pad.left}
+            y1={gy}
+            x2={width - pad.right}
+            y2={gy}
+            stroke="#cbd5e1"
+            strokeDasharray="5 5"
+          />
+        );
       })}
 
       <path d={buildPath(points)} fill="none" stroke={stroke} strokeWidth="3" />
@@ -1119,7 +1216,15 @@ function LineChart({
   );
 }
 
-function MultiLineChart({ rows, lines, showDates = false }: { rows: ChartRow[]; lines: LineSpec[]; showDates?: boolean }) {
+function MultiLineChart({
+  rows,
+  lines,
+  showDates = false,
+}: {
+  rows: ChartRow[];
+  lines: LineSpec[];
+  showDates?: boolean;
+}) {
   const filtered = rows.filter((r) =>
     lines.some(({ key }) => typeof r[key] === "number" && !Number.isNaN(r[key] as number))
   );
@@ -1145,7 +1250,10 @@ function MultiLineChart({ rows, lines, showDates = false }: { rows: ChartRow[]; 
     const points = filtered.map((r, i) => {
       const raw = r[key];
       const value = typeof raw === "number" ? raw : null;
-      const x = filtered.length === 1 ? width / 2 : pad.left + (i / (filtered.length - 1)) * (width - pad.left - pad.right);
+      const x =
+        filtered.length === 1
+          ? width / 2
+          : pad.left + (i / (filtered.length - 1)) * (width - pad.left - pad.right);
       if (value == null || Number.isNaN(value)) return { x, y: 0, v: null };
       const y = pad.top + plotHeight - ((value - min) / range) * plotHeight;
       return { x, y, v: value };
@@ -1157,7 +1265,15 @@ function MultiLineChart({ rows, lines, showDates = false }: { rows: ChartRow[]; 
   return (
     <svg className="chart-svg price-svg" viewBox={`0 0 ${width} ${height}`}>
       <rect x="0" y="0" width={width} height={height} fill="#ffffff" />
-      <GridLines width={width} height={height} padTop={pad.top} padRight={pad.right} padBottom={pad.bottom} padLeft={pad.left} lines={5} />
+      <GridLines
+        width={width}
+        height={height}
+        padTop={pad.top}
+        padRight={pad.right}
+        padBottom={pad.bottom}
+        padLeft={pad.left}
+        lines={5}
+      />
       {linePaths.map((line) => (
         <path
           key={line.key}
@@ -1168,7 +1284,9 @@ function MultiLineChart({ rows, lines, showDates = false }: { rows: ChartRow[]; 
           strokeDasharray={line.dashed ? "7 6" : undefined}
         />
       ))}
-      {showDates ? <DateLabels rows={filtered} width={width} height={height} padLeft={pad.left} padRight={pad.right} /> : null}
+      {showDates ? (
+        <DateLabels rows={filtered} width={width} height={height} padLeft={pad.left} padRight={pad.right} />
+      ) : null}
     </svg>
   );
 }
@@ -1219,21 +1337,52 @@ function GridLines({
     <>
       {Array.from({ length: lines + 1 }).map((_, i) => {
         const y = padTop + (i / lines) * (height - padTop - padBottom);
-        return <line key={i} x1={padLeft} y1={y} x2={width - padRight} y2={y} stroke="#e2e8f0" strokeWidth="1" />;
+        return (
+          <line
+            key={i}
+            x1={padLeft}
+            y1={y}
+            x2={width - padRight}
+            y2={y}
+            stroke="#e2e8f0"
+            strokeWidth="1"
+          />
+        );
       })}
     </>
   );
 }
 
-function DateLabels({ rows, width, height, padLeft, padRight }: { rows: ChartRow[]; width: number; height: number; padLeft: number; padRight: number }) {
+function DateLabels({
+  rows,
+  width,
+  height,
+  padLeft,
+  padRight,
+}: {
+  rows: ChartRow[];
+  width: number;
+  height: number;
+  padLeft: number;
+  padRight: number;
+}) {
   const indexes = getLabelIndexes(rows.length, 5);
 
   return (
     <>
       {indexes.map((index) => {
-        const x = rows.length === 1 ? width / 2 : padLeft + (index / (rows.length - 1)) * (width - padLeft - padRight);
+        const x =
+          rows.length === 1
+            ? width / 2
+            : padLeft + (index / (rows.length - 1)) * (width - padLeft - padRight);
         return (
-          <text key={`${rows[index]?.date}-${index}`} x={x} y={height - 14} textAnchor="middle" className="chart-date-label">
+          <text
+            key={`${rows[index]?.date}-${index}`}
+            x={x}
+            y={height - 14}
+            textAnchor="middle"
+            className="chart-date-label"
+          >
             {formatDateLabel(rows[index]?.date)}
           </text>
         );
@@ -1268,7 +1417,11 @@ function buildPath(points: Array<{ x: number; y: number; v: number | null | unde
   return d;
 }
 
-function isValidPoint(point: { x: number; y: number; v: number | null | undefined }): point is { x: number; y: number; v: number } {
+function isValidPoint(point: {
+  x: number;
+  y: number;
+  v: number | null | undefined;
+}): point is { x: number; y: number; v: number } {
   return typeof point.v === "number" && !Number.isNaN(point.v);
 }
 
@@ -1294,12 +1447,10 @@ function buildVolumeProfile(rows: ChartRow[], bucketCount: number) {
     buckets[index].volume += volume;
   });
 
-  return buckets
-    .reverse()
-    .map((bucket) => ({
-      label: `${formatShortPrice(bucket.low)}~${formatShortPrice(bucket.high)}`,
-      volume: bucket.volume,
-    }));
+  return buckets.reverse().map((bucket) => ({
+    label: `${formatShortPrice(bucket.low)}~${formatShortPrice(bucket.high)}`,
+    volume: bucket.volume,
+  }));
 }
 
 function getLabelIndexes(length: number, count: number) {
@@ -1352,8 +1503,7 @@ function getSupplyAnalysis(data: StockResponse | null, rows: ChartRow[]) {
       ? ((latest.close - before5.close) / before5.close) * 100
       : null;
 
-  const macdPositive =
-    latest?.macd != null && latest?.signal != null && latest.macd > latest.signal;
+  const macdPositive = latest?.macd != null && latest?.signal != null && latest.macd > latest.signal;
   const macdNearCross =
     latest?.macd != null &&
     latest?.signal != null &&
@@ -1375,19 +1525,9 @@ function getSupplyAnalysis(data: StockResponse | null, rows: ChartRow[]) {
 
   let divergenceView = "조건 미충족";
 
-  if (
-    fiveDayReturn != null &&
-    fiveDayReturn < 0 &&
-    (latest?.rsi14 ?? 100) <= 35 &&
-    recent5Smart > 0
-  ) {
+  if (fiveDayReturn != null && fiveDayReturn < 0 && (latest?.rsi14 ?? 100) <= 35 && recent5Smart > 0) {
     divergenceView = "수급 다이버전스 후보";
-  } else if (
-    fiveDayReturn != null &&
-    fiveDayReturn < 0 &&
-    recent5Smart > 0 &&
-    macdNearCross
-  ) {
+  } else if (fiveDayReturn != null && fiveDayReturn < 0 && recent5Smart > 0 && macdNearCross) {
     divergenceView = "MACD 전환 전 수급 유입";
   }
 
@@ -1518,6 +1658,11 @@ function formatPercent(value?: number | null) {
   return `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
+function formatNullablePercent(value?: number | null) {
+  if (value == null || Number.isNaN(value)) return "데이터 준비 중";
+  return `${value.toFixed(2)}%`;
+}
+
 function formatUpside(value?: number | null) {
   if (value == null || Number.isNaN(value)) return "데이터 없음";
   return `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
@@ -1531,6 +1676,35 @@ function formatTargetProgress(value?: number | null) {
 function formatWeight(value?: number | null) {
   if (value == null || Number.isNaN(value)) return "데이터 없음";
   return `${(value * 100).toFixed(1)}%`;
+}
+
+function formatMarketCap(value?: number | null) {
+  if (value == null || Number.isNaN(value)) return "데이터 준비 중";
+
+  if (value >= 1_0000_0000_0000) {
+    return `${(value / 1_0000_0000_0000).toFixed(2)}조`;
+  }
+
+  if (value >= 1_0000_0000) {
+    return `${(value / 1_0000_0000).toFixed(2)}억`;
+  }
+
+  return formatNumber(value);
+}
+
+function formatRatio(value?: number | null, suffix = "") {
+  if (value == null || Number.isNaN(value)) return "데이터 준비 중";
+  return `${value.toFixed(2)}${suffix}`;
+}
+
+function formatCurrencyValue(value?: number | null) {
+  if (value == null || Number.isNaN(value)) return "데이터 준비 중";
+  return formatNumber(value);
+}
+
+function formatShares(value?: number | null) {
+  if (value == null || Number.isNaN(value)) return "데이터 준비 중";
+  return formatCompactNumber(value);
 }
 
 function formatDateLabel(date?: string) {
