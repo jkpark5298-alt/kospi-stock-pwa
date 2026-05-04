@@ -9,7 +9,10 @@ import {
   simpleForecast,
   sma,
 } from "@/lib/indicators";
-import { getKisInvestorSummary } from "@/lib/kis";
+import {
+  getKisInvestorSummary,
+  getKisStockFundamentals,
+} from "@/lib/kis";
 import { calculateCompositeScore } from "@/lib/score";
 
 export const runtime = "nodejs";
@@ -39,6 +42,19 @@ type ChartDataRow = {
   bbLower: number | null;
   volume: number;
   obv: number | null;
+};
+
+type FundamentalsData = {
+  marketCap: number | null;
+  per: number | null;
+  pbr: number | null;
+  eps: number | null;
+  bps: number | null;
+  dividendYield: number | null;
+  foreignOwnershipRate: number | null;
+  sharesOutstanding: number | null;
+  high52w: number | null;
+  low52w: number | null;
 };
 
 type SupplyData = {
@@ -85,6 +101,19 @@ const KNOWN_KOREAN_STOCK_NAMES: Record<string, string> = {
   "105560.KS": "KB금융",
   "055550.KS": "신한지주",
   "^KS11": "코스피 지수",
+};
+
+const EMPTY_FUNDAMENTALS: FundamentalsData = {
+  marketCap: null,
+  per: null,
+  pbr: null,
+  eps: null,
+  bps: null,
+  dividendYield: null,
+  foreignOwnershipRate: null,
+  sharesOutstanding: null,
+  high52w: null,
+  low52w: null,
 };
 
 export async function GET(req: NextRequest) {
@@ -359,6 +388,7 @@ export async function GET(req: NextRequest) {
 
     const stockMeta = await getStockMeta(symbol, chartMeta);
     const supply = await getSupplyData(symbol);
+    const fundamentals = await getFundamentalsData(symbol);
 
     const score = calculateCompositeScore({
       rows: chartData,
@@ -398,6 +428,7 @@ export async function GET(req: NextRequest) {
       chartData,
       forecast,
       fearGreed,
+      fundamentals,
       supply,
       score,
       cached: false,
@@ -423,19 +454,6 @@ export async function GET(req: NextRequest) {
         changePrice,
         changeRate: change,
         signalSummary,
-      },
-
-      fundamentals: {
-        marketCap: null,
-        per: null,
-        pbr: null,
-        eps: null,
-        bps: null,
-        dividendYield: null,
-        foreignOwnershipRate: null,
-        sharesOutstanding: null,
-        high52w: null,
-        low52w: null,
       },
 
       technical: {
@@ -470,7 +488,7 @@ export async function GET(req: NextRequest) {
         warning: null,
         updatedAt: new Date().toISOString(),
         range,
-        source: "Yahoo Finance chart + KIS investor summary",
+        source: "Yahoo Finance chart + KIS investor summary + KIS fundamentals",
       },
     };
 
@@ -540,6 +558,28 @@ async function getSupplyData(symbol: string): Promise<SupplyData> {
           ? `한투 수급 데이터를 불러오지 못했습니다: ${error.message}`
           : "한투 수급 데이터를 불러오지 못했습니다.",
     };
+  }
+}
+
+async function getFundamentalsData(symbol: string): Promise<FundamentalsData> {
+  try {
+    const fundamentals = await getKisStockFundamentals(symbol);
+
+    return {
+      marketCap: fundamentals.marketCap,
+      per: fundamentals.per,
+      pbr: fundamentals.pbr,
+      eps: fundamentals.eps,
+      bps: fundamentals.bps,
+      dividendYield: fundamentals.dividendYield,
+      foreignOwnershipRate: fundamentals.foreignOwnershipRate,
+      sharesOutstanding: fundamentals.sharesOutstanding,
+      high52w: fundamentals.high52w,
+      low52w: fundamentals.low52w,
+    };
+  } catch (error) {
+    console.warn("KIS fundamentals unavailable:", error);
+    return EMPTY_FUNDAMENTALS;
   }
 }
 

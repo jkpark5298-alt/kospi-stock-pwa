@@ -18,6 +18,25 @@ type KisCurrentPriceOutput = {
   hts_kor_isnm?: string;
   stck_shrn_iscd?: string;
   rprs_mrkt_kor_name?: string;
+
+  hts_avls?: string;
+  avls?: string;
+  lstn_stcn?: string;
+  stck_sdpr?: string;
+  per?: string;
+  pbr?: string;
+  eps?: string;
+  bps?: string;
+  w52_hgpr?: string;
+  w52_lwpr?: string;
+  frgn_hldn_qty?: string;
+  frgn_ntby_qty?: string;
+  frgn_hldn_rt?: string;
+  hts_frgn_ehrt?: string;
+  dvyd?: string;
+  dvd_yld?: string;
+
+  [key: string]: string | number | null | undefined;
 };
 
 type KisApiResponse<T> = {
@@ -38,6 +57,20 @@ type KisCurrentPrice = {
   changeRate: number | null;
   accumulatedVolume: number | null;
   accumulatedTradingValue: number | null;
+  raw: KisCurrentPriceOutput;
+};
+
+export type KisStockFundamentals = {
+  marketCap: number | null;
+  per: number | null;
+  pbr: number | null;
+  eps: number | null;
+  bps: number | null;
+  dividendYield: number | null;
+  foreignOwnershipRate: number | null;
+  sharesOutstanding: number | null;
+  high52w: number | null;
+  low52w: number | null;
   raw: KisCurrentPriceOutput;
 };
 
@@ -270,6 +303,71 @@ export async function getKisCurrentPrice(
   };
 }
 
+export async function getKisStockFundamentals(
+  inputSymbol: string
+): Promise<KisStockFundamentals> {
+  const code = normalizeDomesticStockCode(inputSymbol);
+
+  if (!code) {
+    throw new Error("종목코드가 비어 있습니다.");
+  }
+
+  const { json } = await kisFetchJson<KisCurrentPriceOutput>({
+    path: "/uapi/domestic-stock/v1/quotations/inquire-price",
+    trId: "FHKST01010100",
+    params: {
+      FID_COND_MRKT_DIV_CODE: "J",
+      FID_INPUT_ISCD: code,
+    },
+  });
+
+  const output = json.output;
+
+  if (!output) {
+    throw new Error("한투 현재가 응답에 output이 없습니다.");
+  }
+
+  const rawMarketCap = pickNumber(output, [
+    "hts_avls",
+    "avls",
+    "mrkt_tot_amt",
+    "market_cap",
+  ]);
+
+  const sharesOutstanding = pickNumber(output, [
+    "lstn_stcn",
+    "shares_outstanding",
+  ]);
+
+  const currentPrice = pickNumber(output, ["stck_prpr"]);
+
+  const calculatedMarketCap =
+    rawMarketCap != null
+      ? normalizeMarketCap(rawMarketCap)
+      : sharesOutstanding != null && currentPrice != null
+        ? sharesOutstanding * currentPrice
+        : null;
+
+  return {
+    marketCap: calculatedMarketCap,
+    per: pickNumber(output, ["per", "PER"]),
+    pbr: pickNumber(output, ["pbr", "PBR"]),
+    eps: pickNumber(output, ["eps", "EPS"]),
+    bps: pickNumber(output, ["bps", "BPS"]),
+    dividendYield: pickNumber(output, ["dvyd", "dvd_yld", "dividend_yield"]),
+    foreignOwnershipRate: pickNumber(output, [
+      "frgn_hldn_rt",
+      "hts_frgn_ehrt",
+      "foreign_hold_rate",
+      "frgn_ownr_rate",
+    ]),
+    sharesOutstanding,
+    high52w: pickNumber(output, ["w52_hgpr", "high_52w", "w52_hgst_prpr"]),
+    low52w: pickNumber(output, ["w52_lwpr", "low_52w", "w52_lwst_prpr"]),
+    raw: output,
+  };
+}
+
 export async function getKisInvestorSummary(
   inputSymbol: string
 ): Promise<KisInvestorSummary> {
@@ -386,7 +484,7 @@ function hasAnyInvestorValue(row: KisInvestorRow) {
   ].some((value) => value != null);
 }
 
-function pickString(row: KisInvestorRawRow, keys: string[]) {
+function pickString(row: Record<string, unknown>, keys: string[]) {
   for (const key of keys) {
     const value = row[key];
     if (value != null && value !== "") return String(value);
@@ -395,9 +493,19 @@ function pickString(row: KisInvestorRawRow, keys: string[]) {
   return "";
 }
 
-function pickNumber(row: KisInvestorRawRow, keys: string[]) {
+function pickNumber(row: Record<string, unknown>, keys: string[]) {
   for (const key of keys) {
     const value = row[key];
+
+    if (
+      typeof value !== "string" &&
+      typeof value !== "number" &&
+      value !== null &&
+      value !== undefined
+    ) {
+      continue;
+    }
+
     const parsed = toNumberOrNull(value);
     if (parsed != null) return parsed;
   }
@@ -410,6 +518,18 @@ function normalizeKisDate(value: string) {
 
   if (raw.length === 8) {
     return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
+  }
+
+  return value;
+}
+
+function normalizeMarketCap(value: number) {
+  /**
+   * KIS hts_avls는 억원 단위로 내려오는 경우가 많습니다.
+   * 예: 13,592,598억 원 = 1,359.2598조 원
+   */
+  if (value > 0 && value < 1_0000_0000) {
+    return value * 100_000_000;
   }
 
   return value;
