@@ -57,6 +57,33 @@ type Fundamentals = {
   low52w: number | null;
 };
 
+type QuantScorePart = {
+  score: number;
+  maxScore: number;
+  label: string;
+  reasons: string[];
+};
+
+type QuantModelResult = {
+  available: boolean;
+  total: number | null;
+  grade: string;
+  action: string;
+  summary: string;
+  momentum: QuantScorePart;
+  valuation: QuantScorePart;
+  supply: QuantScorePart;
+  risk: QuantScorePart;
+  target: QuantScorePart;
+  flags: {
+    nearHigh52w: boolean;
+    valuationBurden: boolean;
+    targetAlmostReached: boolean;
+    supplyPositive: boolean;
+    momentumPositive: boolean;
+  };
+};
+
 type ScorePart = {
   available: boolean;
   score: number | null;
@@ -137,6 +164,7 @@ type StockResponse = {
   fundamentals?: Fundamentals;
   supply?: SupplyData;
   score?: CompositeScore;
+  quant?: QuantModelResult;
   cached?: boolean;
   cacheSource?: string;
   warning?: string;
@@ -254,18 +282,27 @@ export default function HomePage() {
   }
 
   const chartData = data?.chartData ?? [];
+
   const recentRows = useMemo(() => chartData.slice(-10).reverse(), [chartData]);
+
   const latestRow = useMemo(
     () => (chartData.length ? chartData[chartData.length - 1] : null),
     [chartData]
   );
+
   const previousRow = useMemo(
     () => (chartData.length > 1 ? chartData[chartData.length - 2] : null),
     [chartData]
   );
 
   const obvTrend = getObvTrend(latestRow?.obv, previousRow?.obv);
-  const bbStatus = getBollingerStatus(latestRow?.close, latestRow?.bbUpper, latestRow?.bbLower);
+
+  const bbStatus = getBollingerStatus(
+    latestRow?.close,
+    latestRow?.bbUpper,
+    latestRow?.bbLower
+  );
+
   const supplyAnalysis = getSupplyAnalysis(data, chartData);
 
   return (
@@ -374,6 +411,8 @@ export default function HomePage() {
         </section>
 
         <ScoreSection score={data?.score} />
+
+        <QuantModelSection quant={data?.quant} />
 
         <TargetPriceSection score={data?.score} />
 
@@ -598,10 +637,12 @@ export default function HomePage() {
 
 function CurrentStockSummaryCard({ data }: { data: StockResponse | null }) {
   const range = data?.score?.targetPrice?.technicalTargetRange;
+
   const targetProgress =
     range && range.baseTarget > 0
       ? Number(((range.currentPrice / range.baseTarget) * 100).toFixed(1))
       : null;
+
   const upsidePrice = range ? Number((range.baseTarget - range.currentPrice).toFixed(2)) : null;
 
   const displaySymbol = data?.symbol || "데이터 없음";
@@ -633,6 +674,14 @@ function CurrentStockSummaryCard({ data }: { data: StockResponse | null }) {
           }
         />
         <MetricRow
+          label="퀀트 점수"
+          value={
+            data?.quant?.total != null
+              ? `${data.quant.total} / 100 · ${data.quant.grade}`
+              : "데이터 없음"
+          }
+        />
+        <MetricRow
           label="목표여력 점수"
           value={
             data?.score?.targetPrice?.score != null
@@ -656,6 +705,69 @@ function CurrentStockSummaryCard({ data }: { data: StockResponse | null }) {
         이 요약은 현재 화면의 기술·수급·목표여력 데이터를 한 번에 확인하기 위한 참고 정보입니다.
       </p>
     </Card>
+  );
+}
+
+function QuantModelSection({ quant }: { quant?: QuantModelResult }) {
+  return (
+    <section className="score-section">
+      <Card>
+        <div className="score-header">
+          <div>
+            <SectionTitleSmall>퀀트 모델 점수</SectionTitleSmall>
+            <p className="score-subtitle">
+              모멘텀·밸류에이션·수급·리스크·목표여력을 합산해 현재 구간을 판단합니다.
+            </p>
+          </div>
+          <div className="score-mode-badge">
+            {quant?.available ? quant.action : "데이터 대기"}
+          </div>
+        </div>
+
+        <div className="score-main-grid">
+          <div className="score-total-card">
+            <div className="score-total-label">퀀트 점수</div>
+            <div className="score-total-value">
+              {quant?.total != null ? `${quant.total}` : "-"}
+              <span>/ 100</span>
+            </div>
+            <div className={`score-grade ${getScoreGradeTone(quant?.total)}`}>
+              {quant?.grade || "데이터 대기"}
+            </div>
+          </div>
+
+          <div className="score-detail-grid">
+            <QuantPartCard title="모멘텀" part={quant?.momentum} />
+            <QuantPartCard title="밸류에이션" part={quant?.valuation} />
+            <QuantPartCard title="수급" part={quant?.supply} />
+            <QuantPartCard title="리스크" part={quant?.risk} />
+            <QuantPartCard title="목표여력" part={quant?.target} />
+          </div>
+        </div>
+
+        <div className="score-comment-box">
+          <span>판단 요약</span>
+          <strong>{quant?.summary || "분석 실행 후 퀀트 판단이 표시됩니다."}</strong>
+        </div>
+
+        <p className="notice-text">
+          퀀트 점수는 매수·매도 신호가 아니라 현재 가격 위치와 위험도를 함께 보기 위한 참고 지표입니다.
+        </p>
+      </Card>
+    </section>
+  );
+}
+
+function QuantPartCard({ title, part }: { title: string; part?: QuantScorePart }) {
+  const scoreText = part ? `${part.score} / ${part.maxScore}` : "대기";
+  const labelText = part?.label || "데이터 대기";
+
+  return (
+    <div className="score-part-card">
+      <span>{title}</span>
+      <strong>{scoreText}</strong>
+      <em>{labelText}</em>
+    </div>
   );
 }
 
@@ -784,10 +896,12 @@ function ScoreSection({ score }: { score?: CompositeScore }) {
 function TargetPriceSection({ score }: { score?: CompositeScore }) {
   const range = score?.targetPrice?.technicalTargetRange;
   const basis = score?.targetPrice?.targetBasis;
+
   const targetProgress =
     range && range.baseTarget > 0
       ? Number(((range.currentPrice / range.baseTarget) * 100).toFixed(1))
       : null;
+
   const upsidePrice = range ? Number((range.baseTarget - range.currentPrice).toFixed(2)) : null;
 
   return (
@@ -1060,12 +1174,14 @@ function MacdChart({ rows }: { rows: ChartRow[] }) {
     filtered.length === 1
       ? width / 2
       : pad.left + (i / (filtered.length - 1)) * (width - pad.left - pad.right);
+
   const y = (v: number) => pad.top + plotHeight - ((v - min) / range) * plotHeight;
   const zeroY = y(0);
 
   const macdPoints = filtered
     .map((r, i) => ({ x: x(i), y: y(r.macd ?? 0), v: r.macd }))
     .filter(isValidPoint);
+
   const signalPoints = filtered
     .map((r, i) => ({ x: x(i), y: y(r.signal ?? 0), v: r.signal }))
     .filter(isValidPoint);
@@ -1131,6 +1247,7 @@ function MacdChart({ rows }: { rows: ChartRow[] }) {
         {signalPoints.length > 0 && (
           <path d={buildPath(signalPoints)} fill="none" stroke="#ef4444" strokeWidth="3" />
         )}
+
         <DateLabels rows={filtered} width={width} height={height} padLeft={pad.left} padRight={pad.right} />
       </svg>
     </div>
@@ -1434,6 +1551,7 @@ function buildVolumeProfile(rows: ChartRow[], bucketCount: number) {
   const max = Math.max(...closes);
   const range = max - min || 1;
   const bucketSize = range / bucketCount;
+
   const buckets = Array.from({ length: bucketCount }).map((_, index) => {
     const low = min + bucketSize * index;
     const high = index === bucketCount - 1 ? max : min + bucketSize * (index + 1);
