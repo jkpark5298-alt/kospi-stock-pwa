@@ -247,11 +247,28 @@ export default function HomePage() {
     recordKisApiUsageFromResponse,
   } = useKisUsage();
   const {
-    predictionHistory,
-    handleSavePrediction,
-    handleClearCurrentSymbolPredictions,
-    handleClearAllPredictions,
-  } = usePredictionHistory(data, symbol);
+    records: predictionRecords,
+    loading: predictionLoading,
+    error: predictionError,
+    savePrediction,
+    clearCurrentSymbolPredictions,
+    clearAllPredictions,
+  } = usePredictionHistory(kisSyncCode);
+
+  async function handleSavePrediction() {
+    if (!data) return;
+    await savePrediction(data);
+  }
+
+  async function handleClearCurrentSymbolPredictions() {
+    if (!data?.symbol) return;
+    await clearCurrentSymbolPredictions(data.symbol);
+  }
+
+  async function handleClearAllPredictions() {
+    await clearAllPredictions();
+  }
+
 
 
   useEffect(() => {
@@ -509,7 +526,9 @@ export default function HomePage() {
 
         <PredictionDashboard
           data={data}
-          records={predictionHistory}
+          records={predictionRecords}
+          predictionLoading={predictionLoading}
+          predictionError={predictionError}
           lastFetchedAt={lastFetchedAt}
           kisRemainingCalls={kisRemainingCalls}
           kisSyncCode={kisSyncCode}
