@@ -25,6 +25,8 @@ import KisRemainingCard from "./KisRemainingCard";
 type Props = {
   data: StockResponse | null;
   records: PredictionRecord[];
+  predictionLoading: boolean;
+  predictionError: string;
   lastFetchedAt: string | null;
   kisRemainingCalls: number;
   kisSyncCode: string;
@@ -41,6 +43,8 @@ type Props = {
 export default function PredictionDashboard({
   data,
   records,
+  predictionLoading,
+  predictionError,
   lastFetchedAt,
   kisRemainingCalls,
   kisSyncCode,
@@ -77,11 +81,11 @@ export default function PredictionDashboard({
           <div>
             <SectionTitleSmall>예측 검증 대시보드</SectionTitleSmall>
             <p className="prediction-subtitle">
-              현재 예측값을 저장하고, 이후 실제 주가와 비교해 오차율과 방향성
+              현재 예측값을 Supabase에 저장하고, 이후 실제 주가와 비교해 오차율과 방향성
               적중률을 확인합니다.
             </p>
           </div>
-          <div className="prediction-badge">localStorage 1차 검증</div>
+          <div className="prediction-badge">Supabase 연동 검증</div>
         </div>
 
         <div className="prediction-save-card">
@@ -146,7 +150,12 @@ export default function PredictionDashboard({
           <div className="prediction-status-card prediction-management-card">
             <span>예측 기록 관리</span>
             <strong>저장 {overallStats.total}건</strong>
-            <em>테스트 중 기록을 초기화할 수 있습니다.</em>
+            <em>
+              {predictionLoading
+                ? "예측 기록 동기화 중입니다."
+                : "PC·아이폰 기록을 함께 관리합니다."}
+            </em>
+            {predictionError ? <small>{predictionError}</small> : null}
             <div className="prediction-management-actions">
               <button
                 type="button"
@@ -252,9 +261,8 @@ export default function PredictionDashboard({
         </div>
 
         <p className="notice-text">
-          1차 버전은 브라우저 저장소 기반입니다. PC와 아이폰 사이에 기록이 자동
-          동기화되지는 않습니다. 이후 GitHub/Vercel 배포가 안정화되면 DB 저장
-          구조로 확장하는 것이 좋습니다.
+          예측 기록은 Supabase에 저장됩니다. PC와 아이폰에서 같은 동기화 코드를
+          사용하면 저장 기록이 함께 표시됩니다.
         </p>
       </Card>
     </section>

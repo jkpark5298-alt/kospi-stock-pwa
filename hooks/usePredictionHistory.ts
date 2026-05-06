@@ -1,338 +1,299 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { StockResponse } from "../types/stock";
 import {
   PREDICTION_HORIZONS,
+  type PredictionHorizon,
   type PredictionRecord,
   type PredictionResult,
 } from "../types/prediction";
 
-const PREDICTION_HISTORY_KEY = "kospi-prediction-history";
-const MAX_PREDICTION_RECORDS = 80;
-
-function isPredictionRecord(value: unknown): value is PredictionRecord {
-  if (!value || typeof value !== "object") return false;
-  const record = value as PredictionRecord;
-  return (
-    typeof record.id === "string" &&
-    typeof record.symbol === "string" &&
-    typeof record.predictedAt === "string" &&
-    typeof record.currentPrice === "number" &&
-    !!record.results &&
-    typeof record.results === "object"
-  );
-}
+type PredictionsApiResponse = {
+  ok?: boolean;
+  records?: PredictionRecord[];
+  record?: PredictionRecord;
+  error?: string;
+};
 
 function normalizeSymbol(value?: string | null) {
   return (value || "").trim().toUpperCase();
 }
 
-function makePredictionResult(
-  expectedPrice: number | null | undefined,
+function addDays(date: Date, days: number) {
+  const nextDate = new Date(date);
+  nextDate.setDate(nextDate.getDate() + days);
+  return nextDate;
+}
+
+function roundPrice(value: number | null) {
+  if (value == null || !Number.isFinite(value)) return null;
+  return Math.round(value);
+}
+
+function createPredictionResult(
+  expectedPrice: number | null,
+  targetDate: string,
 ): PredictionResult {
   return {
-    expectedPrice:
-      typeof expectedPrice === "number" && !Number.isNaN(expectedPrice)
-        ? expectedPrice
-        : null,
+    expectedPrice,
+    targetDate,
     actualPrice: null,
     errorRate: null,
     directionHit: null,
-    verifiedAt: null,
   };
 }
 
-function makeInterpolatedPrice(
-  currentPrice: number | null,
-  targetPrice: number | null,
-  ratio: number,
-) {
-  if (currentPrice == null || targetPrice == null) return null;
-  if (Number.isNaN(currentPrice) || Number.isNaN(targetPrice)) return null;
-  return Number(
-    (currentPrice + (targetPrice - currentPrice) * ratio).toFixed(2),
-  );
-}
-
-function createPredictionPreview(
-  data: StockResponse | null,
-): Pick<PredictionRecord, "results"> {
+export function createPredictionPreview(data: StockResponse | null) {
+  const now = new Date();
   const currentPrice = data?.currentPrice ?? null;
-  const range = data?.score?.targetPrice?.technicalTargetRange;
-  const forecast = data?.forecast ?? [];
+  const targetRange = data?.score?.targetPrice?.technicalTargetRange;
+  const baseTarget = targetRange?.baseTarget ?? currentPrice;
+  const targetUpside =
+    currentPrice != null && baseTarget != null && currentPrice > 0
+      ? (baseTarget - currentPrice) / currentPrice
+      : 0;
 
-  const fallback5d = makeInterpolatedPrice(
-    currentPrice,
-    range?.baseTarget ?? null,
-    0.25,
+  const scoreAdjustment = ((data?.score?.total ?? 50) - 50) / 100;
+  const quantAdjustment = ((data?.quant?.total ?? 50) - 50) / 120;
+  const combinedMomentum = Math.max(
+    -0.18,
+    Math.min(0.18, targetUpside + scoreAdjustment + quantAdjustment),
   );
-  const fallback20d = makeInterpolatedPrice(
-    currentPrice,
-    range?.baseTarget ?? null,
-    0.65,
-  );
-  const fallback60d = makeInterpolatedPrice(
-    currentPrice,
-    range?.aggressiveTarget ?? range?.baseTarget ?? null,
-    1,
+
+  const results = PREDICTION_HORIZONS.reduce(
+    (acc, horizon) => {
+      const horizonRatio = horizon.days / 60;
+      const expectedPrice =
+        currentPrice == null
+          ? null
+          : roundPrice(currentPrice * (1 + combinedMomentum * horizonRatio));
+
+      acc[horizon.key] = createPredictionResult(
+        expectedPrice,
+        addDays(now, horizon.days).toISOString(),
+      );
+      return acc;
+    },
+    {} as Record<PredictionHorizon, PredictionResult>,
   );
 
   return {
-    results: {
-      "5d": makePredictionResult(forecast[4] ?? fallback5d),
-      "20d": makePredictionResult(forecast[19] ?? fallback20d),
-      "60d": makePredictionResult(forecast[59] ?? fallback60d),
-    },
+    currentPrice,
+    results,
   };
 }
 
 function createPredictionRecord(
-  data: StockResponse | null,
-): PredictionRecord | null {
-  if (
-    !data?.symbol ||
-    data.currentPrice == null ||
-    Number.isNaN(data.currentPrice)
-  ) {
-    return null;
-  }
-
-  const range = data.score?.targetPrice?.technicalTargetRange;
+  data: StockResponse,
+  syncCode: string,
+): PredictionRecord {
   const preview = createPredictionPreview(data);
-  const now = new Date().toISOString();
 
   return {
-    id: `${normalizeSymbol(data.symbol)}-${Date.now()}`,
+    id:
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    syncCode,
     symbol: normalizeSymbol(data.symbol),
-    name: data.name || normalizeSymbol(data.symbol),
-    predictedAt: now,
-    currentPrice: data.currentPrice,
-    conservativeTarget: range?.conservativeTarget ?? null,
-    baseTarget: range?.baseTarget ?? null,
-    aggressiveTarget: range?.aggressiveTarget ?? null,
-    riskLine: range?.riskLine ?? null,
-    totalScore: data.score?.total ?? null,
-    quantScore: data.quant?.total ?? null,
+    name: data.name || "",
+    predictedAt: new Date().toISOString(),
+    currentPrice: preview.currentPrice,
+    scoreTotal: data.score?.total ?? null,
+    quantTotal: data.quant?.total ?? null,
     results: preview.results,
   };
 }
 
-function differenceInCalendarDays(later: Date, earlier: Date) {
-  const startLater = new Date(
-    later.getFullYear(),
-    later.getMonth(),
-    later.getDate(),
-  ).getTime();
-  const startEarlier = new Date(
-    earlier.getFullYear(),
-    earlier.getMonth(),
-    earlier.getDate(),
-  ).getTime();
-  return Math.floor((startLater - startEarlier) / 86_400_000);
-}
-
-function updatePredictionHistoryWithActualPrice(
-  records: PredictionRecord[],
-  symbol: string,
-  actualPrice: number | null,
+async function requestPredictions(
+  syncCode: string,
+  options?: {
+    symbol?: string | null;
+    method?: "GET" | "POST" | "DELETE";
+    record?: PredictionRecord;
+    scope?: "symbol" | "all";
+  },
 ) {
-  if (!symbol || actualPrice == null || Number.isNaN(actualPrice)) {
-    return records;
-  }
+  const method = options?.method || "GET";
 
-  const normalizedSymbol = normalizeSymbol(symbol);
-  let changed = false;
-  const now = new Date();
+  if (method === "GET") {
+    const params = new URLSearchParams();
+    params.set("syncCode", syncCode);
+    if (options?.symbol) params.set("symbol", normalizeSymbol(options.symbol));
 
-  const next = records.map((record) => {
-    if (record.symbol !== normalizedSymbol) return record;
-
-    const predictedAt = new Date(record.predictedAt);
-    const daysPassed = differenceInCalendarDays(now, predictedAt);
-    const updatedResults = { ...record.results };
-    let recordChanged = false;
-
-    PREDICTION_HORIZONS.forEach((horizon) => {
-      const currentResult = updatedResults[horizon.key];
-      if (
-        !currentResult ||
-        currentResult.actualPrice != null ||
-        daysPassed < horizon.days
-      ) {
-        return;
-      }
-      if (currentResult.expectedPrice == null) return;
-
-      const expectedDirection =
-        currentResult.expectedPrice - record.currentPrice;
-      const actualDirection = actualPrice - record.currentPrice;
-      const directionHit =
-        expectedDirection === 0
-          ? Math.abs(actualDirection) < 0.0001
-          : expectedDirection * actualDirection > 0;
-      const errorRate =
-        actualPrice === 0
-          ? null
-          : Math.abs(
-              (actualPrice - currentResult.expectedPrice) / actualPrice,
-            ) * 100;
-
-      updatedResults[horizon.key] = {
-        ...currentResult,
-        actualPrice,
-        errorRate: errorRate == null ? null : Number(errorRate.toFixed(2)),
-        directionHit,
-        verifiedAt: now.toISOString(),
-      };
-      recordChanged = true;
-      changed = true;
+    const response = await fetch(`/api/predictions?${params.toString()}`, {
+      cache: "no-store",
     });
 
-    return recordChanged ? { ...record, results: updatedResults } : record;
+    const json = (await response.json()) as PredictionsApiResponse;
+
+    if (!response.ok || !json.ok) {
+      throw new Error(json.error || "예측 기록을 불러오지 못했습니다.");
+    }
+
+    return json;
+  }
+
+  const response = await fetch("/api/predictions", {
+    method,
+    cache: "no-store",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      syncCode,
+      record: options?.record,
+      symbol: options?.symbol,
+      scope: options?.scope,
+    }),
   });
 
-  return changed ? next : records;
+  const json = (await response.json()) as PredictionsApiResponse;
+
+  if (!response.ok || !json.ok) {
+    throw new Error(json.error || "예측 기록 요청에 실패했습니다.");
+  }
+
+  return json;
 }
 
-export function usePredictionHistory(
-  data: StockResponse | null,
-  inputSymbol: string,
-) {
-  const [predictionHistory, setPredictionHistory] = useState<
-    PredictionRecord[]
-  >([]);
-  const [predictionHistoryLoaded, setPredictionHistoryLoaded] = useState(false);
+export function usePredictionHistory(syncCode: string) {
+  const [records, setRecords] = useState<PredictionRecord[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const normalizedSyncCode = useMemo(() => syncCode.trim(), [syncCode]);
+
+  const refreshPredictions = useCallback(
+    async (symbol?: string | null) => {
+      if (!normalizedSyncCode) {
+        setRecords([]);
+        setError("");
+        return [];
+      }
+
+      setLoading(true);
+      setError("");
+
+      try {
+        const json = await requestPredictions(normalizedSyncCode, {
+          symbol,
+        });
+        const nextRecords = json.records || [];
+        setRecords(nextRecords);
+        return nextRecords;
+      } catch (requestError) {
+        const message =
+          requestError instanceof Error
+            ? requestError.message
+            : "예측 기록을 불러오지 못했습니다.";
+        setError(message);
+        return [];
+      } finally {
+        setLoading(false);
+      }
+    },
+    [normalizedSyncCode],
+  );
 
   useEffect(() => {
+    void refreshPredictions();
+  }, [refreshPredictions]);
+
+  async function savePrediction(data: StockResponse) {
+    if (!normalizedSyncCode) {
+      setError("동기화 코드 저장 후 예측 기록을 저장할 수 있습니다.");
+      return null;
+    }
+
+    const record = createPredictionRecord(data, normalizedSyncCode);
+    setLoading(true);
+    setError("");
+
     try {
-      const saved = window.localStorage.getItem(PREDICTION_HISTORY_KEY);
-
-      if (!saved) {
-        setPredictionHistoryLoaded(true);
-        return;
-      }
-
-      const parsed = JSON.parse(saved);
-
-      if (Array.isArray(parsed)) {
-        setPredictionHistory(parsed.filter(isPredictionRecord));
-      } else {
-        window.localStorage.removeItem(PREDICTION_HISTORY_KEY);
-      }
-    } catch {
-      window.localStorage.removeItem(PREDICTION_HISTORY_KEY);
+      const json = await requestPredictions(normalizedSyncCode, {
+        method: "POST",
+        record,
+      });
+      const savedRecord = json.record || record;
+      setRecords((prev) => [savedRecord, ...prev]);
+      return savedRecord;
+    } catch (requestError) {
+      const message =
+        requestError instanceof Error
+          ? requestError.message
+          : "예측 기록을 저장하지 못했습니다.";
+      setError(message);
+      return null;
     } finally {
-      setPredictionHistoryLoaded(true);
+      setLoading(false);
     }
-  }, []);
+  }
 
-  useEffect(() => {
-    if (!predictionHistoryLoaded) return;
+  async function clearCurrentSymbolPredictions(symbol: string) {
+    if (!normalizedSyncCode) {
+      setRecords([]);
+      return;
+    }
+
+    const normalizedSymbol = normalizeSymbol(symbol);
+    setLoading(true);
+    setError("");
 
     try {
-      if (predictionHistory.length > 0) {
-        window.localStorage.setItem(
-          PREDICTION_HISTORY_KEY,
-          JSON.stringify(predictionHistory.slice(0, MAX_PREDICTION_RECORDS)),
-        );
-      } else {
-        window.localStorage.removeItem(PREDICTION_HISTORY_KEY);
-      }
-    } catch {
-      // localStorage 접근이 막힌 환경에서는 조용히 무시합니다.
-    }
-  }, [predictionHistory, predictionHistoryLoaded]);
-
-  useEffect(() => {
-    if (!data?.symbol || data.currentPrice == null) return;
-
-    setPredictionHistory((prev) =>
-      updatePredictionHistoryWithActualPrice(
-        prev,
-        data.symbol || "",
-        data.currentPrice ?? null,
-      ),
-    );
-  }, [data?.symbol, data?.currentPrice]);
-
-  function handleSavePrediction() {
-    const record = createPredictionRecord(data);
-
-    if (!record) {
-      alert("예측값을 저장하려면 먼저 종목 분석을 완료해 주세요.");
-      return;
-    }
-
-    setPredictionHistory((prev) => {
-      const duplicated = prev.some(
-        (item) =>
-          item.symbol === record.symbol &&
-          new Date(item.predictedAt).toDateString() ===
-            new Date(record.predictedAt).toDateString(),
+      await requestPredictions(normalizedSyncCode, {
+        method: "DELETE",
+        symbol: normalizedSymbol,
+        scope: "symbol",
+      });
+      setRecords((prev) =>
+        prev.filter((record) => record.symbol !== normalizedSymbol),
       );
-
-      if (duplicated) {
-        alert("오늘 이미 이 종목의 예측값을 저장했습니다.");
-        return prev;
-      }
-
-      alert(
-        "현재 예측값을 저장했습니다. 같은 종목을 며칠 뒤 다시 분석하면 실제 주가와 자동 비교됩니다.",
-      );
-      return [record, ...prev].slice(0, MAX_PREDICTION_RECORDS);
-    });
+    } catch (requestError) {
+      const message =
+        requestError instanceof Error
+          ? requestError.message
+          : "예측 기록을 삭제하지 못했습니다.";
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
   }
 
-  function handleClearCurrentSymbolPredictions() {
-    const normalizedSymbol = normalizeSymbol(data?.symbol || inputSymbol);
-
-    if (!normalizedSymbol) {
-      alert("삭제할 종목을 먼저 분석하거나 종목 코드를 입력해 주세요.");
+  async function clearAllPredictions() {
+    if (!normalizedSyncCode) {
+      setRecords([]);
       return;
     }
 
-    const hasRecords = predictionHistory.some(
-      (record) => record.symbol === normalizedSymbol,
-    );
+    setLoading(true);
+    setError("");
 
-    if (!hasRecords) {
-      alert("현재 종목에 저장된 예측 기록이 없습니다.");
-      return;
+    try {
+      await requestPredictions(normalizedSyncCode, {
+        method: "DELETE",
+        scope: "all",
+      });
+      setRecords([]);
+    } catch (requestError) {
+      const message =
+        requestError instanceof Error
+          ? requestError.message
+          : "예측 기록을 삭제하지 못했습니다.";
+      setError(message);
+    } finally {
+      setLoading(false);
     }
-
-    if (!window.confirm(`${normalizedSymbol} 예측 기록을 삭제할까요?`)) {
-      return;
-    }
-
-    setPredictionHistory((prev) =>
-      prev.filter((record) => record.symbol !== normalizedSymbol),
-    );
-  }
-
-  function handleClearAllPredictions() {
-    if (predictionHistory.length === 0) {
-      alert("삭제할 예측 기록이 없습니다.");
-      return;
-    }
-
-    if (
-      !window.confirm(
-        "모든 종목의 예측 기록을 삭제할까요? 이 작업은 되돌릴 수 없습니다.",
-      )
-    ) {
-      return;
-    }
-
-    setPredictionHistory([]);
   }
 
   return {
-    predictionHistory,
-    handleSavePrediction,
-    handleClearCurrentSymbolPredictions,
-    handleClearAllPredictions,
+    records,
+    loading,
+    error,
+    refreshPredictions,
+    savePrediction,
+    clearCurrentSymbolPredictions,
+    clearAllPredictions,
   };
 }
-
-export { createPredictionPreview };
