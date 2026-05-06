@@ -167,6 +167,33 @@ export async function createPredictionRecord(record: PredictionRecord) {
   return mapRowToRecord(inserted);
 }
 
+export async function updatePredictionRecordResults(
+  recordId: string,
+  results: Record<PredictionHorizon, PredictionResult>,
+) {
+  const response = await supabaseFetch(
+    `/prediction_records?id=eq.${encodeURIComponent(recordId)}&select=*`,
+    {
+      method: "PATCH",
+      headers: {
+        Prefer: "return=representation",
+      },
+      body: JSON.stringify({
+        results,
+      }),
+    },
+  );
+
+  const rows = (await response.json()) as PredictionRecordRow[];
+  const updated = rows[0];
+
+  if (!updated) {
+    throw new Error("예측 기록 업데이트 결과가 비어 있습니다.");
+  }
+
+  return mapRowToRecord(updated);
+}
+
 export async function deletePredictionRecords(
   syncCode: string,
   symbol?: string | null,

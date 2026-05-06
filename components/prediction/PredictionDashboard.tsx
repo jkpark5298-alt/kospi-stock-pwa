@@ -36,6 +36,7 @@ type Props = {
   onKisSyncInputChange: (value: string) => void;
   onSaveKisSyncCode: () => void;
   onSavePrediction: () => void;
+  onVerifyPredictions: () => void;
   onClearCurrentSymbol: () => void;
   onClearAll: () => void;
 };
@@ -54,6 +55,7 @@ export default function PredictionDashboard({
   onKisSyncInputChange,
   onSaveKisSyncCode,
   onSavePrediction,
+  onVerifyPredictions,
   onClearCurrentSymbol,
   onClearAll,
 }: Props) {
@@ -157,6 +159,13 @@ export default function PredictionDashboard({
             </em>
             {predictionError ? <small>{predictionError}</small> : null}
             <div className="prediction-management-actions">
+              <button
+                type="button"
+                className="button primary-button prediction-manage-button"
+                onClick={onVerifyPredictions}
+              >
+                예측 기록 검증하기
+              </button>
               <button
                 type="button"
                 className="button secondary-button prediction-manage-button"

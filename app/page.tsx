@@ -251,6 +251,7 @@ export default function HomePage() {
     loading: predictionLoading,
     error: predictionError,
     savePrediction,
+    verifyPredictions,
     clearCurrentSymbolPredictions,
     clearAllPredictions,
   } = usePredictionHistory(kisSyncCode);
@@ -258,6 +259,10 @@ export default function HomePage() {
   async function handleSavePrediction() {
     if (!data) return;
     await savePrediction(data);
+  }
+
+  async function handleVerifyPredictions() {
+    await verifyPredictions();
   }
 
   async function handleClearCurrentSymbolPredictions() {
@@ -538,6 +543,7 @@ export default function HomePage() {
           onKisSyncInputChange={setKisSyncInput}
           onSaveKisSyncCode={saveKisSyncCode}
           onSavePrediction={handleSavePrediction}
+          onVerifyPredictions={handleVerifyPredictions}
           onClearCurrentSymbol={handleClearCurrentSymbolPredictions}
           onClearAll={handleClearAllPredictions}
         />

@@ -13,6 +13,8 @@ type PredictionsApiResponse = {
   ok?: boolean;
   records?: PredictionRecord[];
   record?: PredictionRecord;
+  updatedRecords?: PredictionRecord[];
+  verifiedCount?: number;
   error?: string;
 };
 
@@ -158,6 +160,27 @@ async function requestPredictions(
   return json;
 }
 
+async function requestPredictionVerification(syncCode: string) {
+  const response = await fetch("/api/predictions/verify", {
+    method: "POST",
+    cache: "no-store",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      syncCode,
+    }),
+  });
+
+  const json = (await response.json()) as PredictionsApiResponse;
+
+  if (!response.ok || !json.ok) {
+    throw new Error(json.error || "예측 기록 검증에 실패했습니다.");
+  }
+
+  return json;
+}
+
 export function usePredictionHistory(syncCode: string) {
   const [records, setRecords] = useState<PredictionRecord[]>([]);
   const [loading, setLoading] = useState(false);
@@ -231,6 +254,31 @@ export function usePredictionHistory(syncCode: string) {
     }
   }
 
+  async function verifyPredictions() {
+    if (!normalizedSyncCode) {
+      setError("동기화 코드 저장 후 예측 기록을 검증할 수 있습니다.");
+      return [];
+    }
+
+    setLoading(true);
+    setError("");
+
+    try {
+      const json = await requestPredictionVerification(normalizedSyncCode);
+      await refreshPredictions();
+      return json.updatedRecords || [];
+    } catch (requestError) {
+      const message =
+        requestError instanceof Error
+          ? requestError.message
+          : "예측 기록을 검증하지 못했습니다.";
+      setError(message);
+      return [];
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function clearCurrentSymbolPredictions(symbol: string) {
     if (!normalizedSyncCode) {
       setRecords([]);
@@ -293,6 +341,7 @@ export function usePredictionHistory(syncCode: string) {
     error,
     refreshPredictions,
     savePrediction,
+    verifyPredictions,
     clearCurrentSymbolPredictions,
     clearAllPredictions,
   };
