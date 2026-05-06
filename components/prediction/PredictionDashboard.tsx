@@ -16,6 +16,7 @@ import {
   formatHitRate,
   formatNumber,
   formatPercent,
+  formatPrice,
   formatScoreValue,
   formatSignedNumber,
 } from "../../utils/format";
@@ -80,14 +81,8 @@ export default function PredictionDashboard({
           </div>
 
           <div className="prediction-save-grid">
-            <MetricRow
-              label="현재가"
-              value={formatPrice(data?.currentPrice)}
-            />
-            <MetricRow
-              label="기준 목표가"
-              value={formatPrice(range?.baseTarget)}
-            />
+            <MetricRow label="현재가" value={formatPrice(data?.currentPrice)} />
+            <MetricRow label="기준 목표가" value={formatPrice(range?.baseTarget)} />
             <MetricRow
               label="5일 예상가"
               value={formatPrice(preview.results["5d"].expectedPrice)}
@@ -100,14 +95,8 @@ export default function PredictionDashboard({
               label="60일 예상가"
               value={formatPrice(preview.results["60d"].expectedPrice)}
             />
-            <MetricRow
-              label="종합 점수"
-              value={formatScoreValue(data?.score?.total)}
-            />
-            <MetricRow
-              label="퀀트 점수"
-              value={formatScoreValue(data?.quant?.total)}
-            />
+            <MetricRow label="종합 점수" value={formatScoreValue(data?.score?.total)} />
+            <MetricRow label="퀀트 점수" value={formatScoreValue(data?.quant?.total)} />
           </div>
 
           <button
