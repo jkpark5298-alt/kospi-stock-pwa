@@ -1,4 +1,5 @@
 const SUPABASE_REST_PATH = "/rest/v1";
+
 export const KIS_DAILY_LIMIT = 100;
 
 type KisUsageRow = {
@@ -85,9 +86,9 @@ async function supabaseFetch(path: string, init?: RequestInit) {
 }
 
 function buildUsageFilter(syncCode: string, usageDate: string) {
-  return `sync_code=eq.${encodeURIComponent(syncCode)}&usage_date=eq.${encodeURIComponent(
-    usageDate,
-  )}`;
+  return `sync_code=eq.${encodeURIComponent(
+    syncCode,
+  )}&usage_date=eq.${encodeURIComponent(usageDate)}`;
 }
 
 export async function getKisUsage(syncCode: string) {
