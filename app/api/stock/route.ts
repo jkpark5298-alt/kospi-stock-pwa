@@ -15,6 +15,7 @@ import {
 } from "@/lib/kis";
 import { calculateQuantModel } from "@/lib/quant";
 import { calculateCompositeScore } from "@/lib/score";
+import { resolveStockSymbol } from "@/lib/stockDirectory";
 
 export const runtime = "nodejs";
 
@@ -92,6 +93,7 @@ const stockCache = new Map<string, CacheEntry>();
 
 const KNOWN_KOREAN_STOCK_NAMES: Record<string, string> = {
   "005930.KS": "삼성전자",
+  "194700.KQ": "노바렉스",
   "000660.KS": "SK하이닉스",
   "035420.KS": "NAVER",
   "035720.KS": "카카오",
@@ -119,7 +121,8 @@ const EMPTY_FUNDAMENTALS: FundamentalsData = {
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const symbol = (searchParams.get("symbol") || "005930.KS").trim();
+  const rawSymbol = (searchParams.get("symbol") || "005930.KS").trim();
+  const symbol = resolveStockSymbol(rawSymbol);
   const range = (searchParams.get("range") || "6mo").trim();
   const cacheKey = `${symbol}:${range}`;
 
@@ -163,7 +166,8 @@ export async function GET(req: NextRequest) {
           withCacheMeta(cached.data, {
             cached: true,
             cacheSource: "stale-memory",
-            warning: "외부 주가 서버가 요청을 제한하여 최근 저장 데이터로 표시 중입니다.",
+            warning:
+              "외부 주가 서버가 요청을 제한하여 최근 저장 데이터로 표시 중입니다.",
           })
         );
       }
@@ -176,6 +180,7 @@ export async function GET(req: NextRequest) {
           blocked: true,
           status: 429,
           symbol,
+          rawSymbol,
           meta: {
             cached: false,
             cacheSource: null,
@@ -196,6 +201,7 @@ export async function GET(req: NextRequest) {
           detail: text.slice(0, 500),
           status: res.status,
           symbol,
+          rawSymbol,
           meta: {
             cached: false,
             cacheSource: null,
@@ -229,6 +235,7 @@ export async function GET(req: NextRequest) {
           error: "외부 주가 서버 응답이 JSON 형식이 아닙니다.",
           detail: text.slice(0, 500),
           symbol,
+          rawSymbol,
           meta: {
             cached: false,
             cacheSource: null,
@@ -252,6 +259,7 @@ export async function GET(req: NextRequest) {
           error: "주가 데이터를 가져오지 못했습니다.",
           detail: errorInfo?.description || errorInfo?.code || "unknown error",
           symbol,
+          rawSymbol,
           meta: {
             cached: false,
             cacheSource: null,
@@ -303,6 +311,7 @@ export async function GET(req: NextRequest) {
           ok: false,
           error: "해당 종목 데이터를 찾지 못했습니다.",
           symbol,
+          rawSymbol,
           meta: {
             cached: false,
             cacheSource: null,
@@ -348,7 +357,9 @@ export async function GET(req: NextRequest) {
 
     const changePrice = Number((currentPrice - prevPrice).toFixed(2));
     const change =
-      prevPrice !== 0 ? Number(((changePrice / prevPrice) * 100).toFixed(2)) : 0;
+      prevPrice !== 0
+        ? Number(((changePrice / prevPrice) * 100).toFixed(2))
+        : 0;
 
     const latestSma20 = sma20[sma20.length - 1] ?? null;
     const latestSma60 = sma60[sma60.length - 1] ?? null;
@@ -410,7 +421,11 @@ export async function GET(req: NextRequest) {
 
     const targetProgress =
       targetRange && targetRange.baseTarget > 0
-        ? Number(((targetRange.currentPrice / targetRange.baseTarget) * 100).toFixed(1))
+        ? Number(
+            ((targetRange.currentPrice / targetRange.baseTarget) * 100).toFixed(
+              1
+            )
+          )
         : null;
 
     const upsidePrice = targetRange
@@ -424,6 +439,7 @@ export async function GET(req: NextRequest) {
        * 기존 화면 호환용 필드
        */
       symbol,
+      rawSymbol,
       name: stockMeta.name,
       exchange: stockMeta.exchange,
       currency: stockMeta.currency,
@@ -446,6 +462,7 @@ export async function GET(req: NextRequest) {
        */
       stock: {
         symbol,
+        rawSymbol,
         code: normalizedCode,
         name: stockMeta.name,
         exchange: stockMeta.exchange,
@@ -479,7 +496,8 @@ export async function GET(req: NextRequest) {
               riskLine: targetRange.riskLine,
               targetProgress,
               upsidePrice,
-              conservativeUpsidePercent: targetRange.conservativeUpsidePercent,
+              conservativeUpsidePercent:
+                targetRange.conservativeUpsidePercent,
               baseUpsidePercent: targetRange.baseUpsidePercent,
               aggressiveUpsidePercent: targetRange.aggressiveUpsidePercent,
               riskDownsidePercent: targetRange.riskDownsidePercent,
@@ -525,6 +543,7 @@ export async function GET(req: NextRequest) {
         error: "주가 데이터를 불러오지 못했습니다.",
         detail: error?.message || String(error),
         symbol,
+        rawSymbol,
         meta: {
           cached: false,
           cacheSource: null,
@@ -644,8 +663,9 @@ async function getStockMeta(symbol: string, chartMeta: any): Promise<StockMeta> 
         quote?.displayName ||
         fallbackName,
       exchange:
-        normalizeExchange(quote?.fullExchangeName || quote?.exchange || quote?.market) ||
-        fallbackExchange,
+        normalizeExchange(
+          quote?.fullExchangeName || quote?.exchange || quote?.market
+        ) || fallbackExchange,
       currency: quote?.currency || fallbackCurrency,
     };
   } catch {
