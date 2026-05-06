@@ -19,6 +19,13 @@ export type KisUsageResult = {
   limit: number;
 };
 
+function normalizeSupabaseUrl(value: string) {
+  return value
+    .trim()
+    .replace(/\/$/, "")
+    .replace(/\/rest\/v1$/, "");
+}
+
 function getSupabaseConfig() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -28,7 +35,7 @@ function getSupabaseConfig() {
   }
 
   return {
-    url: url.replace(/\/$/, ""),
+    url: normalizeSupabaseUrl(url),
     serviceRoleKey,
   };
 }
