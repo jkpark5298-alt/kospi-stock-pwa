@@ -1,60 +1,56 @@
-"use client";
+import { NextRequest, NextResponse } from "next/server";
+import {
+  bollingerBands,
+  makeFearGreedScore,
+  makeSignal,
+  macd,
+  obv,
+  rsi,
+  simpleForecast,
+  sma,
+} from "@/lib/indicators";
+import {
+  getKisInvestorSummary,
+  getKisStockFundamentals,
+} from "@/lib/kis";
+import { calculateQuantModel } from "@/lib/quant";
+import { calculateCompositeScore } from "@/lib/score";
+import {
+  fallbackResolveStockSymbol,
+  resolveKrxStockSymbol,
+  type KrxStock,
+} from "@/lib/krxStocks";
 
-import { useEffect, useState, type ReactNode } from "react";
-import ChartAnalysisSections from "../components/chart/ChartAnalysisSections";
-import SupplySection from "../components/analysis/SupplySection";
-import CompositeScoreSection from "../components/analysis/CompositeScoreSection";
-import QuantScoreSection from "../components/analysis/QuantScoreSection";
-import TargetPriceSection from "../components/analysis/TargetPriceSection";
-import BasicInfoSection from "../components/stock/BasicInfoSection";
-import CurrentStockSummaryCard from "../components/stock/CurrentStockSummaryCard";
-import PredictionDashboard from "../components/prediction/PredictionDashboard";
-import { useKisUsage } from "../hooks/useKisUsage";
-import { usePredictionHistory } from "../hooks/usePredictionHistory";
+export const runtime = "nodejs";
 
-type ChartRow = {
+type CacheEntry = {
+  data: any;
+  expiresAt: number;
+};
+
+type StockMeta = {
+  name: string;
+  exchange: string;
+  currency: string;
+};
+
+type ChartDataRow = {
   date: string;
   close: number | null;
-  sma20?: number | null;
-  sma60?: number | null;
-  rsi14?: number | null;
-  macd?: number | null;
-  signal?: number | null;
-  histogram?: number | null;
-  bbUpper?: number | null;
-  bbMiddle?: number | null;
-  bbLower?: number | null;
-  volume?: number | null;
-  obv?: number | null;
+  sma20: number | null;
+  sma60: number | null;
+  rsi14: number | null;
+  macd: number | null;
+  signal: number | null;
+  histogram: number | null;
+  bbUpper: number | null;
+  bbMiddle: number | null;
+  bbLower: number | null;
+  volume: number;
+  obv: number | null;
 };
 
-type SupplySummary = {
-  individualNetBuy: number;
-  foreignNetBuy: number;
-  institutionNetBuy: number;
-  smartMoneyNetBuy: number;
-};
-
-type SupplyData = {
-  available: boolean;
-  warning?: string;
-  code?: string;
-  rowCount?: number;
-  recent5?: SupplySummary;
-  recent20?: SupplySummary;
-  foreignPositiveStreak5?: boolean;
-  institutionPositiveStreak5?: boolean;
-  smartMoneyPositiveStreak5?: boolean;
-  latestRows?: Array<{
-    date: string;
-    individualNetBuy: number | null;
-    foreignNetBuy: number | null;
-    institutionNetBuy: number | null;
-    programNetBuy: number | null;
-  }>;
-};
-
-type Fundamentals = {
+type FundamentalsData = {
   marketCap: number | null;
   per: number | null;
   pbr: number | null;
@@ -67,683 +63,712 @@ type Fundamentals = {
   low52w: number | null;
 };
 
-type QuantScorePart = {
-  score: number;
-  maxScore: number;
-  label: string;
-  reasons: string[];
-};
-
-type QuantModelResult = {
+type SupplyData = {
   available: boolean;
-  total: number | null;
-  grade: string;
-  action: string;
-  summary: string;
-  momentum: QuantScorePart;
-  valuation: QuantScorePart;
-  supply: QuantScorePart;
-  risk: QuantScorePart;
-  target: QuantScorePart;
-  flags: {
-    nearHigh52w: boolean;
-    valuationBurden: boolean;
-    targetAlmostReached: boolean;
-    supplyPositive: boolean;
-    momentumPositive: boolean;
-  };
-};
-
-type ScorePart = {
-  available: boolean;
-  score: number | null;
-  label: string;
-  reasons: string[];
-};
-
-type ScoreWeights = {
-  technical: number;
-  volume: number;
-  supply: number;
-  targetPrice: number;
-};
-
-type TargetPriceRange = {
-  currentPrice: number;
-  conservativeTarget: number;
-  baseTarget: number;
-  aggressiveTarget: number;
-  riskLine: number;
-  conservativeUpsidePercent: number;
-  baseUpsidePercent: number;
-  aggressiveUpsidePercent: number;
-  riskDownsidePercent: number;
-};
-
-type TargetBasisCandidate = {
-  label: string;
-  value: number;
-  weight: number;
-};
-
-type TargetBasis = {
-  method: string;
-  summary: string;
-  candidates: TargetBasisCandidate[];
-  adjustments: string[];
-};
-
-type ValuationTargetRange = {
-  epsTarget: number | null;
-  bpsTarget: number | null;
-  valuationTarget: number | null;
-  perAdjustment: number | null;
-  pbrAdjustment: number | null;
-  method: string;
-  reasons: string[];
-};
-
-type TargetMode = "conservative" | "base" | "aggressive";
-
-type QuantTargetAdjustment = {
-  mode: TargetMode;
-  baseAdjustmentPercent: number;
-  riskAdjustmentPercent: number;
-  positiveAdjustmentPercent: number;
-  totalAdjustmentPercent: number;
-  reasons: string[];
-};
-
-type TargetModeResult = {
-  mode: TargetMode;
-  label: string;
-  technicalWeight: number;
-  valuationWeight: number;
-  preAdjustmentTarget: number;
-  finalTarget: number;
-  upsidePercent: number;
-  quantAdjustment: QuantTargetAdjustment;
-};
-
-type CompositeScore = {
-  total: number | null;
-  grade: string;
-  comment: string;
-  technical: ScorePart;
-  volume: ScorePart;
-  supply: ScorePart;
-  targetPrice: ScorePart & {
-    technicalTargetRange: TargetPriceRange | null;
-    targetBasis: TargetBasis | null;
-    supplyAdjustedTarget: number | null;
-    consensusTarget: null;
-    riskLine: number | null;
-    valuationTargetRange?: ValuationTargetRange | null;
-    finalTargetRange?: TargetPriceRange | null;
-    selectedTargetMode?: TargetMode;
-    targetModes?: TargetModeResult[];
-  };
-  baseWeights: ScoreWeights;
-  appliedWeights: Partial<ScoreWeights>;
-  targetPricePlan: {
-    status: string;
-    nextSteps: string[];
-  };
-};
-
-type StockResponse = {
-  ok?: boolean;
-  symbol?: string;
-  name?: string;
-  exchange?: string;
-  currency?: string;
-  currentPrice?: number;
-  prevPrice?: number;
-  changePrice?: number;
-  change?: number;
-  signalSummary?: string;
-  chartData?: ChartRow[];
-  forecast?: number[];
-  fearGreed?: {
-    score: number;
-    label: string;
-  };
-  fundamentals?: Fundamentals;
-  supply?: SupplyData;
-  score?: CompositeScore;
-  quant?: QuantModelResult;
-  cached?: boolean;
-  cacheSource?: string;
   warning?: string;
-  blocked?: boolean;
-  error?: string;
-  detail?: string;
-  status?: number;
+  code?: string;
+  rowCount?: number;
+  recent5?: {
+    individualNetBuy: number;
+    foreignNetBuy: number;
+    institutionNetBuy: number;
+    smartMoneyNetBuy: number;
+  };
+  recent20?: {
+    individualNetBuy: number;
+    foreignNetBuy: number;
+    institutionNetBuy: number;
+    smartMoneyNetBuy: number;
+  };
+  foreignPositiveStreak5?: boolean;
+  institutionPositiveStreak5?: boolean;
+  smartMoneyPositiveStreak5?: boolean;
+  latestRows?: Array<{
+    date: string;
+    individualNetBuy: number | null;
+    foreignNetBuy: number | null;
+    institutionNetBuy: number | null;
+    programNetBuy: number | null;
+  }>;
 };
 
+const CACHE_TTL_MS = 5 * 60 * 1000;
+const stockCache = new Map<string, CacheEntry>();
 
-const DEFAULT_SYMBOL = "005930.KS";
-const DEFAULT_RANGE = "6mo";
-const WATCHLIST_KEY = "kospi-watchlist";
+const KNOWN_KOREAN_STOCK_NAMES: Record<string, string> = {
+  "005930.KS": "삼성전자",
+  "000660.KS": "SK하이닉스",
+  "035420.KS": "NAVER",
+  "035720.KS": "카카오",
+  "051910.KS": "LG화학",
+  "005380.KS": "현대차",
+  "000270.KS": "기아",
+  "068270.KS": "셀트리온",
+  "105560.KS": "KB금융",
+  "055550.KS": "신한지주",
+  "^KS11": "코스피 지수",
+};
 
+const EMPTY_FUNDAMENTALS: FundamentalsData = {
+  marketCap: null,
+  per: null,
+  pbr: null,
+  eps: null,
+  bps: null,
+  dividendYield: null,
+  foreignOwnershipRate: null,
+  sharesOutstanding: null,
+  high52w: null,
+  low52w: null,
+};
 
-export default function HomePage() {
-  const [symbol, setSymbol] = useState(DEFAULT_SYMBOL);
-  const [range, setRange] = useState(DEFAULT_RANGE);
-  const [watchlist, setWatchlist] = useState<string[]>([]);
-  const [watchlistLoaded, setWatchlistLoaded] = useState(false);
-  const [data, setData] = useState<StockResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [uiError, setUiError] = useState("");
-  const [lastFetchedAt, setLastFetchedAt] = useState<string | null>(null);
-  const {
-    kisRemainingCalls,
-    kisSyncCode,
-    kisSyncInput,
-    kisUsageLoading,
-    kisUsageError,
-    setKisSyncInput,
-    saveKisSyncCode,
-    recordKisApiUsageFromResponse,
-  } = useKisUsage();
-  const {
-    records: predictionRecords,
-    loading: predictionLoading,
-    error: predictionError,
-    savePrediction,
-    verifyPredictions,
-    clearCurrentSymbolPredictions,
-    clearAllPredictions,
-  } = usePredictionHistory(kisSyncCode);
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const rawSymbol = (searchParams.get("symbol") || "005930.KS").trim();
 
-  async function handleSavePrediction() {
-    if (!data) return;
-    await savePrediction(data);
-  }
+  const resolvedStock = await resolveKrxStockSymbol(rawSymbol);
+  const symbol = resolvedStock?.symbol || fallbackResolveStockSymbol(rawSymbol);
 
-  async function handleVerifyPredictions() {
-    await verifyPredictions();
-  }
+  const range = (searchParams.get("range") || "6mo").trim();
+  const cacheKey = `${symbol}:${range}`;
 
-  async function handleClearCurrentSymbolPredictions() {
-    if (!data?.symbol) return;
-    await clearCurrentSymbolPredictions(data.symbol);
-  }
+  const cached = stockCache.get(cacheKey);
 
-  async function handleClearAllPredictions() {
-    await clearAllPredictions();
-  }
-
-
-
-  useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem(WATCHLIST_KEY);
-
-      if (!saved) {
-        setWatchlistLoaded(true);
-        return;
-      }
-
-      const parsed = JSON.parse(saved);
-
-      if (Array.isArray(parsed)) {
-        const normalized = parsed
-          .filter((item) => typeof item === "string")
-          .map((item) => item.trim().toUpperCase())
-          .filter(Boolean);
-
-        setWatchlist(Array.from(new Set(normalized)));
-      } else {
-        window.localStorage.removeItem(WATCHLIST_KEY);
-      }
-    } catch {
-      window.localStorage.removeItem(WATCHLIST_KEY);
-    } finally {
-      setWatchlistLoaded(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!watchlistLoaded) return;
-
-    try {
-      if (watchlist.length > 0) {
-        window.localStorage.setItem(WATCHLIST_KEY, JSON.stringify(watchlist));
-      } else {
-        window.localStorage.removeItem(WATCHLIST_KEY);
-      }
-    } catch {
-      // localStorage 접근이 막힌 환경에서는 조용히 무시합니다.
-    }
-  }, [watchlist, watchlistLoaded]);
-
-  async function fetchStock(targetSymbol?: string, targetRange?: string) {
-    const finalSymbol = (targetSymbol ?? symbol).trim();
-    const finalRange = targetRange ?? range;
-
-    if (!finalSymbol) {
-      setUiError("종목 코드를 입력해 주세요.");
-      setData(null);
-      return;
-    }
-
-    setLoading(true);
-    setUiError("");
-
-    try {
-      const res = await fetch(
-        `/api/stock?symbol=${encodeURIComponent(finalSymbol)}&range=${encodeURIComponent(finalRange)}`,
-        { cache: "no-store" },
-      );
-
-      const json: StockResponse = await res.json();
-
-      if (!res.ok) {
-        setData(json);
-        if (json.blocked) {
-          setUiError(
-            "현재 주가 서버가 요청을 제한하고 있습니다. 잠시 후 다시 시도해 주세요.",
-          );
-        } else {
-          setUiError(json.error || "주가 데이터를 불러오지 못했습니다.");
-        }
-        return;
-      }
-
-      setData(json);
-      setLastFetchedAt(new Date().toISOString());
-      await recordKisApiUsageFromResponse(json);
-    } catch (error: unknown) {
-      setData(null);
-      setUiError(
-        error instanceof Error
-          ? error.message
-          : "주가 데이터를 불러오지 못했습니다.",
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function handleAnalyze() {
-    fetchStock();
-  }
-
-  function handleSaveWatchlist() {
-    const trimmed = symbol.trim().toUpperCase();
-
-    if (!trimmed) {
-      alert("저장할 종목 코드를 입력해 주세요.");
-      return;
-    }
-
-    setWatchlist((prev) => {
-      if (prev.includes(trimmed)) {
-        alert("이미 저장한 관심종목입니다.");
-        return prev;
-      }
-
-      return [...prev, trimmed];
-    });
-  }
-
-  function handleDeleteWatchlist(item: string) {
-    setWatchlist((prev) => prev.filter((v) => v !== item));
-  }
-
-  function handleSelectWatchlist(item: string) {
-    setSymbol(item);
-    fetchStock(item, range);
-  }
-
-  const chartData = data?.chartData ?? [];
-
-
-  return (
-    <main className="app-shell">
-      <div className="page-container">
-        <header className="hero">
-          <div>
-            <p className="eyebrow">KOSPI TECHNICAL DASHBOARD</p>
-            <h1 className="hero-title">KOSPI Stock PWA</h1>
-            <p className="hero-subtitle">
-              코스피 국내 주식 분석 + 관심종목 저장 + PWA 설치 지원
-            </p>
-          </div>
-          <div className="hero-badge">모바일 최적화</div>
-        </header>
-
-        <section className="top-grid">
-          <Card>
-            <SectionTitle>종목 분석</SectionTitle>
-
-            <div className="search-form">
-              <input
-                className="form-control stock-input"
-                value={symbol}
-                onChange={(e) => setSymbol(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleAnalyze();
-                }}
-                placeholder="예: 005930.KS"
-              />
-
-              <select
-                className="form-control range-select"
-                value={range}
-                onChange={(e) => setRange(e.target.value)}
-              >
-                <option value="1mo">1개월</option>
-                <option value="3mo">3개월</option>
-                <option value="6mo">6개월</option>
-                <option value="1y">1년</option>
-              </select>
-
-              <button
-                className="button primary-button"
-                onClick={handleAnalyze}
-                disabled={loading}
-              >
-                {loading ? "불러오는 중..." : "분석하기"}
-              </button>
-
-              <button
-                className="button secondary-button"
-                onClick={handleSaveWatchlist}
-              >
-                관심종목 저장
-              </button>
-            </div>
-
-            <StockIdentity data={data} inputSymbol={symbol} />
-
-            <StatusMessage data={data} uiError={uiError} />
-          </Card>
-
-          <Card>
-            <SectionTitle>관심종목</SectionTitle>
-
-            <div className="watch-list">
-              {watchlist.length === 0 ? (
-                <p className="muted-text">저장된 관심종목이 없습니다.</p>
-              ) : (
-                watchlist.map((item) => (
-                  <div key={item} className="watch-item">
-                    <button
-                      className="watch-symbol"
-                      onClick={() => handleSelectWatchlist(item)}
-                    >
-                      {item}
-                    </button>
-
-                    <button
-                      className="watch-delete"
-                      onClick={() => handleDeleteWatchlist(item)}
-                    >
-                      삭제
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-
-            <p className="watch-tip">
-              자주 쓰는 예시: ^KS11 / 005930.KS / 000660.KS / 035420.KS /
-              035720.KS
-            </p>
-          </Card>
-        </section>
-
-        <section className="summary-grid summary-grid-four">
-          <InfoCard title="현재가">
-            <BigValue>{formatNumber(data?.currentPrice)}</BigValue>
-          </InfoCard>
-
-          <InfoCard title="전일 대비 %">
-            <BigValue tone={getChangeTone(data?.change)}>
-              {formatPercent(data?.change)}
-            </BigValue>
-          </InfoCard>
-
-          <InfoCard title="전일 대비 가격">
-            <BigValue tone={getChangeTone(data?.changePrice)}>
-              {formatSignedNumber(data?.changePrice)}
-            </BigValue>
-          </InfoCard>
-
-          <InfoCard title="분석 신호">
-            <div className="signal-text">
-              {data?.signalSummary || "데이터 없음"}
-            </div>
-          </InfoCard>
-        </section>
-
-        <section className="score-section">
-          <CurrentStockSummaryCard data={data} />
-        </section>
-
-        <CompositeScoreSection score={data?.score} />
-
-        <QuantScoreSection quant={data?.quant} />
-
-        <TargetPriceSection score={data?.score} />
-
-        <PredictionDashboard
-          data={data}
-          records={predictionRecords}
-          predictionLoading={predictionLoading}
-          predictionError={predictionError}
-          lastFetchedAt={lastFetchedAt}
-          kisRemainingCalls={kisRemainingCalls}
-          kisSyncCode={kisSyncCode}
-          kisSyncInput={kisSyncInput}
-          kisUsageLoading={kisUsageLoading}
-          kisUsageError={kisUsageError}
-          onKisSyncInputChange={setKisSyncInput}
-          onSaveKisSyncCode={saveKisSyncCode}
-          onSavePrediction={handleSavePrediction}
-          onVerifyPredictions={handleVerifyPredictions}
-          onClearCurrentSymbol={handleClearCurrentSymbolPredictions}
-          onClearAll={handleClearAllPredictions}
-        />
-
-        <BasicInfoSection fundamentals={data?.fundamentals} />
-
-        <SupplySection data={data} rows={chartData} />
-
-        <ChartAnalysisSections data={data} rows={chartData} />
-      </div>
-    </main>
-  );
-}
-
-function StockIdentity({
-  data,
-  inputSymbol,
-}: {
-  data: StockResponse | null;
-  inputSymbol: string;
-}) {
-  const displaySymbol =
-    data?.symbol || inputSymbol.trim().toUpperCase() || "종목 코드 없음";
-  const displayName = data?.name || "종목명은 분석 후 표시됩니다.";
-  const metaItems = [displaySymbol, data?.exchange, data?.currency].filter(
-    Boolean,
-  );
-
-  return (
-    <div className="stock-identity">
-      <div className="stock-name">{displayName}</div>
-      <div className="stock-meta">{metaItems.join(" · ")}</div>
-    </div>
-  );
-}
-
-function StatusMessage({
-  data,
-  uiError,
-}: {
-  data: StockResponse | null;
-  uiError: string;
-}) {
-  if (uiError) return <p className="status-message error-message">{uiError}</p>;
-  if (data?.warning)
-    return <p className="status-message warning-message">{data.warning}</p>;
-  if (data?.cached)
-    return (
-      <p className="status-message info-message">
-        캐시 데이터로 표시 중입니다.
-      </p>
+  if (cached && cached.expiresAt > Date.now()) {
+    return NextResponse.json(
+      withCacheMeta(cached.data, {
+        cached: true,
+        cacheSource: "memory",
+      }),
     );
-  return (
-    <p className="status-message muted-text">
-      종목 코드를 입력하고 분석하기를 눌러주세요.
-    </p>
-  );
-}
-
-function MetricRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="metric-row">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  );
-}
-
-function InfoCard({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <div className="info-card">
-      <div className="info-label">{title}</div>
-      {children}
-    </div>
-  );
-}
-
-function BigValue({
-  children,
-  tone = "neutral",
-}: {
-  children: ReactNode;
-  tone?: "positive" | "negative" | "neutral";
-}) {
-  return <div className={`big-value ${tone}`}>{children}</div>;
-}
-
-function Card({
-  children,
-  className = "",
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
-  return <div className={`card ${className}`}>{children}</div>;
-}
-
-function SectionTitle({ children }: { children: ReactNode }) {
-  return <h2 className="section-title">{children}</h2>;
-}
-
-function SectionTitleSmall({ children }: { children: ReactNode }) {
-  return <h3 className="section-title small">{children}</h3>;
-}
-
-
-function formatNumber(value?: number | null) {
-  if (value == null || Number.isNaN(value)) return "데이터 없음";
-  return new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 2 }).format(
-    value,
-  );
-}
-
-function formatSignedNumber(value?: number | null) {
-  if (value == null || Number.isNaN(value)) return "데이터 없음";
-  const formatted = new Intl.NumberFormat("ko-KR", {
-    maximumFractionDigits: 2,
-  }).format(Math.abs(value));
-  if (value > 0) return `+${formatted}`;
-  if (value < 0) return `-${formatted}`;
-  return "0";
-}
-
-function formatCompactNumber(value?: number | null) {
-  if (value == null || Number.isNaN(value)) return "데이터 없음";
-  return new Intl.NumberFormat("ko-KR", {
-    notation: "compact",
-    maximumFractionDigits: 2,
-  }).format(value);
-}
-
-function formatSignedCompactNumber(value?: number | null) {
-  if (value == null || Number.isNaN(value)) return "데이터 없음";
-
-  const formatted = new Intl.NumberFormat("ko-KR", {
-    notation: "compact",
-    maximumFractionDigits: 2,
-  }).format(Math.abs(value));
-
-  if (value > 0) return `+${formatted}`;
-  if (value < 0) return `-${formatted}`;
-  return "0";
-}
-
-function formatPercent(value?: number | null) {
-  if (value == null || Number.isNaN(value)) return "데이터 없음";
-  return `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
-}
-
-function formatNullablePercent(value?: number | null) {
-  if (value == null || Number.isNaN(value)) return "데이터 준비 중";
-  return `${value.toFixed(2)}%`;
-}
-
-function formatMarketCap(value?: number | null) {
-  if (value == null || Number.isNaN(value)) return "데이터 준비 중";
-
-  if (value >= 1_0000_0000_0000) {
-    return `${(value / 1_0000_0000_0000).toFixed(2)}조`;
   }
 
-  if (value >= 1_0000_0000) {
-    return `${(value / 1_0000_0000).toFixed(2)}억`;
+  try {
+    const period1 = Math.floor(getPeriodStart(range).getTime() / 1000);
+    const period2 = Math.floor(Date.now() / 1000);
+
+    const url =
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}` +
+      `?period1=${period1}&period2=${period2}&interval=1d`;
+
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
+        Accept: "application/json,text/plain,*/*",
+        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Cache-Control": "no-cache",
+        Pragma: "no-cache",
+      },
+      cache: "no-store",
+    });
+
+    const text = await res.text();
+
+    if (res.status === 429 || text.includes("Too Many Requests")) {
+      if (cached) {
+        return NextResponse.json(
+          withCacheMeta(cached.data, {
+            cached: true,
+            cacheSource: "stale-memory",
+            warning:
+              "외부 주가 서버가 요청을 제한하여 최근 저장 데이터로 표시 중입니다.",
+          }),
+        );
+      }
+
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "외부 주가 서버가 현재 요청을 제한하고 있습니다.",
+          detail: "Too Many Requests",
+          blocked: true,
+          status: 429,
+          symbol,
+          rawSymbol,
+          meta: {
+            cached: false,
+            cacheSource: null,
+            warning: "외부 주가 서버가 현재 요청을 제한하고 있습니다.",
+            updatedAt: new Date().toISOString(),
+            range,
+          },
+        },
+        { status: 429 },
+      );
+    }
+
+    if (!res.ok) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "외부 주가 서버 호출에 실패했습니다.",
+          detail: text.slice(0, 500),
+          status: res.status,
+          symbol,
+          rawSymbol,
+          meta: {
+            cached: false,
+            cacheSource: null,
+            warning: "외부 주가 서버 호출에 실패했습니다.",
+            updatedAt: new Date().toISOString(),
+            range,
+          },
+        },
+        { status: 500 },
+      );
+    }
+
+    let json: any;
+
+    try {
+      json = JSON.parse(text);
+    } catch {
+      if (cached) {
+        return NextResponse.json(
+          withCacheMeta(cached.data, {
+            cached: true,
+            cacheSource: "stale-memory",
+            warning: "외부 응답이 비정상이라 최근 저장 데이터로 표시 중입니다.",
+          }),
+        );
+      }
+
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "외부 주가 서버 응답이 JSON 형식이 아닙니다.",
+          detail: text.slice(0, 500),
+          symbol,
+          rawSymbol,
+          meta: {
+            cached: false,
+            cacheSource: null,
+            warning: "외부 주가 서버 응답이 JSON 형식이 아닙니다.",
+            updatedAt: new Date().toISOString(),
+            range,
+          },
+        },
+        { status: 500 },
+      );
+    }
+
+    const result = json?.chart?.result?.[0];
+    const errorInfo = json?.chart?.error;
+    const chartMeta = result?.meta || {};
+
+    if (errorInfo) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "주가 데이터를 가져오지 못했습니다.",
+          detail: errorInfo?.description || errorInfo?.code || "unknown error",
+          symbol,
+          rawSymbol,
+          meta: {
+            cached: false,
+            cacheSource: null,
+            warning: "주가 데이터를 가져오지 못했습니다.",
+            updatedAt: new Date().toISOString(),
+            range,
+          },
+        },
+        { status: 500 },
+      );
+    }
+
+    const timestamps: number[] = result?.timestamp || [];
+    const quote = result?.indicators?.quote?.[0] || {};
+    const adjclose = result?.indicators?.adjclose?.[0]?.adjclose || [];
+    const closesRaw: Array<number | null> = quote?.close || [];
+    const volumesRaw: Array<number | null> = quote?.volume || [];
+
+    const chartRows = timestamps
+      .map((ts, i) => {
+        const close = closesRaw[i] ?? adjclose[i] ?? null;
+
+        return {
+          date: new Date(ts * 1000).toISOString().slice(0, 10),
+          close: close != null ? Number(close) : null,
+          volume: volumesRaw[i] != null ? Number(volumesRaw[i]) : 0,
+        };
+      })
+      .filter((row) => row.close != null)
+      .sort((a, b) => a.date.localeCompare(b.date)) as Array<{
+      date: string;
+      close: number;
+      volume: number;
+    }>;
+
+    if (!chartRows.length) {
+      if (cached) {
+        return NextResponse.json(
+          withCacheMeta(cached.data, {
+            cached: true,
+            cacheSource: "stale-memory",
+            warning: "새 데이터를 받지 못해 최근 저장 데이터로 표시 중입니다.",
+          }),
+        );
+      }
+
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "해당 종목 데이터를 찾지 못했습니다.",
+          symbol,
+          rawSymbol,
+          meta: {
+            cached: false,
+            cacheSource: null,
+            warning: "해당 종목 데이터를 찾지 못했습니다.",
+            updatedAt: new Date().toISOString(),
+            range,
+          },
+        },
+        { status: 404 },
+      );
+    }
+
+    const dates = chartRows.map((row) => row.date);
+    const closes = chartRows.map((row) => row.close);
+    const volumes = chartRows.map((row) => row.volume);
+
+    const sma20 = sma(closes, 20);
+    const sma60 = sma(closes, 60);
+    const rsi14 = rsi(closes, 14);
+    const macdData = macd(closes);
+    const bollinger = bollingerBands(closes, 20, 2);
+    const obvData = obv(closes, volumes);
+    const forecast = simpleForecast(closes, 5);
+
+    const chartData: ChartDataRow[] = dates.map((date, i) => ({
+      date,
+      close: closes[i] ?? null,
+      sma20: sma20[i] ?? null,
+      sma60: sma60[i] ?? null,
+      rsi14: rsi14[i] ?? null,
+      macd: macdData.macdLine[i] ?? null,
+      signal: macdData.signalLine[i] ?? null,
+      histogram: macdData.histogram[i] ?? null,
+      bbUpper: bollinger.upper[i] ?? null,
+      bbMiddle: bollinger.middle[i] ?? null,
+      bbLower: bollinger.lower[i] ?? null,
+      volume: volumes[i] ?? 0,
+      obv: obvData[i] ?? null,
+    }));
+
+    const currentPrice = closes[closes.length - 1];
+    const prevPrice = closes[closes.length - 2] ?? currentPrice;
+
+    const changePrice = Number((currentPrice - prevPrice).toFixed(2));
+    const change =
+      prevPrice !== 0
+        ? Number(((changePrice / prevPrice) * 100).toFixed(2))
+        : 0;
+
+    const latestSma20 = sma20[sma20.length - 1] ?? null;
+    const latestSma60 = sma60[sma60.length - 1] ?? null;
+    const latestRsi14 = rsi14[rsi14.length - 1] ?? null;
+    const latestMacd = macdData.macdLine[macdData.macdLine.length - 1] ?? null;
+    const latestMacdSignal =
+      macdData.signalLine[macdData.signalLine.length - 1] ?? null;
+    const latestObv = obvData[obvData.length - 1] ?? null;
+    const previousObv = obvData[obvData.length - 2] ?? null;
+
+    const fearGreed = makeFearGreedScore({
+      current: currentPrice,
+      sma20: latestSma20,
+      sma60: latestSma60,
+      rsi: latestRsi14,
+      macd: latestMacd,
+      macdSignal: latestMacdSignal,
+      change,
+      obvNow: latestObv,
+      obvPrev: previousObv,
+    });
+
+    const signalSummary =
+      latestSma20 != null &&
+      latestSma60 != null &&
+      latestRsi14 != null &&
+      latestMacd != null &&
+      latestMacdSignal != null
+        ? makeSignal({
+            current: currentPrice,
+            sma20: latestSma20,
+            sma60: latestSma60,
+            rsi: latestRsi14,
+            macd: latestMacd,
+            macdSignal: latestMacdSignal,
+          })
+        : "신호 분석 데이터가 아직 충분하지 않습니다.";
+
+    const stockMeta = await getStockMeta(symbol, chartMeta, resolvedStock);
+    const supply = await getSupplyData(symbol);
+    const fundamentals = await getFundamentalsData(symbol);
+
+    const score = calculateCompositeScore({
+      rows: chartData,
+      supply,
+    });
+
+    const latestTechnical = chartData[chartData.length - 1] ?? null;
+    const targetRange = score?.targetPrice?.technicalTargetRange ?? null;
+    const targetBasis = score?.targetPrice?.targetBasis ?? null;
+    const normalizedCode = normalizeStockCode(symbol);
+
+    const quant = calculateQuantModel({
+      rows: chartData,
+      supply,
+      fundamentals,
+      targetRange,
+    });
+
+    const targetProgress =
+      targetRange && targetRange.baseTarget > 0
+        ? Number(
+            ((targetRange.currentPrice / targetRange.baseTarget) * 100).toFixed(
+              1,
+            ),
+          )
+        : null;
+
+    const upsidePrice = targetRange
+      ? Number((targetRange.baseTarget - targetRange.currentPrice).toFixed(2))
+      : null;
+
+    const responseData = {
+      ok: true,
+
+      symbol,
+      rawSymbol,
+      name: stockMeta.name,
+      exchange: stockMeta.exchange,
+      currency: stockMeta.currency,
+      currentPrice,
+      prevPrice,
+      changePrice,
+      change,
+      signalSummary,
+      chartData,
+      forecast,
+      fearGreed,
+      fundamentals,
+      supply,
+      score,
+      quant,
+      cached: false,
+
+      stock: {
+        symbol,
+        rawSymbol,
+        code: normalizedCode,
+        name: stockMeta.name,
+        exchange: stockMeta.exchange,
+        currency: stockMeta.currency,
+        market: stockMeta.exchange,
+        sector: null,
+        industry: null,
+      },
+
+      price: {
+        currentPrice,
+        prevPrice,
+        changePrice,
+        changeRate: change,
+        signalSummary,
+      },
+
+      technical: {
+        chartData,
+        latest: latestTechnical,
+        fearGreed,
+      },
+
+      targetPrice: {
+        range: targetRange
+          ? {
+              currentPrice: targetRange.currentPrice,
+              conservativeTarget: targetRange.conservativeTarget,
+              baseTarget: targetRange.baseTarget,
+              aggressiveTarget: targetRange.aggressiveTarget,
+              riskLine: targetRange.riskLine,
+              targetProgress,
+              upsidePrice,
+              conservativeUpsidePercent:
+                targetRange.conservativeUpsidePercent,
+              baseUpsidePercent: targetRange.baseUpsidePercent,
+              aggressiveUpsidePercent: targetRange.aggressiveUpsidePercent,
+              riskDownsidePercent: targetRange.riskDownsidePercent,
+            }
+          : null,
+        basis: targetBasis,
+        consensusTarget: null,
+      },
+
+      meta: {
+        cached: false,
+        cacheSource: null,
+        warning: null,
+        updatedAt: new Date().toISOString(),
+        range,
+        source:
+          "Yahoo Finance chart + KIS investor summary + KIS fundamentals + quant model",
+      },
+    };
+
+    stockCache.set(cacheKey, {
+      data: responseData,
+      expiresAt: Date.now() + CACHE_TTL_MS,
+    });
+
+    return NextResponse.json(responseData);
+  } catch (error: any) {
+    console.error("stock api error:", error);
+
+    if (cached) {
+      return NextResponse.json(
+        withCacheMeta(cached.data, {
+          cached: true,
+          cacheSource: "stale-memory",
+          warning: "일시 오류로 최근 저장 데이터로 표시 중입니다.",
+        }),
+      );
+    }
+
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "주가 데이터를 불러오지 못했습니다.",
+        detail: error?.message || String(error),
+        symbol,
+        rawSymbol,
+        meta: {
+          cached: false,
+          cacheSource: null,
+          warning: "주가 데이터를 불러오지 못했습니다.",
+          updatedAt: new Date().toISOString(),
+        },
+      },
+      { status: 500 },
+    );
+  }
+}
+
+async function getSupplyData(symbol: string): Promise<SupplyData> {
+  try {
+    const supply = await getKisInvestorSummary(symbol);
+
+    return {
+      available: true,
+      code: supply.code,
+      rowCount: supply.rows.length,
+      recent5: supply.recent5,
+      recent20: supply.recent20,
+      foreignPositiveStreak5: supply.foreignPositiveStreak5,
+      institutionPositiveStreak5: supply.institutionPositiveStreak5,
+      smartMoneyPositiveStreak5: supply.smartMoneyPositiveStreak5,
+      latestRows: supply.rows.slice(-10).reverse().map((row) => ({
+        date: row.date,
+        individualNetBuy: row.individualNetBuy,
+        foreignNetBuy: row.foreignNetBuy,
+        institutionNetBuy: row.institutionNetBuy,
+        programNetBuy: row.programNetBuy,
+      })),
+    };
+  } catch (error) {
+    return {
+      available: false,
+      warning:
+        error instanceof Error
+          ? `한투 수급 데이터를 불러오지 못했습니다: ${error.message}`
+          : "한투 수급 데이터를 불러오지 못했습니다.",
+    };
+  }
+}
+
+async function getFundamentalsData(symbol: string): Promise<FundamentalsData> {
+  try {
+    const fundamentals = await getKisStockFundamentals(symbol);
+
+    return {
+      marketCap: fundamentals.marketCap,
+      per: fundamentals.per,
+      pbr: fundamentals.pbr,
+      eps: fundamentals.eps,
+      bps: fundamentals.bps,
+      dividendYield: fundamentals.dividendYield,
+      foreignOwnershipRate: fundamentals.foreignOwnershipRate,
+      sharesOutstanding: fundamentals.sharesOutstanding,
+      high52w: fundamentals.high52w,
+      low52w: fundamentals.low52w,
+    };
+  } catch (error) {
+    console.warn("KIS fundamentals unavailable:", error);
+    return EMPTY_FUNDAMENTALS;
+  }
+}
+
+async function getStockMeta(
+  symbol: string,
+  chartMeta: any,
+  resolvedStock?: KrxStock | null,
+): Promise<StockMeta> {
+  const normalizedSymbol = symbol.trim().toUpperCase();
+
+  const fallbackName =
+    resolvedStock?.name ||
+    KNOWN_KOREAN_STOCK_NAMES[normalizedSymbol] ||
+    chartMeta?.shortName ||
+    chartMeta?.longName ||
+    chartMeta?.instrumentType ||
+    "종목명 정보 없음";
+
+  const fallbackExchange =
+    resolvedStock?.market ||
+    normalizeExchange(
+      chartMeta?.exchangeName ||
+        chartMeta?.fullExchangeName ||
+        chartMeta?.exchangeTimezoneName,
+    ) ||
+    guessExchange(normalizedSymbol);
+
+  const fallbackCurrency = chartMeta?.currency || "KRW";
+
+  try {
+    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(
+      symbol,
+    )}`;
+
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
+        Accept: "application/json,text/plain,*/*",
+        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+      },
+      cache: "no-store",
+    });
+
+    if (!res.ok) {
+      return {
+        name: fallbackName,
+        exchange: fallbackExchange,
+        currency: fallbackCurrency,
+      };
+    }
+
+    const json = await res.json();
+    const quote = json?.quoteResponse?.result?.[0] || {};
+
+    return {
+      name:
+        resolvedStock?.name ||
+        KNOWN_KOREAN_STOCK_NAMES[normalizedSymbol] ||
+        quote?.shortName ||
+        quote?.longName ||
+        quote?.displayName ||
+        fallbackName,
+      exchange:
+        resolvedStock?.market ||
+        normalizeExchange(
+          quote?.fullExchangeName || quote?.exchange || quote?.market,
+        ) ||
+        fallbackExchange,
+      currency: quote?.currency || fallbackCurrency,
+    };
+  } catch {
+    return {
+      name: fallbackName,
+      exchange: fallbackExchange,
+      currency: fallbackCurrency,
+    };
+  }
+}
+
+function withCacheMeta(
+  data: any,
+  options: {
+    cached: boolean;
+    cacheSource: string;
+    warning?: string;
+  },
+) {
+  return {
+    ...data,
+    cached: options.cached,
+    cacheSource: options.cacheSource,
+    warning: options.warning ?? data?.warning,
+    meta: {
+      ...(data?.meta || {}),
+      cached: options.cached,
+      cacheSource: options.cacheSource,
+      warning: options.warning ?? data?.meta?.warning ?? null,
+      updatedAt: data?.meta?.updatedAt || new Date().toISOString(),
+    },
+  };
+}
+
+function normalizeExchange(value?: string) {
+  if (!value) return "";
+
+  const upper = String(value).toUpperCase();
+
+  if (
+    upper.includes("KSC") ||
+    upper.includes("KOSPI") ||
+    upper.includes("SEOUL")
+  ) {
+    return "KOSPI";
   }
 
-  return formatNumber(value);
+  if (upper.includes("KOE") || upper.includes("KOSDAQ")) {
+    return "KOSDAQ";
+  }
+
+  return String(value);
 }
 
-function formatRatio(value?: number | null, suffix = "") {
-  if (value == null || Number.isNaN(value)) return "데이터 준비 중";
-  return `${value.toFixed(2)}${suffix}`;
+function guessExchange(symbol: string) {
+  if (symbol.endsWith(".KS")) return "KOSPI";
+  if (symbol.endsWith(".KQ")) return "KOSDAQ";
+  if (symbol === "^KS11") return "KOSPI";
+  return "";
 }
 
-function formatCurrencyValue(value?: number | null) {
-  if (value == null || Number.isNaN(value)) return "데이터 준비 중";
-  return formatNumber(value);
+function normalizeStockCode(symbol: string) {
+  const normalized = symbol.trim().toUpperCase();
+
+  if (normalized.endsWith(".KS") || normalized.endsWith(".KQ")) {
+    return normalized.slice(0, -3);
+  }
+
+  return normalized;
 }
 
-function formatShares(value?: number | null) {
-  if (value == null || Number.isNaN(value)) return "데이터 준비 중";
-  return formatCompactNumber(value);
-}
+function getPeriodStart(range: string) {
+  const now = new Date();
+  const d = new Date(now);
 
-function formatDateLabel(date?: string) {
-  if (!date) return "-";
-  const [, month, day] = date.split("-");
-  return `${month}/${day}`;
-}
+  switch (range) {
+    case "1mo":
+      d.setMonth(now.getMonth() - 1);
+      break;
+    case "3mo":
+      d.setMonth(now.getMonth() - 3);
+      break;
+    case "6mo":
+      d.setMonth(now.getMonth() - 6);
+      break;
+    case "1y":
+      d.setFullYear(now.getFullYear() - 1);
+      break;
+    default:
+      d.setMonth(now.getMonth() - 6);
+      break;
+  }
 
-function formatShortPrice(value: number) {
-  return new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 0 }).format(
-    value,
-  );
-}
-
-function getChangeTone(
-  value?: number | null,
-): "positive" | "negative" | "neutral" {
-  if (value == null || Number.isNaN(value)) return "neutral";
-  if (value > 0) return "positive";
-  if (value < 0) return "negative";
-  return "neutral";
+  return d;
 }
