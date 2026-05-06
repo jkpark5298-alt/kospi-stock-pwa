@@ -236,7 +236,16 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [uiError, setUiError] = useState("");
   const [lastFetchedAt, setLastFetchedAt] = useState<string | null>(null);
-  const { kisRemainingCalls, recordKisApiUsageFromResponse } = useKisUsage();
+  const {
+    kisRemainingCalls,
+    kisSyncCode,
+    kisSyncInput,
+    kisUsageLoading,
+    kisUsageError,
+    setKisSyncInput,
+    saveKisSyncCode,
+    recordKisApiUsageFromResponse,
+  } = useKisUsage();
   const {
     predictionHistory,
     handleSavePrediction,
@@ -322,7 +331,7 @@ export default function HomePage() {
 
       setData(json);
       setLastFetchedAt(new Date().toISOString());
-      recordKisApiUsageFromResponse(json);
+      await recordKisApiUsageFromResponse(json);
     } catch (error: unknown) {
       setData(null);
       setUiError(
@@ -503,6 +512,12 @@ export default function HomePage() {
           records={predictionHistory}
           lastFetchedAt={lastFetchedAt}
           kisRemainingCalls={kisRemainingCalls}
+          kisSyncCode={kisSyncCode}
+          kisSyncInput={kisSyncInput}
+          kisUsageLoading={kisUsageLoading}
+          kisUsageError={kisUsageError}
+          onKisSyncInputChange={setKisSyncInput}
+          onSaveKisSyncCode={saveKisSyncCode}
           onSavePrediction={handleSavePrediction}
           onClearCurrentSymbol={handleClearCurrentSymbolPredictions}
           onClearAll={handleClearAllPredictions}

@@ -14,7 +14,6 @@ import {
   formatDateTimeLabel,
   formatErrorRate,
   formatHitRate,
-  formatNumber,
   formatPercent,
   formatPrice,
   formatScoreValue,
@@ -28,6 +27,12 @@ type Props = {
   records: PredictionRecord[];
   lastFetchedAt: string | null;
   kisRemainingCalls: number;
+  kisSyncCode: string;
+  kisSyncInput: string;
+  kisUsageLoading: boolean;
+  kisUsageError: string;
+  onKisSyncInputChange: (value: string) => void;
+  onSaveKisSyncCode: () => void;
   onSavePrediction: () => void;
   onClearCurrentSymbol: () => void;
   onClearAll: () => void;
@@ -38,6 +43,12 @@ export default function PredictionDashboard({
   records,
   lastFetchedAt,
   kisRemainingCalls,
+  kisSyncCode,
+  kisSyncInput,
+  kisUsageLoading,
+  kisUsageError,
+  onKisSyncInputChange,
+  onSaveKisSyncCode,
   onSavePrediction,
   onClearCurrentSymbol,
   onClearAll,
@@ -109,7 +120,15 @@ export default function PredictionDashboard({
         </div>
 
         <div className="prediction-status-grid">
-          <KisRemainingCard remainingCalls={kisRemainingCalls} />
+          <KisRemainingCard
+            remainingCalls={kisRemainingCalls}
+            syncCode={kisSyncCode}
+            syncInput={kisSyncInput}
+            loading={kisUsageLoading}
+            error={kisUsageError}
+            onSyncInputChange={onKisSyncInputChange}
+            onSaveSyncCode={onSaveKisSyncCode}
+          />
           <div className="prediction-status-card">
             <span>데이터 상태</span>
             <strong>{priceCheckLabel}</strong>

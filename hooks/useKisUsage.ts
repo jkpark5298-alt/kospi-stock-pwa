@@ -3,104 +3,175 @@
 import { useEffect, useState } from "react";
 import type { StockResponse } from "../types/stock";
 
-const KIS_API_USAGE_KEY = "kospi-kis-api-usage";
+const KIS_SYNC_CODE_KEY = "kospi-kis-sync-code";
 export const KIS_DAILY_LIMIT = 100;
 
-type KisApiUsage = {
-  date: string;
-  used: number;
+type KisUsageApiResponse = {
+  ok?: boolean;
+  remaining?: number;
+  limit?: number;
+  error?: string;
 };
 
-function clampNumber(value: number, min: number, max: number) {
-  if (!Number.isFinite(value)) return min;
-  return Math.min(max, Math.max(min, value));
+function clampRemaining(value: unknown) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return KIS_DAILY_LIMIT;
+  return Math.min(KIS_DAILY_LIMIT, Math.max(0, numeric));
 }
 
-function getTodayKey() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function readKisApiUsage(): KisApiUsage {
-  if (typeof window === "undefined") {
-    return { date: getTodayKey(), used: 0 };
-  }
-
-  try {
-    const saved = window.localStorage.getItem(KIS_API_USAGE_KEY);
-
-    if (!saved) {
-      return { date: getTodayKey(), used: 0 };
-    }
-
-    const parsed = JSON.parse(saved) as Partial<KisApiUsage>;
-    const today = getTodayKey();
-
-    if (parsed.date !== today) {
-      return { date: today, used: 0 };
-    }
-
-    return {
-      date: today,
-      used: clampNumber(Number(parsed.used ?? 0), 0, KIS_DAILY_LIMIT),
-    };
-  } catch {
-    window.localStorage.removeItem(KIS_API_USAGE_KEY);
-    return { date: getTodayKey(), used: 0 };
-  }
-}
-
-function saveKisApiUsage(usage: KisApiUsage) {
-  if (typeof window === "undefined") return;
-
-  try {
-    window.localStorage.setItem(KIS_API_USAGE_KEY, JSON.stringify(usage));
-  } catch {
-    // localStorage 접근이 막힌 환경에서는 조용히 무시합니다.
-  }
-}
-
-function calculateKisRemainingCalls(usage: KisApiUsage) {
-  return clampNumber(KIS_DAILY_LIMIT - usage.used, 0, KIS_DAILY_LIMIT);
+function normalizeSyncCode(value: string) {
+  return value.trim();
 }
 
 function estimateKisCallCountFromResponse(response: StockResponse) {
   if (!response.ok || response.cached) return 0;
 
-  let count = 0;
+  // 1차 연동 기준:
+  // 종목 분석 조회가 성공하면 KIS 사용량 1회로 간주합니다.
+  // 추후 /api/stock 응답에 실제 kisCallUsed 값이 생기면 이 함수만 바꾸면 됩니다.
+  return 1;
+}
 
-  if (response.supply) count += 1;
-  if (response.fundamentals) count += 1;
+async function requestKisUsage(
+  syncCode: string,
+  incrementBy = 0,
+): Promise<KisUsageApiResponse> {
+  const method = incrementBy > 0 ? "POST" : "GET";
+  const url =
+    method === "GET"
+      ? `/api/kis-usage?syncCode=${encodeURIComponent(syncCode)}`
+      : "/api/kis-usage";
 
-  return count;
+  const response = await fetch(url, {
+    method,
+    cache: "no-store",
+    headers:
+      method === "POST"
+        ? {
+            "Content-Type": "application/json",
+          }
+        : undefined,
+    body:
+      method === "POST"
+        ? JSON.stringify({
+            syncCode,
+            incrementBy,
+          })
+        : undefined,
+  });
+
+  const json = (await response.json()) as KisUsageApiResponse;
+
+  if (!response.ok || !json.ok) {
+    throw new Error(json.error || "KIS 사용량을 불러오지 못했습니다.");
+  }
+
+  return json;
 }
 
 export function useKisUsage() {
   const [kisRemainingCalls, setKisRemainingCalls] = useState(KIS_DAILY_LIMIT);
+  const [kisSyncCode, setKisSyncCode] = useState("");
+  const [kisSyncInput, setKisSyncInput] = useState("");
+  const [kisUsageLoading, setKisUsageLoading] = useState(false);
+  const [kisUsageError, setKisUsageError] = useState("");
 
   useEffect(() => {
-    setKisRemainingCalls(calculateKisRemainingCalls(readKisApiUsage()));
+    if (typeof window === "undefined") return;
+
+    const saved = normalizeSyncCode(
+      window.localStorage.getItem(KIS_SYNC_CODE_KEY) || "",
+    );
+
+    if (!saved) return;
+
+    setKisSyncCode(saved);
+    setKisSyncInput(saved);
+    void refreshKisUsage(saved);
   }, []);
 
-  function recordKisApiUsageFromResponse(response: StockResponse) {
-    const estimatedCalls = estimateKisCallCountFromResponse(response);
-    const currentUsage = readKisApiUsage();
+  async function refreshKisUsage(targetSyncCode = kisSyncCode) {
+    const normalized = normalizeSyncCode(targetSyncCode);
 
-    if (estimatedCalls <= 0) {
-      const remaining = calculateKisRemainingCalls(currentUsage);
-      setKisRemainingCalls(remaining);
-      return remaining;
+    if (!normalized) {
+      setKisRemainingCalls(KIS_DAILY_LIMIT);
+      return KIS_DAILY_LIMIT;
     }
 
-    const nextUsage: KisApiUsage = {
-      date: getTodayKey(),
-      used: clampNumber(currentUsage.used + estimatedCalls, 0, KIS_DAILY_LIMIT),
-    };
+    setKisUsageLoading(true);
+    setKisUsageError("");
 
-    saveKisApiUsage(nextUsage);
-    const remaining = calculateKisRemainingCalls(nextUsage);
-    setKisRemainingCalls(remaining);
-    return remaining;
+    try {
+      const json = await requestKisUsage(normalized);
+      const remaining = clampRemaining(json.remaining);
+      setKisRemainingCalls(remaining);
+      return remaining;
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "KIS 사용량을 불러오지 못했습니다.";
+      setKisUsageError(message);
+      return kisRemainingCalls;
+    } finally {
+      setKisUsageLoading(false);
+    }
   }
 
-  return { kisRemainingCalls, recordKisApiUsageFromResponse };
+  async function saveKisSyncCode() {
+    const normalized = normalizeSyncCode(kisSyncInput);
+
+    if (!normalized) {
+      setKisUsageError("동기화 코드를 입력해 주세요.");
+      return;
+    }
+
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(KIS_SYNC_CODE_KEY, normalized);
+    }
+
+    setKisSyncCode(normalized);
+    setKisSyncInput(normalized);
+    await refreshKisUsage(normalized);
+  }
+
+  async function recordKisApiUsageFromResponse(response: StockResponse) {
+    const normalized = normalizeSyncCode(kisSyncCode);
+    const estimatedCalls = estimateKisCallCountFromResponse(response);
+
+    if (!normalized || estimatedCalls <= 0) {
+      return kisRemainingCalls;
+    }
+
+    setKisUsageLoading(true);
+    setKisUsageError("");
+
+    try {
+      const json = await requestKisUsage(normalized, estimatedCalls);
+      const remaining = clampRemaining(json.remaining);
+      setKisRemainingCalls(remaining);
+      return remaining;
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "KIS 사용량을 저장하지 못했습니다.";
+      setKisUsageError(message);
+      return kisRemainingCalls;
+    } finally {
+      setKisUsageLoading(false);
+    }
+  }
+
+  return {
+    kisRemainingCalls,
+    kisSyncCode,
+    kisSyncInput,
+    kisUsageLoading,
+    kisUsageError,
+    setKisSyncInput,
+    saveKisSyncCode,
+    refreshKisUsage,
+    recordKisApiUsageFromResponse,
+  };
 }
