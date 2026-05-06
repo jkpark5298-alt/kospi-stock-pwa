@@ -1,8 +1,28 @@
-node_modules
-.next
-out
+# dependencies
+node_modules/
+
+# next.js
+.next/
+out/
+
+# env files
 .env
 .env.local
-.vercel
+.env.*.local
+
+# vercel
+.vercel/
+
+# pwa generated files
 public/sw.js
 public/workbox-*.js
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# misc
+.DS_Store
+*.zip

@@ -1,6 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import ChartAnalysisSections from "../components/chart/ChartAnalysisSections";
+import SupplySection from "../components/analysis/SupplySection";
+import CompositeScoreSection from "../components/analysis/CompositeScoreSection";
+import QuantScoreSection from "../components/analysis/QuantScoreSection";
+import TargetPriceSection from "../components/analysis/TargetPriceSection";
+import BasicInfoSection from "../components/stock/BasicInfoSection";
+import CurrentStockSummaryCard from "../components/stock/CurrentStockSummaryCard";
+import PredictionDashboard from "../components/prediction/PredictionDashboard";
+import { useKisUsage } from "../hooks/useKisUsage";
+import { usePredictionHistory } from "../hooks/usePredictionHistory";
 
 type ChartRow = {
   date: string;
@@ -123,6 +133,38 @@ type TargetBasis = {
   adjustments: string[];
 };
 
+type ValuationTargetRange = {
+  epsTarget: number | null;
+  bpsTarget: number | null;
+  valuationTarget: number | null;
+  perAdjustment: number | null;
+  pbrAdjustment: number | null;
+  method: string;
+  reasons: string[];
+};
+
+type TargetMode = "conservative" | "base" | "aggressive";
+
+type QuantTargetAdjustment = {
+  mode: TargetMode;
+  baseAdjustmentPercent: number;
+  riskAdjustmentPercent: number;
+  positiveAdjustmentPercent: number;
+  totalAdjustmentPercent: number;
+  reasons: string[];
+};
+
+type TargetModeResult = {
+  mode: TargetMode;
+  label: string;
+  technicalWeight: number;
+  valuationWeight: number;
+  preAdjustmentTarget: number;
+  finalTarget: number;
+  upsidePercent: number;
+  quantAdjustment: QuantTargetAdjustment;
+};
+
 type CompositeScore = {
   total: number | null;
   grade: string;
@@ -136,6 +178,10 @@ type CompositeScore = {
     supplyAdjustedTarget: number | null;
     consensusTarget: null;
     riskLine: number | null;
+    valuationTargetRange?: ValuationTargetRange | null;
+    finalTargetRange?: TargetPriceRange | null;
+    selectedTargetMode?: TargetMode;
+    targetModes?: TargetModeResult[];
   };
   baseWeights: ScoreWeights;
   appliedWeights: Partial<ScoreWeights>;
@@ -146,6 +192,7 @@ type CompositeScore = {
 };
 
 type StockResponse = {
+  ok?: boolean;
   symbol?: string;
   name?: string;
   exchange?: string;
@@ -174,43 +221,71 @@ type StockResponse = {
   status?: number;
 };
 
-type LineSpec = {
-  key: keyof ChartRow;
-  color: string;
-  dashed?: boolean;
-};
 
 const DEFAULT_SYMBOL = "005930.KS";
 const DEFAULT_RANGE = "6mo";
 const WATCHLIST_KEY = "kospi-watchlist";
 
+
 export default function HomePage() {
   const [symbol, setSymbol] = useState(DEFAULT_SYMBOL);
   const [range, setRange] = useState(DEFAULT_RANGE);
   const [watchlist, setWatchlist] = useState<string[]>([]);
+  const [watchlistLoaded, setWatchlistLoaded] = useState(false);
   const [data, setData] = useState<StockResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [uiError, setUiError] = useState("");
+  const [lastFetchedAt, setLastFetchedAt] = useState<string | null>(null);
+  const { kisRemainingCalls, recordKisApiUsageFromResponse } = useKisUsage();
+  const {
+    predictionHistory,
+    handleSavePrediction,
+    handleClearCurrentSymbolPredictions,
+    handleClearAllPredictions,
+  } = usePredictionHistory(data, symbol);
+
 
   useEffect(() => {
-    const saved = localStorage.getItem(WATCHLIST_KEY);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) setWatchlist(parsed);
-      } catch {
-        localStorage.removeItem(WATCHLIST_KEY);
+    try {
+      const saved = window.localStorage.getItem(WATCHLIST_KEY);
+
+      if (!saved) {
+        setWatchlistLoaded(true);
+        return;
       }
+
+      const parsed = JSON.parse(saved);
+
+      if (Array.isArray(parsed)) {
+        const normalized = parsed
+          .filter((item) => typeof item === "string")
+          .map((item) => item.trim().toUpperCase())
+          .filter(Boolean);
+
+        setWatchlist(Array.from(new Set(normalized)));
+      } else {
+        window.localStorage.removeItem(WATCHLIST_KEY);
+      }
+    } catch {
+      window.localStorage.removeItem(WATCHLIST_KEY);
+    } finally {
+      setWatchlistLoaded(true);
     }
   }, []);
 
   useEffect(() => {
-    if (watchlist.length > 0) {
-      localStorage.setItem(WATCHLIST_KEY, JSON.stringify(watchlist));
-    } else {
-      localStorage.removeItem(WATCHLIST_KEY);
+    if (!watchlistLoaded) return;
+
+    try {
+      if (watchlist.length > 0) {
+        window.localStorage.setItem(WATCHLIST_KEY, JSON.stringify(watchlist));
+      } else {
+        window.localStorage.removeItem(WATCHLIST_KEY);
+      }
+    } catch {
+      // localStorage 접근이 막힌 환경에서는 조용히 무시합니다.
     }
-  }, [watchlist]);
+  }, [watchlist, watchlistLoaded]);
 
   async function fetchStock(targetSymbol?: string, targetRange?: string) {
     const finalSymbol = (targetSymbol ?? symbol).trim();
@@ -228,7 +303,7 @@ export default function HomePage() {
     try {
       const res = await fetch(
         `/api/stock?symbol=${encodeURIComponent(finalSymbol)}&range=${encodeURIComponent(finalRange)}`,
-        { cache: "no-store" }
+        { cache: "no-store" },
       );
 
       const json: StockResponse = await res.json();
@@ -236,7 +311,9 @@ export default function HomePage() {
       if (!res.ok) {
         setData(json);
         if (json.blocked) {
-          setUiError("현재 주가 서버가 요청을 제한하고 있습니다. 잠시 후 다시 시도해 주세요.");
+          setUiError(
+            "현재 주가 서버가 요청을 제한하고 있습니다. 잠시 후 다시 시도해 주세요.",
+          );
         } else {
           setUiError(json.error || "주가 데이터를 불러오지 못했습니다.");
         }
@@ -244,9 +321,15 @@ export default function HomePage() {
       }
 
       setData(json);
+      setLastFetchedAt(new Date().toISOString());
+      recordKisApiUsageFromResponse(json);
     } catch (error: unknown) {
       setData(null);
-      setUiError(error instanceof Error ? error.message : "주가 데이터를 불러오지 못했습니다.");
+      setUiError(
+        error instanceof Error
+          ? error.message
+          : "주가 데이터를 불러오지 못했습니다.",
+      );
     } finally {
       setLoading(false);
     }
@@ -264,12 +347,14 @@ export default function HomePage() {
       return;
     }
 
-    if (watchlist.includes(trimmed)) {
-      alert("이미 저장한 관심종목입니다.");
-      return;
-    }
+    setWatchlist((prev) => {
+      if (prev.includes(trimmed)) {
+        alert("이미 저장한 관심종목입니다.");
+        return prev;
+      }
 
-    setWatchlist((prev) => [...prev, trimmed]);
+      return [...prev, trimmed];
+    });
   }
 
   function handleDeleteWatchlist(item: string) {
@@ -283,27 +368,6 @@ export default function HomePage() {
 
   const chartData = data?.chartData ?? [];
 
-  const recentRows = useMemo(() => chartData.slice(-10).reverse(), [chartData]);
-
-  const latestRow = useMemo(
-    () => (chartData.length ? chartData[chartData.length - 1] : null),
-    [chartData]
-  );
-
-  const previousRow = useMemo(
-    () => (chartData.length > 1 ? chartData[chartData.length - 2] : null),
-    [chartData]
-  );
-
-  const obvTrend = getObvTrend(latestRow?.obv, previousRow?.obv);
-
-  const bbStatus = getBollingerStatus(
-    latestRow?.close,
-    latestRow?.bbUpper,
-    latestRow?.bbLower
-  );
-
-  const supplyAnalysis = getSupplyAnalysis(data, chartData);
 
   return (
     <main className="app-shell">
@@ -345,11 +409,18 @@ export default function HomePage() {
                 <option value="1y">1년</option>
               </select>
 
-              <button className="button primary-button" onClick={handleAnalyze} disabled={loading}>
+              <button
+                className="button primary-button"
+                onClick={handleAnalyze}
+                disabled={loading}
+              >
                 {loading ? "불러오는 중..." : "분석하기"}
               </button>
 
-              <button className="button secondary-button" onClick={handleSaveWatchlist}>
+              <button
+                className="button secondary-button"
+                onClick={handleSaveWatchlist}
+              >
                 관심종목 저장
               </button>
             </div>
@@ -368,11 +439,17 @@ export default function HomePage() {
               ) : (
                 watchlist.map((item) => (
                   <div key={item} className="watch-item">
-                    <button className="watch-symbol" onClick={() => handleSelectWatchlist(item)}>
+                    <button
+                      className="watch-symbol"
+                      onClick={() => handleSelectWatchlist(item)}
+                    >
                       {item}
                     </button>
 
-                    <button className="watch-delete" onClick={() => handleDeleteWatchlist(item)}>
+                    <button
+                      className="watch-delete"
+                      onClick={() => handleDeleteWatchlist(item)}
+                    >
                       삭제
                     </button>
                   </div>
@@ -381,7 +458,8 @@ export default function HomePage() {
             </div>
 
             <p className="watch-tip">
-              자주 쓰는 예시: ^KS11 / 005930.KS / 000660.KS / 035420.KS / 035720.KS
+              자주 쓰는 예시: ^KS11 / 005930.KS / 000660.KS / 035420.KS /
+              035720.KS
             </p>
           </Card>
         </section>
@@ -392,7 +470,9 @@ export default function HomePage() {
           </InfoCard>
 
           <InfoCard title="전일 대비 %">
-            <BigValue tone={getChangeTone(data?.change)}>{formatPercent(data?.change)}</BigValue>
+            <BigValue tone={getChangeTone(data?.change)}>
+              {formatPercent(data?.change)}
+            </BigValue>
           </InfoCard>
 
           <InfoCard title="전일 대비 가격">
@@ -402,7 +482,9 @@ export default function HomePage() {
           </InfoCard>
 
           <InfoCard title="분석 신호">
-            <div className="signal-text">{data?.signalSummary || "데이터 없음"}</div>
+            <div className="signal-text">
+              {data?.signalSummary || "데이터 없음"}
+            </div>
           </InfoCard>
         </section>
 
@@ -410,400 +492,29 @@ export default function HomePage() {
           <CurrentStockSummaryCard data={data} />
         </section>
 
-        <ScoreSection score={data?.score} />
+        <CompositeScoreSection score={data?.score} />
 
-        <QuantModelSection quant={data?.quant} />
+        <QuantScoreSection quant={data?.quant} />
 
         <TargetPriceSection score={data?.score} />
 
-        <FundamentalsSection fundamentals={data?.fundamentals} />
+        <PredictionDashboard
+          data={data}
+          records={predictionHistory}
+          lastFetchedAt={lastFetchedAt}
+          kisRemainingCalls={kisRemainingCalls}
+          onSavePrediction={handleSavePrediction}
+          onClearCurrentSymbol={handleClearCurrentSymbolPredictions}
+          onClearAll={handleClearAllPredictions}
+        />
 
-        <section className="supply-section">
-          <Card>
-            <div className="supply-header">
-              <div>
-                <SectionTitleSmall>수급·거래량 신뢰도 분석</SectionTitleSmall>
-                <p className="supply-subtitle">
-                  한투 API의 외국인·기관 순매수와 기존 기술지표를 함께 참고합니다.
-                </p>
-              </div>
-              <div className={`supply-badge ${data?.supply?.available ? "available" : "unavailable"}`}>
-                {data?.supply?.available ? "수급 데이터 연결" : "수급 데이터 대기"}
-              </div>
-            </div>
+        <BasicInfoSection fundamentals={data?.fundamentals} />
 
-            <div className="supply-metric-grid">
-              <SupplyMetricCard
-                title="외국인 5일"
-                value={formatSignedCompactNumber(data?.supply?.recent5?.foreignNetBuy)}
-                tone={getChangeTone(data?.supply?.recent5?.foreignNetBuy)}
-              />
-              <SupplyMetricCard
-                title="기관 5일"
-                value={formatSignedCompactNumber(data?.supply?.recent5?.institutionNetBuy)}
-                tone={getChangeTone(data?.supply?.recent5?.institutionNetBuy)}
-              />
-              <SupplyMetricCard
-                title="외인+기관 5일"
-                value={formatSignedCompactNumber(data?.supply?.recent5?.smartMoneyNetBuy)}
-                tone={getChangeTone(data?.supply?.recent5?.smartMoneyNetBuy)}
-              />
-              <SupplyMetricCard
-                title="외인+기관 20일"
-                value={formatSignedCompactNumber(data?.supply?.recent20?.smartMoneyNetBuy)}
-                tone={getChangeTone(data?.supply?.recent20?.smartMoneyNetBuy)}
-              />
-            </div>
+        <SupplySection data={data} rows={chartData} />
 
-            {data?.supply?.warning ? (
-              <p className="status-message warning-message">{data.supply.warning}</p>
-            ) : null}
-
-            <div className="supply-judgement-grid">
-              <SupplyJudgement title="수급 판정" value={supplyAnalysis.supplyView} />
-              <SupplyJudgement title="기술+수급" value={supplyAnalysis.technicalSupplyView} />
-              <SupplyJudgement title="다이버전스" value={supplyAnalysis.divergenceView} />
-            </div>
-
-            <div className="supply-mini-table-wrap">
-              <table className="supply-mini-table">
-                <thead>
-                  <tr>
-                    <th>일자</th>
-                    <th>외국인</th>
-                    <th>기관</th>
-                    <th>합산</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(data?.supply?.latestRows ?? []).slice(0, 5).map((row) => {
-                    const hasForeign = row.foreignNetBuy != null;
-                    const hasInstitution = row.institutionNetBuy != null;
-                    const smartMoney =
-                      hasForeign || hasInstitution
-                        ? (row.foreignNetBuy ?? 0) + (row.institutionNetBuy ?? 0)
-                        : null;
-
-                    return (
-                      <tr key={row.date}>
-                        <td>{row.date || "-"}</td>
-                        <td className={getChangeTone(row.foreignNetBuy)}>
-                          {formatSignedCompactNumber(row.foreignNetBuy)}
-                        </td>
-                        <td className={getChangeTone(row.institutionNetBuy)}>
-                          {formatSignedCompactNumber(row.institutionNetBuy)}
-                        </td>
-                        <td className={getChangeTone(smartMoney)}>
-                          {formatSignedCompactNumber(smartMoney)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-
-              {data?.supply?.available && (data.supply.latestRows?.length ?? 0) === 0 ? (
-                <p className="muted-text">표시할 수급 상세 데이터가 없습니다.</p>
-              ) : null}
-            </div>
-
-            <p className="notice-text">
-              수급 데이터는 투자 판단을 보조하는 참고 지표입니다. 매수·매도 단정 신호가 아니라 가격 지표와 함께 확인해야 합니다.
-            </p>
-          </Card>
-        </section>
-
-        <section className="chart-stack">
-          <Card className="chart-card">
-            <ChartHeader
-              title="주가 차트"
-              description={`${data?.symbol || "-"} / 종가, SMA20, SMA60, Bollinger Band`}
-            />
-            <PriceChart rows={chartData} />
-          </Card>
-
-          <section className="indicator-grid">
-            <Card className="chart-card">
-              <ChartHeader
-                title="RSI14"
-                description="일반적으로 70 이상 과열, 30 이하 과매도 구간으로 참고"
-              />
-              <LineChart
-                rows={chartData}
-                dataKey="rsi14"
-                stroke="#7c3aed"
-                fixedMin={0}
-                fixedMax={100}
-                guides={[30, 70]}
-              />
-            </Card>
-
-            <Card className="chart-card">
-              <ChartHeader title="MACD" description="MACD / Signal / Histogram" />
-              <MacdChart rows={chartData} />
-            </Card>
-          </section>
-
-          <section className="indicator-grid">
-            <Card className="chart-card">
-              <ChartHeader title="매물대 차트" description="과거 종가 구간별 거래량 합산 기반 추정" />
-              <VolumeProfileChart rows={chartData} />
-            </Card>
-
-            <Card className="chart-card">
-              <ChartHeader title="OBV" description="거래량 흐름으로 매수·매도 압력 참고" />
-              <LineChart rows={chartData} dataKey="obv" stroke="#0f766e" />
-            </Card>
-          </section>
-        </section>
-
-        <section className="data-section">
-          <Card>
-            <SectionTitleSmall>주가 분석 TOOL</SectionTitleSmall>
-            <div className="metric-list">
-              <MetricRow label="RSI14" value={formatNumber(latestRow?.rsi14)} />
-              <MetricRow label="MACD" value={formatNumber(latestRow?.macd)} />
-              <MetricRow label="Signal" value={formatNumber(latestRow?.signal)} />
-              <MetricRow label="Histogram" value={formatNumber(latestRow?.histogram)} />
-              <MetricRow label="Bollinger Band" value={bbStatus} />
-              <MetricRow label="BB Upper" value={formatNumber(latestRow?.bbUpper)} />
-              <MetricRow label="BB Lower" value={formatNumber(latestRow?.bbLower)} />
-              <MetricRow label="OBV" value={formatCompactNumber(latestRow?.obv)} />
-              <MetricRow label="OBV 추세" value={obvTrend} />
-              <MetricRow
-                label="Fear & Greed"
-                value={
-                  data?.fearGreed
-                    ? `${data.fearGreed.score} / 100 · ${data.fearGreed.label}`
-                    : "데이터 없음"
-                }
-              />
-            </div>
-            <p className="notice-text">
-              Fear & Greed는 외부 지수가 아니라 RSI, MACD, 이동평균, 당일 등락률, OBV를 이용한 자체 참고 점수입니다.
-            </p>
-          </Card>
-        </section>
-
-        <section className="data-section">
-          <Card>
-            <SectionTitleSmall>최근 10일 데이터</SectionTitleSmall>
-            {recentRows.length > 0 ? (
-              <div className="table-wrap">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <Th>날짜</Th>
-                      <Th>종가</Th>
-                      <Th>SMA20</Th>
-                      <Th>SMA60</Th>
-                      <Th>BB 상단</Th>
-                      <Th>BB 하단</Th>
-                      <Th>RSI14</Th>
-                      <Th>MACD</Th>
-                      <Th>Signal</Th>
-                      <Th>Histogram</Th>
-                      <Th>OBV</Th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {recentRows.map((row) => (
-                      <tr key={row.date}>
-                        <Td>{row.date}</Td>
-                        <Td>{formatNumber(row.close)}</Td>
-                        <Td>{formatNumber(row.sma20)}</Td>
-                        <Td>{formatNumber(row.sma60)}</Td>
-                        <Td>{formatNumber(row.bbUpper)}</Td>
-                        <Td>{formatNumber(row.bbLower)}</Td>
-                        <Td>{formatNumber(row.rsi14)}</Td>
-                        <Td>{formatNumber(row.macd)}</Td>
-                        <Td>{formatNumber(row.signal)}</Td>
-                        <Td>{formatNumber(row.histogram)}</Td>
-                        <Td>{formatCompactNumber(row.obv)}</Td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <p className="muted-text">표시할 최근 데이터가 없습니다.</p>
-            )}
-          </Card>
-        </section>
+        <ChartAnalysisSections data={data} rows={chartData} />
       </div>
     </main>
-  );
-}
-
-function CurrentStockSummaryCard({ data }: { data: StockResponse | null }) {
-  const range = data?.score?.targetPrice?.technicalTargetRange;
-
-  const targetProgress =
-    range && range.baseTarget > 0
-      ? Number(((range.currentPrice / range.baseTarget) * 100).toFixed(1))
-      : null;
-
-  const upsidePrice = range ? Number((range.baseTarget - range.currentPrice).toFixed(2)) : null;
-
-  const displaySymbol = data?.symbol || "데이터 없음";
-  const displayName = data?.name || "종목명 없음";
-  const displayMeta = [displaySymbol, data?.exchange, data?.currency].filter(Boolean).join(" · ");
-
-  return (
-    <Card>
-      <SectionTitleSmall>현재 종목 요약</SectionTitleSmall>
-
-      <div className="stock-identity">
-        <div className="stock-name">{displayName}</div>
-        <div className="stock-meta">{displayMeta || "시장 정보 대기"}</div>
-      </div>
-
-      <div className="metric-list">
-        <MetricRow label="현재가" value={formatNumber(data?.currentPrice)} />
-        <MetricRow
-          label="전일 대비"
-          value={`${formatSignedNumber(data?.changePrice)} / ${formatPercent(data?.change)}`}
-        />
-        <MetricRow label="분석 신호" value={data?.signalSummary || "데이터 없음"} />
-        <MetricRow
-          label="종합 점수"
-          value={
-            data?.score?.total != null
-              ? `${data.score.total} / 100 · ${data.score.grade}`
-              : "데이터 없음"
-          }
-        />
-        <MetricRow
-          label="퀀트 점수"
-          value={
-            data?.quant?.total != null
-              ? `${data.quant.total} / 100 · ${data.quant.grade}`
-              : "데이터 없음"
-          }
-        />
-        <MetricRow
-          label="목표여력 점수"
-          value={
-            data?.score?.targetPrice?.score != null
-              ? `${data.score.targetPrice.score} / 100 · ${data.score.targetPrice.label}`
-              : "데이터 없음"
-          }
-        />
-        <MetricRow label="기준 목표가" value={formatNumber(range?.baseTarget)} />
-        <MetricRow label="목표 도달률" value={formatTargetProgress(targetProgress)} />
-        <MetricRow
-          label="상승 여력"
-          value={`${formatSignedNumber(upsidePrice)} / ${formatUpside(range?.baseUpsidePercent)}`}
-        />
-        <MetricRow
-          label="위험 기준선"
-          value={`${formatNumber(range?.riskLine)} / ${formatUpside(range?.riskDownsidePercent)}`}
-        />
-      </div>
-
-      <p className="notice-text">
-        이 요약은 현재 화면의 기술·수급·목표여력 데이터를 한 번에 확인하기 위한 참고 정보입니다.
-      </p>
-    </Card>
-  );
-}
-
-function QuantModelSection({ quant }: { quant?: QuantModelResult }) {
-  return (
-    <section className="score-section">
-      <Card>
-        <div className="score-header">
-          <div>
-            <SectionTitleSmall>퀀트 모델 점수</SectionTitleSmall>
-            <p className="score-subtitle">
-              모멘텀·밸류에이션·수급·리스크·목표여력을 합산해 현재 구간을 판단합니다.
-            </p>
-          </div>
-          <div className="score-mode-badge">
-            {quant?.available ? quant.action : "데이터 대기"}
-          </div>
-        </div>
-
-        <div className="score-main-grid">
-          <div className="score-total-card">
-            <div className="score-total-label">퀀트 점수</div>
-            <div className="score-total-value">
-              {quant?.total != null ? `${quant.total}` : "-"}
-              <span>/ 100</span>
-            </div>
-            <div className={`score-grade ${getScoreGradeTone(quant?.total)}`}>
-              {quant?.grade || "데이터 대기"}
-            </div>
-          </div>
-
-          <div className="score-detail-grid">
-            <QuantPartCard title="모멘텀" part={quant?.momentum} />
-            <QuantPartCard title="밸류에이션" part={quant?.valuation} />
-            <QuantPartCard title="수급" part={quant?.supply} />
-            <QuantPartCard title="리스크" part={quant?.risk} />
-            <QuantPartCard title="목표여력" part={quant?.target} />
-          </div>
-        </div>
-
-        <div className="score-comment-box">
-          <span>판단 요약</span>
-          <strong>{quant?.summary || "분석 실행 후 퀀트 판단이 표시됩니다."}</strong>
-        </div>
-
-        <p className="notice-text">
-          퀀트 점수는 매수·매도 신호가 아니라 현재 가격 위치와 위험도를 함께 보기 위한 참고 지표입니다.
-        </p>
-      </Card>
-    </section>
-  );
-}
-
-function QuantPartCard({ title, part }: { title: string; part?: QuantScorePart }) {
-  const scoreText = part ? `${part.score} / ${part.maxScore}` : "대기";
-  const labelText = part?.label || "데이터 대기";
-
-  return (
-    <div className="score-part-card">
-      <span>{title}</span>
-      <strong>{scoreText}</strong>
-      <em>{labelText}</em>
-    </div>
-  );
-}
-
-function FundamentalsSection({ fundamentals }: { fundamentals?: Fundamentals }) {
-  return (
-    <section className="data-section">
-      <Card>
-        <SectionTitleSmall>종목 기본 정보</SectionTitleSmall>
-        <p className="target-subtitle">
-          시가총액, 밸류에이션, 배당, 52주 가격 범위를 확인합니다.
-        </p>
-
-        <div className="metric-list">
-          <MetricRow label="시가총액" value={formatMarketCap(fundamentals?.marketCap)} />
-          <MetricRow label="PER" value={formatRatio(fundamentals?.per, "배")} />
-          <MetricRow label="PBR" value={formatRatio(fundamentals?.pbr, "배")} />
-          <MetricRow label="EPS" value={formatCurrencyValue(fundamentals?.eps)} />
-          <MetricRow label="BPS" value={formatCurrencyValue(fundamentals?.bps)} />
-          <MetricRow label="배당수익률" value={formatNullablePercent(fundamentals?.dividendYield)} />
-          <MetricRow label="52주 고가" value={formatCurrencyValue(fundamentals?.high52w)} />
-          <MetricRow label="52주 저가" value={formatCurrencyValue(fundamentals?.low52w)} />
-          <MetricRow
-            label="외국인 보유율"
-            value={formatNullablePercent(fundamentals?.foreignOwnershipRate)}
-          />
-          <MetricRow
-            label="상장주식수"
-            value={formatShares(fundamentals?.sharesOutstanding)}
-          />
-        </div>
-
-        <p className="notice-text">
-          현재는 API 구조를 먼저 준비한 단계입니다. 값이 없는 항목은 데이터 연결 후 자동으로 표시됩니다.
-        </p>
-      </Card>
-    </section>
   );
 }
 
@@ -814,9 +525,12 @@ function StockIdentity({
   data: StockResponse | null;
   inputSymbol: string;
 }) {
-  const displaySymbol = data?.symbol || inputSymbol.trim().toUpperCase() || "종목 코드 없음";
+  const displaySymbol =
+    data?.symbol || inputSymbol.trim().toUpperCase() || "종목 코드 없음";
   const displayName = data?.name || "종목명은 분석 후 표시됩니다.";
-  const metaItems = [displaySymbol, data?.exchange, data?.currency].filter(Boolean);
+  const metaItems = [displaySymbol, data?.exchange, data?.currency].filter(
+    Boolean,
+  );
 
   return (
     <div className="stock-identity">
@@ -826,241 +540,34 @@ function StockIdentity({
   );
 }
 
-function StatusMessage({ data, uiError }: { data: StockResponse | null; uiError: string }) {
-  if (uiError) return <p className="status-message error-message">{uiError}</p>;
-  if (data?.warning) return <p className="status-message warning-message">{data.warning}</p>;
-  if (data?.cached) return <p className="status-message info-message">캐시 데이터로 표시 중입니다.</p>;
-  return <p className="status-message muted-text">종목 코드를 입력하고 분석하기를 눌러주세요.</p>;
-}
-
-function ScoreSection({ score }: { score?: CompositeScore }) {
-  return (
-    <section className="score-section">
-      <Card>
-        <div className="score-header">
-          <div>
-            <SectionTitleSmall>종합 신뢰도 점수</SectionTitleSmall>
-            <p className="score-subtitle">
-              기술·거래량·수급·목표여력 점수를 합산해 현재 관심 구간 여부를 진단합니다.
-            </p>
-          </div>
-          <div className="score-mode-badge">
-            {score?.targetPrice?.available ? "목표여력 반영" : "목표여력 대기"}
-          </div>
-        </div>
-
-        <div className="score-main-grid">
-          <div className="score-total-card">
-            <div className="score-total-label">종합 점수</div>
-            <div className="score-total-value">
-              {score?.total != null ? `${score.total}` : "-"}
-              <span>/ 100</span>
-            </div>
-            <div className={`score-grade ${getScoreGradeTone(score?.total)}`}>
-              {score?.grade || "데이터 대기"}
-            </div>
-          </div>
-
-          <div className="score-detail-grid">
-            <ScorePartCard title="기술 점수" part={score?.technical} />
-            <ScorePartCard title="거래량 점수" part={score?.volume} />
-            <ScorePartCard title="수급 점수" part={score?.supply} />
-            <ScorePartCard title="목표여력 점수" part={score?.targetPrice} />
-          </div>
-        </div>
-
-        <div className="score-weight-box">
-          <div>
-            <span className="score-weight-title">현재 적용 가중치</span>
-            <strong>{formatAppliedWeights(score?.appliedWeights)}</strong>
-          </div>
-          <p>
-            목표여력 점수는 기준 목표가 대비 남은 상승 공간과 수급·거래량 보정을 함께 반영합니다. 컨센서스 목표가는 아직 연결하지 않았습니다.
-          </p>
-        </div>
-
-        <div className="score-comment-box">
-          <span>해석</span>
-          <strong>{score?.comment || "분석 실행 후 종합 점수가 표시됩니다."}</strong>
-        </div>
-
-        <div className="target-plan-box">
-          <span>향후 목표가 자동 산정 구조</span>
-          <p>{score?.targetPricePlan?.status || "목표가 참고 범위는 분석 실행 후 표시됩니다."}</p>
-        </div>
-      </Card>
-    </section>
-  );
-}
-
-function TargetPriceSection({ score }: { score?: CompositeScore }) {
-  const range = score?.targetPrice?.technicalTargetRange;
-  const basis = score?.targetPrice?.targetBasis;
-
-  const targetProgress =
-    range && range.baseTarget > 0
-      ? Number(((range.currentPrice / range.baseTarget) * 100).toFixed(1))
-      : null;
-
-  const upsidePrice = range ? Number((range.baseTarget - range.currentPrice).toFixed(2)) : null;
-
-  return (
-    <section className="target-section">
-      <Card>
-        <div className="target-header">
-          <div>
-            <SectionTitleSmall>목표가 참고 범위</SectionTitleSmall>
-            <p className="target-subtitle">
-              기준 목표가, 목표 도달률, 상승 여력 가격을 중심으로 현재 가격 위치를 확인합니다.
-            </p>
-          </div>
-          <div className={`target-badge ${range ? "available" : "unavailable"}`}>
-            {range ? "기술 목표가 계산" : "목표가 대기"}
-          </div>
-        </div>
-
-        <div className="target-grid">
-          <TargetMetricCard
-            title="현재가"
-            value={formatNumber(range?.currentPrice)}
-            subText="분석 기준 가격"
-            tone="neutral"
-          />
-          <TargetMetricCard
-            title="기준 목표가"
-            value={formatNumber(range?.baseTarget)}
-            subText={`상승 여력률 ${formatUpside(range?.baseUpsidePercent)}`}
-            tone={getTargetTone(range?.baseUpsidePercent)}
-          />
-          <TargetMetricCard
-            title="목표 도달률"
-            value={formatTargetProgress(targetProgress)}
-            subText="현재가 / 기준 목표가"
-            tone={getTargetProgressTone(targetProgress)}
-          />
-          <TargetMetricCard
-            title="상승 여력 가격"
-            value={formatSignedNumber(upsidePrice)}
-            subText={`상승 여력률 ${formatUpside(range?.baseUpsidePercent)}`}
-            tone={getTargetTone(upsidePrice)}
-          />
-          <TargetMetricCard
-            title="위험 기준선"
-            value={formatNumber(range?.riskLine)}
-            subText={`하락 여지 ${formatUpside(range?.riskDownsidePercent)}`}
-            tone="negative"
-          />
-        </div>
-
-        <div className="target-comment-box">
-          <span>해석</span>
-          <strong>{makeTargetComment(score)}</strong>
-        </div>
-
-        <TargetBasisBox basis={basis} />
-
-        <p className="notice-text">
-          이 값은 증권사 목표주가가 아니라 차트 기반 참고 범위입니다. 실제 목표가는 실적, 업종, 밸류에이션, 컨센서스 데이터가 추가되어야 더 안정적입니다.
-        </p>
-      </Card>
-    </section>
-  );
-}
-
-function TargetBasisBox({ basis }: { basis?: TargetBasis | null }) {
-  if (!basis) {
-    return null;
-  }
-
-  return (
-    <div className="target-basis-box">
-      <div className="target-basis-header">
-        <span>산정 근거</span>
-        <strong>산정 방식: {basis.method}</strong>
-      </div>
-
-      <p className="target-basis-summary">{basis.summary}</p>
-
-      <div className="target-basis-table-wrap">
-        <table className="target-basis-table">
-          <thead>
-            <tr>
-              <th>항목</th>
-              <th>가격</th>
-              <th>반영 비중</th>
-            </tr>
-          </thead>
-          <tbody>
-            {basis.candidates.map((candidate) => (
-              <tr key={candidate.label}>
-                <td>{candidate.label}</td>
-                <td>{formatNumber(candidate.value)}</td>
-                <td>{formatWeight(candidate.weight)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="target-basis-adjustments">
-        {basis.adjustments.map((adjustment) => (
-          <p key={adjustment}>{adjustment}</p>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function TargetMetricCard({
-  title,
-  value,
-  subText,
-  tone,
+function StatusMessage({
+  data,
+  uiError,
 }: {
-  title: string;
-  value: string;
-  subText: string;
-  tone: "positive" | "negative" | "neutral";
+  data: StockResponse | null;
+  uiError: string;
 }) {
+  if (uiError) return <p className="status-message error-message">{uiError}</p>;
+  if (data?.warning)
+    return <p className="status-message warning-message">{data.warning}</p>;
+  if (data?.cached)
+    return (
+      <p className="status-message info-message">
+        캐시 데이터로 표시 중입니다.
+      </p>
+    );
   return (
-    <div className="target-metric-card">
-      <span>{title}</span>
-      <strong className={tone}>{value}</strong>
-      <em className={tone}>{subText}</em>
-    </div>
+    <p className="status-message muted-text">
+      종목 코드를 입력하고 분석하기를 눌러주세요.
+    </p>
   );
 }
 
-function ScorePartCard({ title, part }: { title: string; part?: ScorePart }) {
-  const scoreText = part?.score != null ? `${part.score}` : "대기";
-  const labelText = part?.label || "데이터 대기";
-
+function MetricRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="score-part-card">
-      <span>{title}</span>
-      <strong>{scoreText}</strong>
-      <em>{labelText}</em>
-    </div>
-  );
-}
-
-function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <div className={`card ${className}`}>{children}</div>;
-}
-
-function SectionTitle({ children }: { children: ReactNode }) {
-  return <h2 className="section-title">{children}</h2>;
-}
-
-function SectionTitleSmall({ children }: { children: ReactNode }) {
-  return <h3 className="section-title small">{children}</h3>;
-}
-
-function ChartHeader({ title, description }: { title: string; description?: string }) {
-  return (
-    <div className="chart-header">
-      <h3>{title}</h3>
-      {description ? <p>{description}</p> : null}
+    <div className="metric-row">
+      <span>{label}</span>
+      <strong>{value}</strong>
     </div>
   );
 }
@@ -1084,667 +591,37 @@ function BigValue({
   return <div className={`big-value ${tone}`}>{children}</div>;
 }
 
-function MetricRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="metric-row">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  );
-}
-
-function SupplyMetricCard({
-  title,
-  value,
-  tone,
+function Card({
+  children,
+  className = "",
 }: {
-  title: string;
-  value: string;
-  tone: "positive" | "negative" | "neutral";
+  children: ReactNode;
+  className?: string;
 }) {
-  return (
-    <div className="supply-metric-card">
-      <span>{title}</span>
-      <strong className={tone}>{value}</strong>
-    </div>
-  );
+  return <div className={`card ${className}`}>{children}</div>;
 }
 
-function SupplyJudgement({ title, value }: { title: string; value: string }) {
-  return (
-    <div className="supply-judgement">
-      <span>{title}</span>
-      <strong>{value}</strong>
-    </div>
-  );
+function SectionTitle({ children }: { children: ReactNode }) {
+  return <h2 className="section-title">{children}</h2>;
 }
 
-function PriceChart({ rows }: { rows: ChartRow[] }) {
-  return (
-    <div className="chart-inner">
-      <Legend
-        items={[
-          { label: "종가", color: "#2563eb" },
-          { label: "SMA20", color: "#f59e0b" },
-          { label: "SMA60", color: "#10b981" },
-          { label: "BB 상단", color: "#94a3b8" },
-          { label: "BB 하단", color: "#94a3b8" },
-        ]}
-      />
-      <MultiLineChart
-        rows={rows}
-        lines={[
-          { key: "close", color: "#2563eb" },
-          { key: "sma20", color: "#f59e0b" },
-          { key: "sma60", color: "#10b981" },
-          { key: "bbUpper", color: "#94a3b8", dashed: true },
-          { key: "bbLower", color: "#94a3b8", dashed: true },
-        ]}
-        showDates
-      />
-    </div>
-  );
+function SectionTitleSmall({ children }: { children: ReactNode }) {
+  return <h3 className="section-title small">{children}</h3>;
 }
 
-function MacdChart({ rows }: { rows: ChartRow[] }) {
-  const filtered = rows.filter(
-    (r) => r.macd != null || r.signal != null || r.histogram != null
-  );
-
-  if (!filtered.length) return <EmptyChartMessage />;
-
-  const width = 1000;
-  const height = 300;
-  const pad = { top: 24, right: 26, bottom: 44, left: 26 };
-  const plotHeight = height - pad.top - pad.bottom;
-
-  const histValues = filtered
-    .map((r) => r.histogram)
-    .filter((v): v is number => v != null && !Number.isNaN(v));
-  const lineValues = filtered
-    .flatMap((r) => [r.macd, r.signal])
-    .filter((v): v is number => v != null && !Number.isNaN(v));
-
-  const all = [...histValues, ...lineValues, 0];
-  const min = Math.min(...all);
-  const max = Math.max(...all);
-  const range = max - min || 1;
-
-  const x = (i: number) =>
-    filtered.length === 1
-      ? width / 2
-      : pad.left + (i / (filtered.length - 1)) * (width - pad.left - pad.right);
-
-  const y = (v: number) => pad.top + plotHeight - ((v - min) / range) * plotHeight;
-  const zeroY = y(0);
-
-  const macdPoints = filtered
-    .map((r, i) => ({ x: x(i), y: y(r.macd ?? 0), v: r.macd }))
-    .filter(isValidPoint);
-
-  const signalPoints = filtered
-    .map((r, i) => ({ x: x(i), y: y(r.signal ?? 0), v: r.signal }))
-    .filter(isValidPoint);
-
-  return (
-    <div className="chart-inner">
-      <Legend
-        items={[
-          { label: "MACD", color: "#2563eb" },
-          { label: "Signal", color: "#ef4444" },
-          { label: "Histogram +", color: "#16a34a" },
-          { label: "Histogram -", color: "#dc2626" },
-        ]}
-      />
-
-      <svg className="chart-svg macd-svg" viewBox={`0 0 ${width} ${height}`}>
-        <rect x="0" y="0" width={width} height={height} fill="#ffffff" />
-        <GridLines
-          width={width}
-          height={height}
-          padTop={pad.top}
-          padRight={pad.right}
-          padBottom={pad.bottom}
-          padLeft={pad.left}
-          lines={4}
-        />
-        <line
-          x1={pad.left}
-          y1={zeroY}
-          x2={width - pad.right}
-          y2={zeroY}
-          stroke="#94a3b8"
-          strokeDasharray="4 4"
-        />
-
-        {filtered.map((r, i) => {
-          const xv = x(i);
-          const hv = r.histogram ?? 0;
-          const yv = y(hv);
-          const top = Math.min(zeroY, yv);
-          const barH = Math.max(1, Math.abs(zeroY - yv));
-          const barW = Math.max(
-            4,
-            (width - pad.left - pad.right) / Math.max(filtered.length * 1.8, 20)
-          );
-
-          return (
-            <rect
-              key={`${r.date}-hist`}
-              x={xv - barW / 2}
-              y={top}
-              width={barW}
-              height={barH}
-              fill={hv >= 0 ? "#16a34a" : "#dc2626"}
-              opacity={0.75}
-            />
-          );
-        })}
-
-        {macdPoints.length > 0 && (
-          <path d={buildPath(macdPoints)} fill="none" stroke="#2563eb" strokeWidth="3" />
-        )}
-        {signalPoints.length > 0 && (
-          <path d={buildPath(signalPoints)} fill="none" stroke="#ef4444" strokeWidth="3" />
-        )}
-
-        <DateLabels rows={filtered} width={width} height={height} padLeft={pad.left} padRight={pad.right} />
-      </svg>
-    </div>
-  );
-}
-
-function LineChart({
-  rows,
-  dataKey,
-  stroke,
-  fixedMin,
-  fixedMax,
-  guides = [],
-}: {
-  rows: ChartRow[];
-  dataKey: keyof ChartRow;
-  stroke: string;
-  fixedMin?: number;
-  fixedMax?: number;
-  guides?: number[];
-}) {
-  const filtered = rows.filter((r) => {
-    const v = r[dataKey];
-    return typeof v === "number" && !Number.isNaN(v);
-  });
-
-  if (!filtered.length) return <EmptyChartMessage />;
-
-  const width = 1000;
-  const height = 280;
-  const pad = { top: 24, right: 26, bottom: 44, left: 26 };
-  const plotHeight = height - pad.top - pad.bottom;
-
-  const values = filtered
-    .map((r) => r[dataKey])
-    .filter((v): v is number => typeof v === "number" && !Number.isNaN(v));
-
-  const min = fixedMin ?? Math.min(...values);
-  const max = fixedMax ?? Math.max(...values);
-  const range = max - min || 1;
-
-  const points = filtered.map((r, i) => {
-    const value = r[dataKey] as number;
-    const x =
-      filtered.length === 1
-        ? width / 2
-        : pad.left + (i / (filtered.length - 1)) * (width - pad.left - pad.right);
-    const y = pad.top + plotHeight - ((value - min) / range) * plotHeight;
-    return { x, y, v: value };
-  });
-
-  return (
-    <svg className="chart-svg line-svg" viewBox={`0 0 ${width} ${height}`}>
-      <rect x="0" y="0" width={width} height={height} fill="#ffffff" />
-      <GridLines
-        width={width}
-        height={height}
-        padTop={pad.top}
-        padRight={pad.right}
-        padBottom={pad.bottom}
-        padLeft={pad.left}
-        lines={4}
-      />
-
-      {guides.map((g) => {
-        const gy = pad.top + plotHeight - ((g - min) / range) * plotHeight;
-        return (
-          <line
-            key={g}
-            x1={pad.left}
-            y1={gy}
-            x2={width - pad.right}
-            y2={gy}
-            stroke="#cbd5e1"
-            strokeDasharray="5 5"
-          />
-        );
-      })}
-
-      <path d={buildPath(points)} fill="none" stroke={stroke} strokeWidth="3" />
-      <DateLabels rows={filtered} width={width} height={height} padLeft={pad.left} padRight={pad.right} />
-    </svg>
-  );
-}
-
-function MultiLineChart({
-  rows,
-  lines,
-  showDates = false,
-}: {
-  rows: ChartRow[];
-  lines: LineSpec[];
-  showDates?: boolean;
-}) {
-  const filtered = rows.filter((r) =>
-    lines.some(({ key }) => typeof r[key] === "number" && !Number.isNaN(r[key] as number))
-  );
-
-  if (!filtered.length) return <EmptyChartMessage />;
-
-  const width = 1000;
-  const height = 360;
-  const pad = { top: 24, right: 26, bottom: 52, left: 26 };
-  const plotHeight = height - pad.top - pad.bottom;
-
-  const values = filtered.flatMap((r) =>
-    lines
-      .map(({ key }) => r[key])
-      .filter((v): v is number => typeof v === "number" && !Number.isNaN(v))
-  );
-
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = max - min || 1;
-
-  const linePaths = lines.map(({ key, color, dashed }) => {
-    const points = filtered.map((r, i) => {
-      const raw = r[key];
-      const value = typeof raw === "number" ? raw : null;
-      const x =
-        filtered.length === 1
-          ? width / 2
-          : pad.left + (i / (filtered.length - 1)) * (width - pad.left - pad.right);
-      if (value == null || Number.isNaN(value)) return { x, y: 0, v: null };
-      const y = pad.top + plotHeight - ((value - min) / range) * plotHeight;
-      return { x, y, v: value };
-    });
-
-    return { key: String(key), color, dashed, d: buildPath(points) };
-  });
-
-  return (
-    <svg className="chart-svg price-svg" viewBox={`0 0 ${width} ${height}`}>
-      <rect x="0" y="0" width={width} height={height} fill="#ffffff" />
-      <GridLines
-        width={width}
-        height={height}
-        padTop={pad.top}
-        padRight={pad.right}
-        padBottom={pad.bottom}
-        padLeft={pad.left}
-        lines={5}
-      />
-      {linePaths.map((line) => (
-        <path
-          key={line.key}
-          d={line.d}
-          fill="none"
-          stroke={line.color}
-          strokeWidth={line.dashed ? "2" : "3"}
-          strokeDasharray={line.dashed ? "7 6" : undefined}
-        />
-      ))}
-      {showDates ? (
-        <DateLabels rows={filtered} width={width} height={height} padLeft={pad.left} padRight={pad.right} />
-      ) : null}
-    </svg>
-  );
-}
-
-function VolumeProfileChart({ rows }: { rows: ChartRow[] }) {
-  const buckets = useMemo(() => buildVolumeProfile(rows, 10), [rows]);
-
-  if (!buckets.length) return <EmptyChartMessage />;
-
-  const maxVolume = Math.max(...buckets.map((bucket) => bucket.volume));
-
-  return (
-    <div className="volume-profile">
-      {buckets.map((bucket) => {
-        const width = maxVolume > 0 ? Math.max(4, (bucket.volume / maxVolume) * 100) : 0;
-        return (
-          <div className="volume-profile-row" key={bucket.label}>
-            <span className="volume-price">{bucket.label}</span>
-            <div className="volume-bar-track">
-              <div className="volume-bar" style={{ width: `${width}%` }} />
-            </div>
-            <span className="volume-value">{formatCompactNumber(bucket.volume)}</span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function GridLines({
-  width,
-  height,
-  padTop,
-  padRight,
-  padBottom,
-  padLeft,
-  lines,
-}: {
-  width: number;
-  height: number;
-  padTop: number;
-  padRight: number;
-  padBottom: number;
-  padLeft: number;
-  lines: number;
-}) {
-  return (
-    <>
-      {Array.from({ length: lines + 1 }).map((_, i) => {
-        const y = padTop + (i / lines) * (height - padTop - padBottom);
-        return (
-          <line
-            key={i}
-            x1={padLeft}
-            y1={y}
-            x2={width - padRight}
-            y2={y}
-            stroke="#e2e8f0"
-            strokeWidth="1"
-          />
-        );
-      })}
-    </>
-  );
-}
-
-function DateLabels({
-  rows,
-  width,
-  height,
-  padLeft,
-  padRight,
-}: {
-  rows: ChartRow[];
-  width: number;
-  height: number;
-  padLeft: number;
-  padRight: number;
-}) {
-  const indexes = getLabelIndexes(rows.length, 5);
-
-  return (
-    <>
-      {indexes.map((index) => {
-        const x =
-          rows.length === 1
-            ? width / 2
-            : padLeft + (index / (rows.length - 1)) * (width - padLeft - padRight);
-        return (
-          <text
-            key={`${rows[index]?.date}-${index}`}
-            x={x}
-            y={height - 14}
-            textAnchor="middle"
-            className="chart-date-label"
-          >
-            {formatDateLabel(rows[index]?.date)}
-          </text>
-        );
-      })}
-    </>
-  );
-}
-
-function Legend({ items }: { items: Array<{ label: string; color: string }> }) {
-  return (
-    <div className="legend">
-      {items.map((item) => (
-        <div key={item.label} className="legend-item">
-          <span className="legend-dot" style={{ background: item.color }} />
-          <span>{item.label}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function EmptyChartMessage() {
-  return <div className="empty-chart">그래프를 표시할 데이터가 없습니다.</div>;
-}
-
-function buildPath(points: Array<{ x: number; y: number; v: number | null | undefined }>) {
-  let d = "";
-  points.forEach((p) => {
-    if (p.v == null || Number.isNaN(p.v)) return;
-    d += `${d ? " L" : "M"} ${p.x} ${p.y}`;
-  });
-  return d;
-}
-
-function isValidPoint(point: {
-  x: number;
-  y: number;
-  v: number | null | undefined;
-}): point is { x: number; y: number; v: number } {
-  return typeof point.v === "number" && !Number.isNaN(point.v);
-}
-
-function buildVolumeProfile(rows: ChartRow[], bucketCount: number) {
-  const validRows = rows.filter((row) => typeof row.close === "number" && typeof row.volume === "number");
-  if (!validRows.length) return [];
-
-  const closes = validRows.map((row) => row.close as number);
-  const min = Math.min(...closes);
-  const max = Math.max(...closes);
-  const range = max - min || 1;
-  const bucketSize = range / bucketCount;
-
-  const buckets = Array.from({ length: bucketCount }).map((_, index) => {
-    const low = min + bucketSize * index;
-    const high = index === bucketCount - 1 ? max : min + bucketSize * (index + 1);
-    return { low, high, volume: 0 };
-  });
-
-  validRows.forEach((row) => {
-    const close = row.close as number;
-    const volume = row.volume ?? 0;
-    const index = Math.min(bucketCount - 1, Math.max(0, Math.floor((close - min) / bucketSize)));
-    buckets[index].volume += volume;
-  });
-
-  return buckets.reverse().map((bucket) => ({
-    label: `${formatShortPrice(bucket.low)}~${formatShortPrice(bucket.high)}`,
-    volume: bucket.volume,
-  }));
-}
-
-function getLabelIndexes(length: number, count: number) {
-  if (length <= 0) return [];
-  if (length <= count) return Array.from({ length }, (_, i) => i);
-
-  const indexes = new Set<number>();
-  for (let i = 0; i < count; i++) {
-    indexes.add(Math.round((i / (count - 1)) * (length - 1)));
-  }
-  return Array.from(indexes).sort((a, b) => a - b);
-}
-
-function getSupplyAnalysis(data: StockResponse | null, rows: ChartRow[]) {
-  const supply = data?.supply;
-
-  if (!supply?.available) {
-    return {
-      supplyView: "수급 데이터 대기",
-      technicalSupplyView: "수급 확인 후 판단",
-      divergenceView: "수급 확인 후 판단",
-    };
-  }
-
-  const recent5Smart = supply.recent5?.smartMoneyNetBuy ?? 0;
-  const recent20Smart = supply.recent20?.smartMoneyNetBuy ?? 0;
-  const foreign5 = supply.recent5?.foreignNetBuy ?? 0;
-  const institution5 = supply.recent5?.institutionNetBuy ?? 0;
-
-  let supplyView = "중립";
-
-  if (recent5Smart > 0 && recent20Smart > 0) {
-    if (foreign5 > 0 && institution5 > 0) {
-      supplyView = "단기·중기 동반 긍정";
-    } else {
-      supplyView = "중기 긍정 / 단기 혼조";
-    }
-  } else if (recent5Smart > 0 && recent20Smart <= 0) {
-    supplyView = "단기 수급 유입";
-  } else if (recent5Smart <= 0 && recent20Smart > 0) {
-    supplyView = "중기 긍정 / 단기 약화";
-  } else if (recent5Smart < 0 && recent20Smart < 0) {
-    supplyView = "수급 이탈 주의";
-  }
-
-  const latest = rows.length ? rows[rows.length - 1] : null;
-  const before5 = rows.length >= 6 ? rows[rows.length - 6] : null;
-  const fiveDayReturn =
-    latest?.close != null && before5?.close != null && before5.close !== 0
-      ? ((latest.close - before5.close) / before5.close) * 100
-      : null;
-
-  const macdPositive = latest?.macd != null && latest?.signal != null && latest.macd > latest.signal;
-  const macdNearCross =
-    latest?.macd != null &&
-    latest?.signal != null &&
-    latest?.histogram != null &&
-    latest.macd <= latest.signal &&
-    latest.histogram > -Math.abs(latest.macd) * 0.05;
-
-  let technicalSupplyView = "기술·수급 판단 대기";
-
-  if (macdPositive && recent5Smart > 0) {
-    technicalSupplyView = "기술 반등 + 수급 동반";
-  } else if (macdPositive && recent5Smart <= 0) {
-    technicalSupplyView = "기술 반등이나 수급 약함";
-  } else if (!macdPositive && recent5Smart > 0) {
-    technicalSupplyView = "수급 유입 / 기술 확인 필요";
-  } else if (!macdPositive && recent5Smart <= 0) {
-    technicalSupplyView = "기술·수급 모두 확인 필요";
-  }
-
-  let divergenceView = "조건 미충족";
-
-  if (fiveDayReturn != null && fiveDayReturn < 0 && (latest?.rsi14 ?? 100) <= 35 && recent5Smart > 0) {
-    divergenceView = "수급 다이버전스 후보";
-  } else if (fiveDayReturn != null && fiveDayReturn < 0 && recent5Smart > 0 && macdNearCross) {
-    divergenceView = "MACD 전환 전 수급 유입";
-  }
-
-  if (supply.smartMoneyPositiveStreak5) {
-    divergenceView = divergenceView === "조건 미충족" ? "5일 연속 수급 유입" : divergenceView;
-  }
-
-  return {
-    supplyView,
-    technicalSupplyView,
-    divergenceView,
-  };
-}
-
-function getBollingerStatus(close?: number | null, upper?: number | null, lower?: number | null) {
-  if (close == null || upper == null || lower == null) return "데이터 없음";
-  const bandWidth = upper - lower;
-  if (bandWidth <= 0) return "데이터 없음";
-  const position = (close - lower) / bandWidth;
-
-  if (position >= 0.9) return "상단 근접";
-  if (position <= 0.1) return "하단 근접";
-  if (position >= 0.6) return "상단권";
-  if (position <= 0.4) return "하단권";
-  return "중앙권";
-}
-
-function getObvTrend(now?: number | null, prev?: number | null) {
-  if (now == null || prev == null) return "데이터 없음";
-  if (now > prev) return "상승";
-  if (now < prev) return "하락";
-  return "보합";
-}
-
-function getScoreGradeTone(value?: number | null) {
-  if (value == null || Number.isNaN(value)) return "neutral";
-  if (value >= 65) return "positive";
-  if (value >= 50) return "neutral";
-  return "negative";
-}
-
-function formatAppliedWeights(weights?: Partial<ScoreWeights>) {
-  if (!weights || Object.keys(weights).length === 0) return "데이터 대기";
-
-  const labels: Array<[keyof ScoreWeights, string]> = [
-    ["technical", "기술"],
-    ["volume", "거래량"],
-    ["supply", "수급"],
-    ["targetPrice", "목표여력"],
-  ];
-
-  return labels
-    .filter(([key]) => weights[key] != null)
-    .map(([key, label]) => `${label} ${((weights[key] ?? 0) * 100).toFixed(1)}%`)
-    .join(" / ");
-}
-
-function makeTargetComment(score?: CompositeScore) {
-  const range = score?.targetPrice?.technicalTargetRange;
-
-  if (!range) {
-    return "분석 실행 후 목표가 참고 범위가 표시됩니다.";
-  }
-
-  const targetScore = score?.targetPrice?.score ?? 0;
-  const supplyScore = score?.supply?.score ?? 0;
-  const volumeScore = score?.volume?.score ?? 0;
-  const targetProgress = range.baseTarget > 0 ? (range.currentPrice / range.baseTarget) * 100 : null;
-  const upsidePrice = range.baseTarget - range.currentPrice;
-
-  if (targetProgress != null && targetProgress >= 97) {
-    return `현재가는 기준 목표가의 ${targetProgress.toFixed(1)}% 수준입니다. 상승 여력은 ${formatSignedNumber(
-      upsidePrice
-    )}로 크지 않으므로 목표 도달률을 우선 확인해야 합니다.`;
-  }
-
-  if (targetScore >= 70 && supplyScore >= 70 && volumeScore >= 65) {
-    return "수급과 거래량이 함께 받쳐주고 있어 기준 목표가까지는 관심 구간으로 볼 수 있습니다.";
-  }
-
-  if (targetScore >= 65 && supplyScore >= 70) {
-    return "수급은 긍정적이나 거래량 확인이 필요합니다. 기준 목표가는 참고하되 보수적 목표가를 먼저 확인하는 것이 좋습니다.";
-  }
-
-  if (targetScore < 50) {
-    return "상승 여력이 크지 않거나 위험 기준선이 가까운 구간입니다. 무리한 목표가 추정은 주의가 필요합니다.";
-  }
-
-  return "기술적 목표가 참고 범위가 계산되었습니다. 위험 기준선 이탈 여부를 함께 확인해야 합니다.";
-}
 
 function formatNumber(value?: number | null) {
   if (value == null || Number.isNaN(value)) return "데이터 없음";
-  return new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 2 }).format(value);
+  return new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 2 }).format(
+    value,
+  );
 }
 
 function formatSignedNumber(value?: number | null) {
   if (value == null || Number.isNaN(value)) return "데이터 없음";
-  const formatted = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 2 }).format(Math.abs(value));
+  const formatted = new Intl.NumberFormat("ko-KR", {
+    maximumFractionDigits: 2,
+  }).format(Math.abs(value));
   if (value > 0) return `+${formatted}`;
   if (value < 0) return `-${formatted}`;
   return "0";
@@ -1779,21 +656,6 @@ function formatPercent(value?: number | null) {
 function formatNullablePercent(value?: number | null) {
   if (value == null || Number.isNaN(value)) return "데이터 준비 중";
   return `${value.toFixed(2)}%`;
-}
-
-function formatUpside(value?: number | null) {
-  if (value == null || Number.isNaN(value)) return "데이터 없음";
-  return `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
-}
-
-function formatTargetProgress(value?: number | null) {
-  if (value == null || Number.isNaN(value)) return "데이터 없음";
-  return `${value.toFixed(1)}%`;
-}
-
-function formatWeight(value?: number | null) {
-  if (value == null || Number.isNaN(value)) return "데이터 없음";
-  return `${(value * 100).toFixed(1)}%`;
 }
 
 function formatMarketCap(value?: number | null) {
@@ -1832,34 +694,16 @@ function formatDateLabel(date?: string) {
 }
 
 function formatShortPrice(value: number) {
-  return new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 0 }).format(value);
+  return new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 0 }).format(
+    value,
+  );
 }
 
-function getChangeTone(value?: number | null): "positive" | "negative" | "neutral" {
+function getChangeTone(
+  value?: number | null,
+): "positive" | "negative" | "neutral" {
   if (value == null || Number.isNaN(value)) return "neutral";
   if (value > 0) return "positive";
   if (value < 0) return "negative";
   return "neutral";
-}
-
-function getTargetTone(value?: number | null): "positive" | "negative" | "neutral" {
-  if (value == null || Number.isNaN(value)) return "neutral";
-  if (value > 0) return "positive";
-  if (value < 0) return "negative";
-  return "neutral";
-}
-
-function getTargetProgressTone(value?: number | null): "positive" | "negative" | "neutral" {
-  if (value == null || Number.isNaN(value)) return "neutral";
-  if (value >= 97) return "negative";
-  if (value >= 90) return "neutral";
-  return "positive";
-}
-
-function Th({ children }: { children: ReactNode }) {
-  return <th>{children}</th>;
-}
-
-function Td({ children }: { children: ReactNode }) {
-  return <td>{children}</td>;
 }

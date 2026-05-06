@@ -30,6 +30,35 @@ export type ScoreSupplyData = {
   smartMoneyPositiveStreak5?: boolean;
 };
 
+export type ScoreFundamentalsData = {
+  marketCap: number | null;
+  per: number | null;
+  pbr: number | null;
+  eps: number | null;
+  bps: number | null;
+  dividendYield: number | null;
+  foreignOwnershipRate: number | null;
+  sharesOutstanding: number | null;
+  high52w: number | null;
+  low52w: number | null;
+};
+
+export type ScoreQuantData = {
+  available: boolean;
+  total: number | null;
+  grade: string;
+  action: string;
+  flags?: {
+    nearHigh52w?: boolean;
+    valuationBurden?: boolean;
+    targetAlmostReached?: boolean;
+    supplyPositive?: boolean;
+    momentumPositive?: boolean;
+  };
+};
+
+export type TargetMode = "conservative" | "base" | "aggressive";
+
 export type ScoreWeights = {
   technical: number;
   volume: number;
@@ -69,12 +98,47 @@ export type TargetBasis = {
   adjustments: string[];
 };
 
+export type ValuationTargetRange = {
+  epsTarget: number | null;
+  bpsTarget: number | null;
+  valuationTarget: number | null;
+  perAdjustment: number | null;
+  pbrAdjustment: number | null;
+  method: string;
+  reasons: string[];
+};
+
+export type QuantTargetAdjustment = {
+  mode: TargetMode;
+  baseAdjustmentPercent: number;
+  riskAdjustmentPercent: number;
+  positiveAdjustmentPercent: number;
+  totalAdjustmentPercent: number;
+  reasons: string[];
+};
+
+export type TargetModeResult = {
+  mode: TargetMode;
+  label: string;
+  technicalWeight: number;
+  valuationWeight: number;
+  preAdjustmentTarget: number;
+  finalTarget: number;
+  upsidePercent: number;
+  quantAdjustment: QuantTargetAdjustment;
+};
+
 export type TargetPriceScore = ScorePart & {
   technicalTargetRange: TargetPriceRange | null;
   targetBasis: TargetBasis | null;
   supplyAdjustedTarget: number | null;
   consensusTarget: null;
   riskLine: number | null;
+
+  valuationTargetRange: ValuationTargetRange | null;
+  finalTargetRange: TargetPriceRange | null;
+  selectedTargetMode: TargetMode;
+  targetModes: TargetModeResult[];
 };
 
 export type CompositeScore = {
@@ -103,6 +167,11 @@ type RecentHighResult = {
   date: string;
 };
 
+type TechnicalTargetResult = {
+  range: TargetPriceRange;
+  basis: TargetBasis;
+};
+
 export const DEFAULT_SCORE_WEIGHTS: ScoreWeights = {
   technical: 0.35,
   volume: 0.2,
@@ -110,13 +179,21 @@ export const DEFAULT_SCORE_WEIGHTS: ScoreWeights = {
   targetPrice: 0.1,
 };
 
+export const DEFAULT_TARGET_MODE: TargetMode = "conservative";
+
 export function calculateCompositeScore({
   rows,
   supply,
+  fundamentals,
+  quant,
+  targetMode = DEFAULT_TARGET_MODE,
   weights = DEFAULT_SCORE_WEIGHTS,
 }: {
   rows: ScoreChartRow[];
   supply?: ScoreSupplyData;
+  fundamentals?: ScoreFundamentalsData;
+  quant?: ScoreQuantData;
+  targetMode?: TargetMode;
   weights?: ScoreWeights;
 }): CompositeScore {
   const sortedRows = sortRowsByDate(rows);
@@ -124,7 +201,15 @@ export function calculateCompositeScore({
   const technical = calculateTechnicalScore(sortedRows);
   const volume = calculateVolumeScore(sortedRows);
   const supplyScore = calculateSupplyScore(supply);
-  const targetPrice = calculateTargetPriceScore(sortedRows, technical, volume, supplyScore);
+  const targetPrice = calculateTargetPriceScore(
+    sortedRows,
+    technical,
+    volume,
+    supplyScore,
+    fundamentals,
+    quant,
+    targetMode
+  );
 
   const parts = {
     technical,
@@ -157,14 +242,14 @@ export function calculateCompositeScore({
     appliedWeights,
     targetPricePlan: {
       status: targetPrice.available
-        ? "기술적 목표가 참고 범위를 계산했습니다. 컨센서스 목표가는 아직 연결하지 않았습니다."
+        ? "기술 목표가, 밸류에이션 목표가, 퀀트 보정을 반영한 최종 기준목표가를 계산했습니다."
         : "목표가 자동 산정은 데이터가 충분할 때 표시됩니다.",
       nextSteps: [
-        "기술적 목표가 범위 검증",
-        "수급 보정 목표가 고도화",
-        "PER/PBR 기반 밸류에이션 목표가 추가",
+        "보수적·기본·공격적 목표가 모드 화면 선택 연결",
+        "업종 평균 PER/PBR 확보 시 밸류에이션 보정 고도화",
         "컨센서스 목표가 데이터 확보 시 반영",
         "분석 기록 저장 후 목표가 적중률 평가",
+        "시장 상황 지표를 연결해 자동 모드 추천",
       ],
     },
   };
@@ -433,12 +518,15 @@ export function calculateTargetPriceScore(
   rows: ScoreChartRow[],
   technical: ScorePart,
   volume: ScorePart,
-  supply: ScorePart
+  supply: ScorePart,
+  fundamentals?: ScoreFundamentalsData,
+  quant?: ScoreQuantData,
+  targetMode: TargetMode = DEFAULT_TARGET_MODE
 ): TargetPriceScore {
   const sortedRows = sortRowsByDate(rows);
-  const result = calculateTechnicalTargetRange(sortedRows, technical, volume, supply);
+  const technicalResult = calculateTechnicalTargetRange(sortedRows, technical, volume, supply);
 
-  if (!result) {
+  if (!technicalResult) {
     return {
       available: false,
       score: null,
@@ -452,15 +540,51 @@ export function calculateTargetPriceScore(
       supplyAdjustedTarget: null,
       consensusTarget: null,
       riskLine: null,
+      valuationTargetRange: null,
+      finalTargetRange: null,
+      selectedTargetMode: targetMode,
+      targetModes: [],
     };
   }
 
-  const { range, basis } = result;
+  const technicalRange = technicalResult.range;
+  const technicalBasis = technicalResult.basis;
+  const valuationTargetRange = calculateValuationTargetRange(
+    technicalRange.currentPrice,
+    fundamentals
+  );
 
-  let score = scoreTargetUpside(range.baseUpsidePercent);
+  const targetModes = calculateTargetModeResults({
+    technicalRange,
+    valuationTargetRange,
+    quant,
+    technical,
+    volume,
+    supply,
+    fundamentals,
+  });
+
+  const selectedModeResult =
+    targetModes.find((modeResult) => modeResult.mode === targetMode) ??
+    targetModes.find((modeResult) => modeResult.mode === DEFAULT_TARGET_MODE) ??
+    targetModes[0];
+
+  const finalTargetRange = selectedModeResult
+    ? makeFinalTargetRange(technicalRange, selectedModeResult.finalTarget)
+    : technicalRange;
+
+  const basis = makeFinalTargetBasis({
+    technicalBasis,
+    valuationTargetRange,
+    selectedModeResult,
+    targetModes,
+  });
+
+  let score = scoreTargetUpside(finalTargetRange.baseUpsidePercent);
   const reasons: string[] = [];
 
-  reasons.push(`기준 목표가 상승 여력은 약 ${range.baseUpsidePercent.toFixed(1)}%입니다.`);
+  reasons.push(`최종 기준목표가 상승 여력은 약 ${finalTargetRange.baseUpsidePercent.toFixed(1)}%입니다.`);
+  reasons.push(`현재 목표가 모드는 ${getTargetModeLabel(targetMode)}입니다.`);
 
   if ((supply.score ?? 0) >= 80) {
     score += 5;
@@ -478,9 +602,21 @@ export function calculateTargetPriceScore(
     reasons.push("거래량 점수가 낮아 목표가 신뢰도에 감점을 적용했습니다.");
   }
 
-  if (range.riskDownsidePercent > -3) {
+  if (finalTargetRange.riskDownsidePercent > -3) {
     score -= 5;
     reasons.push("위험 기준선이 현재가와 가까워 변동성 주의 보정을 적용했습니다.");
+  }
+
+  if (valuationTargetRange?.valuationTarget != null) {
+    reasons.push("EPS/BPS 기반 밸류에이션 목표가를 함께 반영했습니다.");
+  } else {
+    reasons.push("밸류에이션 목표가 데이터가 부족해 기술 목표가 중심으로 계산했습니다.");
+  }
+
+  if (selectedModeResult?.quantAdjustment.totalAdjustmentPercent) {
+    reasons.push(
+      `퀀트 보정 ${selectedModeResult.quantAdjustment.totalAdjustmentPercent.toFixed(1)}%가 최종 기준목표가에 반영되었습니다.`
+    );
   }
 
   const finalScore = clampScore(score);
@@ -490,11 +626,15 @@ export function calculateTargetPriceScore(
     score: finalScore,
     label: getPartLabel(finalScore),
     reasons,
-    technicalTargetRange: range,
+    technicalTargetRange: finalTargetRange,
     targetBasis: basis,
-    supplyAdjustedTarget: range.aggressiveTarget,
+    supplyAdjustedTarget: finalTargetRange.aggressiveTarget,
     consensusTarget: null,
-    riskLine: range.riskLine,
+    riskLine: finalTargetRange.riskLine,
+    valuationTargetRange,
+    finalTargetRange,
+    selectedTargetMode: targetMode,
+    targetModes,
   };
 }
 
@@ -532,7 +672,7 @@ function calculateTechnicalTargetRange(
   technical: ScorePart,
   volume: ScorePart,
   supply: ScorePart
-): { range: TargetPriceRange; basis: TargetBasis } | null {
+): TechnicalTargetResult | null {
   const validRows = sortRowsByDate(rows).filter(
     (row) => typeof row.close === "number" && Number.isFinite(row.close)
   );
@@ -567,18 +707,14 @@ function calculateTechnicalTargetRange(
   const volatilityUpper = currentPrice * (1 + Math.max(volatility * 1.8, 0.025));
   const volatilityAggressiveUpper = currentPrice * (1 + Math.max(volatility * 2.7, 0.04));
 
-  const upsideCandidates = [
-    recentHigh,
-    bbUpper,
-    volatilityUpper,
-  ].filter((value): value is number => {
-    return typeof value === "number" && Number.isFinite(value) && value > currentPrice;
-  });
+  const upsideCandidates = [recentHigh, bbUpper, volatilityUpper].filter(
+    (value): value is number => {
+      return typeof value === "number" && Number.isFinite(value) && value > currentPrice;
+    }
+  );
 
   const conservativeTarget =
-    upsideCandidates.length > 0
-      ? Math.min(...upsideCandidates)
-      : currentPrice * 1.02;
+    upsideCandidates.length > 0 ? Math.min(...upsideCandidates) : currentPrice * 1.02;
 
   const weightedResult =
     calculateWeightedBaseTarget({
@@ -594,17 +730,17 @@ function calculateTechnicalTargetRange(
     }) ?? {
       target: conservativeTarget,
       basis: {
-        method: "가중 평균",
+        method: "기술 목표가 가중 평균",
         summary:
-          "기준 목표가는 최근 고점, 볼린저밴드, 변동성, 보수적 목표가를 가중 평균해 계산했습니다.",
+          "기술 목표가는 최근 고점, 볼린저밴드, 변동성, 보수적 목표가를 가중 평균해 계산했습니다.",
         candidates: [
           {
-            label: "보수적 목표가",
+            label: "보수적 기술 목표가",
             value: roundPrice(conservativeTarget),
             weight: 1,
           },
         ],
-        adjustments: ["계산 후보가 부족해 보수적 목표가를 기준으로 계산했습니다."],
+        adjustments: ["계산 후보가 부족해 보수적 기술 목표가를 기준으로 계산했습니다."],
       },
     };
 
@@ -617,14 +753,11 @@ function calculateTechnicalTargetRange(
     conservativeTarget
   );
 
-  const downsideCandidates = [
-    recentLow,
-    bbLower,
-    sma20,
-    sma60,
-  ].filter((value): value is number => {
-    return typeof value === "number" && Number.isFinite(value) && value > 0 && value < currentPrice;
-  });
+  const downsideCandidates = [recentLow, bbLower, sma20, sma60].filter(
+    (value): value is number => {
+      return typeof value === "number" && Number.isFinite(value) && value > 0 && value < currentPrice;
+    }
+  );
 
   const riskLineRaw =
     downsideCandidates.length > 0 ? Math.max(...downsideCandidates) : currentPrice * 0.95;
@@ -647,6 +780,374 @@ function calculateTechnicalTargetRange(
       riskDownsidePercent: percentChange(roundedRiskLine, currentPrice),
     },
     basis: weightedResult.basis,
+  };
+}
+
+function calculateValuationTargetRange(
+  currentPrice: number,
+  fundamentals?: ScoreFundamentalsData
+): ValuationTargetRange | null {
+  if (!fundamentals || currentPrice <= 0) {
+    return null;
+  }
+
+  const per = fundamentals.per;
+  const pbr = fundamentals.pbr;
+  const eps = fundamentals.eps;
+  const bps = fundamentals.bps;
+
+  const reasons: string[] = [];
+  const perAdjustment = getPerAdjustment(per);
+  const pbrAdjustment = getPbrAdjustment(pbr);
+
+  let epsTarget: number | null = null;
+  let bpsTarget: number | null = null;
+
+  if (eps != null && eps > 0 && per != null && per > 0 && perAdjustment != null) {
+    epsTarget = roundPrice(eps * per * perAdjustment);
+    reasons.push(`EPS × 현재 PER × PER 보정계수 ${perAdjustment.toFixed(2)}를 반영했습니다.`);
+  } else {
+    reasons.push("EPS 또는 PER 데이터가 부족해 EPS 기준 목표가는 제외했습니다.");
+  }
+
+  if (bps != null && bps > 0 && pbr != null && pbr > 0 && pbrAdjustment != null) {
+    bpsTarget = roundPrice(bps * pbr * pbrAdjustment);
+    reasons.push(`BPS × 현재 PBR × PBR 보정계수 ${pbrAdjustment.toFixed(2)}를 반영했습니다.`);
+  } else {
+    reasons.push("BPS 또는 PBR 데이터가 부족해 BPS 기준 목표가는 제외했습니다.");
+  }
+
+  const targets = [epsTarget, bpsTarget].filter(
+    (value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0
+  );
+
+  if (targets.length === 0) {
+    return {
+      epsTarget,
+      bpsTarget,
+      valuationTarget: null,
+      perAdjustment,
+      pbrAdjustment,
+      method: "밸류에이션 목표가 계산 대기",
+      reasons,
+    };
+  }
+
+  const valuationTarget = roundPrice(
+    targets.reduce((sum, value) => sum + value, 0) / targets.length
+  );
+
+  const cappedValuationTarget = clampValuationTarget(valuationTarget, currentPrice);
+
+  if (cappedValuationTarget !== valuationTarget) {
+    reasons.push("밸류에이션 목표가가 현재가 대비 과도하게 벌어지지 않도록 안정화했습니다.");
+  }
+
+  return {
+    epsTarget,
+    bpsTarget,
+    valuationTarget: cappedValuationTarget,
+    perAdjustment,
+    pbrAdjustment,
+    method: "EPS/PER + BPS/PBR 보정 평균",
+    reasons,
+  };
+}
+
+function calculateTargetModeResults({
+  technicalRange,
+  valuationTargetRange,
+  quant,
+  technical,
+  volume,
+  supply,
+  fundamentals,
+}: {
+  technicalRange: TargetPriceRange;
+  valuationTargetRange: ValuationTargetRange | null;
+  quant?: ScoreQuantData;
+  technical: ScorePart;
+  volume: ScorePart;
+  supply: ScorePart;
+  fundamentals?: ScoreFundamentalsData;
+}): TargetModeResult[] {
+  const modes: Array<{
+    mode: TargetMode;
+    technicalWeight: number;
+    valuationWeight: number;
+  }> = [
+    {
+      mode: "conservative",
+      technicalWeight: 0.45,
+      valuationWeight: 0.55,
+    },
+    {
+      mode: "base",
+      technicalWeight: 0.6,
+      valuationWeight: 0.4,
+    },
+    {
+      mode: "aggressive",
+      technicalWeight: 0.75,
+      valuationWeight: 0.25,
+    },
+  ];
+
+  return modes.map((modeConfig) => {
+    const valuationTarget =
+      valuationTargetRange?.valuationTarget != null
+        ? valuationTargetRange.valuationTarget
+        : technicalRange.baseTarget;
+
+    const preAdjustmentTarget =
+      technicalRange.baseTarget * modeConfig.technicalWeight +
+      valuationTarget * modeConfig.valuationWeight;
+
+    const quantAdjustment = calculateQuantTargetAdjustment({
+      mode: modeConfig.mode,
+      quant,
+      technical,
+      volume,
+      supply,
+      fundamentals,
+      technicalRange,
+      valuationTargetRange,
+    });
+
+    const finalTargetBeforeStabilize = roundPrice(
+      preAdjustmentTarget * (1 + quantAdjustment.totalAdjustmentPercent / 100)
+    );
+
+    const finalTarget = stabilizeFinalTarget({
+      mode: modeConfig.mode,
+      finalTarget: finalTargetBeforeStabilize,
+      currentPrice: technicalRange.currentPrice,
+      technicalTarget: technicalRange.baseTarget,
+      valuationTarget,
+      quant,
+    });
+
+    return {
+      mode: modeConfig.mode,
+      label: getTargetModeLabel(modeConfig.mode),
+      technicalWeight: modeConfig.technicalWeight,
+      valuationWeight: modeConfig.valuationWeight,
+      preAdjustmentTarget: roundPrice(preAdjustmentTarget),
+      finalTarget,
+      upsidePercent: percentChange(finalTarget, technicalRange.currentPrice),
+      quantAdjustment,
+    };
+  });
+}
+
+function calculateQuantTargetAdjustment({
+  mode,
+  quant,
+  technical,
+  volume,
+  supply,
+  fundamentals,
+  technicalRange,
+  valuationTargetRange,
+}: {
+  mode: TargetMode;
+  quant?: ScoreQuantData;
+  technical: ScorePart;
+  volume: ScorePart;
+  supply: ScorePart;
+  fundamentals?: ScoreFundamentalsData;
+  technicalRange: TargetPriceRange;
+  valuationTargetRange: ValuationTargetRange | null;
+}): QuantTargetAdjustment {
+  const reasons: string[] = [];
+
+  let baseAdjustmentPercent = 0;
+  let riskAdjustmentPercent = 0;
+  let positiveAdjustmentPercent = 0;
+
+  const quantTotal = quant?.total ?? null;
+
+  if (quantTotal != null) {
+    if (quantTotal >= 80) {
+      baseAdjustmentPercent += 3;
+      reasons.push("퀀트 점수가 80점 이상이라 기본 보정을 +3% 적용했습니다.");
+    } else if (quantTotal >= 65) {
+      baseAdjustmentPercent += 1;
+      reasons.push("퀀트 점수가 65점 이상이라 기본 보정을 +1% 적용했습니다.");
+    } else if (quantTotal >= 50) {
+      reasons.push("퀀트 점수가 중립권이라 기본 보정은 0%입니다.");
+    } else if (quantTotal >= 35) {
+      baseAdjustmentPercent -= 3;
+      reasons.push("퀀트 점수가 낮아 기본 보정을 -3% 적용했습니다.");
+    } else {
+      baseAdjustmentPercent -= 6;
+      reasons.push("퀀트 점수가 위험권이라 기본 보정을 -6% 적용했습니다.");
+    }
+  } else {
+    reasons.push("퀀트 점수 데이터가 없어 기본 보정은 0%입니다.");
+  }
+
+  const flags = quant?.flags ?? {};
+  const currentPrice = technicalRange.currentPrice;
+  const targetProgress =
+    technicalRange.baseTarget > 0 ? (currentPrice / technicalRange.baseTarget) * 100 : null;
+
+  const nearHigh52w =
+    flags.nearHigh52w ||
+    (fundamentals?.high52w != null &&
+      fundamentals.high52w > 0 &&
+      currentPrice / fundamentals.high52w >= 0.98);
+
+  const valuationBurden =
+    flags.valuationBurden ||
+    (fundamentals?.per != null && fundamentals.per >= 35) ||
+    (fundamentals?.pbr != null && fundamentals.pbr >= 3);
+
+  const targetAlmostReached = flags.targetAlmostReached || (targetProgress != null && targetProgress >= 97);
+
+  if (nearHigh52w) {
+    riskAdjustmentPercent -= mode === "conservative" ? 3 : 2;
+    reasons.push("52주 고가에 근접해 리스크 보정을 적용했습니다.");
+  }
+
+  if (targetAlmostReached) {
+    riskAdjustmentPercent -= mode === "conservative" ? 3 : 2;
+    reasons.push("기술 목표가에 이미 근접해 목표가 근접 보정을 적용했습니다.");
+  }
+
+  if (valuationBurden) {
+    riskAdjustmentPercent -= mode === "conservative" ? 3 : 2;
+    reasons.push("PER/PBR 부담으로 밸류에이션 리스크 보정을 적용했습니다.");
+  }
+
+  if (valuationTargetRange?.valuationTarget != null && valuationTargetRange.valuationTarget < currentPrice) {
+    riskAdjustmentPercent -= mode === "conservative" ? 2 : 1;
+    reasons.push("밸류에이션 목표가가 현재가보다 낮아 보수 보정을 적용했습니다.");
+  }
+
+  if ((supply.score ?? 0) >= 80 || flags.supplyPositive) {
+    positiveAdjustmentPercent += mode === "aggressive" ? 2 : 1;
+    reasons.push("수급이 긍정적이라 소폭 가산했습니다.");
+  }
+
+  if ((technical.score ?? 0) >= 70 || flags.momentumPositive) {
+    positiveAdjustmentPercent += mode === "aggressive" ? 2 : 1;
+    reasons.push("모멘텀이 긍정적이라 소폭 가산했습니다.");
+  }
+
+  if ((volume.score ?? 0) < 50) {
+    riskAdjustmentPercent -= 1;
+    reasons.push("거래량 점수가 낮아 추가 보수 보정을 적용했습니다.");
+  }
+
+  if (mode === "conservative") {
+    baseAdjustmentPercent -= 1;
+    reasons.push("보수적 모드는 기본적으로 -1% 안정화 보정을 적용합니다.");
+  }
+
+  if (mode === "aggressive" && (nearHigh52w || valuationBurden || targetAlmostReached)) {
+    riskAdjustmentPercent -= 2;
+    reasons.push("공격적 모드라도 리스크 플래그가 있어 과도한 상향을 제한했습니다.");
+  }
+
+  const rawTotal = baseAdjustmentPercent + riskAdjustmentPercent + positiveAdjustmentPercent;
+  const totalAdjustmentPercent = clampAdjustmentPercent(rawTotal, mode);
+
+  if (totalAdjustmentPercent !== rawTotal) {
+    reasons.push("보정률이 과도하지 않도록 상·하한을 적용했습니다.");
+  }
+
+  return {
+    mode,
+    baseAdjustmentPercent,
+    riskAdjustmentPercent,
+    positiveAdjustmentPercent,
+    totalAdjustmentPercent,
+    reasons,
+  };
+}
+
+function makeFinalTargetRange(
+  technicalRange: TargetPriceRange,
+  finalBaseTarget: number
+): TargetPriceRange {
+  const currentPrice = technicalRange.currentPrice;
+  const roundedBase = roundPrice(finalBaseTarget);
+  const conservativeTarget = roundPrice(Math.min(roundedBase, technicalRange.conservativeTarget));
+  const aggressiveTarget = roundPrice(Math.max(roundedBase, technicalRange.aggressiveTarget));
+  const riskLine = technicalRange.riskLine;
+
+  return {
+    currentPrice,
+    conservativeTarget,
+    baseTarget: roundedBase,
+    aggressiveTarget,
+    riskLine,
+    conservativeUpsidePercent: percentChange(conservativeTarget, currentPrice),
+    baseUpsidePercent: percentChange(roundedBase, currentPrice),
+    aggressiveUpsidePercent: percentChange(aggressiveTarget, currentPrice),
+    riskDownsidePercent: percentChange(riskLine, currentPrice),
+  };
+}
+
+function makeFinalTargetBasis({
+  technicalBasis,
+  valuationTargetRange,
+  selectedModeResult,
+  targetModes,
+}: {
+  technicalBasis: TargetBasis;
+  valuationTargetRange: ValuationTargetRange | null;
+  selectedModeResult?: TargetModeResult;
+  targetModes: TargetModeResult[];
+}): TargetBasis {
+  const selected = selectedModeResult;
+  const candidates: TargetBasisCandidate[] = [];
+
+  if (selected) {
+    candidates.push({
+      label: `기술 목표가 반영 (${getTargetModeLabel(selected.mode)})`,
+      value: roundPrice(selected.preAdjustmentTarget),
+      weight: selected.technicalWeight,
+    });
+
+    if (valuationTargetRange?.valuationTarget != null) {
+      candidates.push({
+        label: "밸류에이션 목표가",
+        value: roundPrice(valuationTargetRange.valuationTarget),
+        weight: selected.valuationWeight,
+      });
+    }
+
+    candidates.push({
+      label: "최종 기준목표가",
+      value: roundPrice(selected.finalTarget),
+      weight: 1,
+    });
+  }
+
+  const adjustments = [
+    ...technicalBasis.adjustments,
+    ...(valuationTargetRange?.reasons ?? []),
+    ...(selected?.quantAdjustment.reasons ?? []),
+    ...targetModes.map(
+      (mode) =>
+        `${mode.label}: 기술 ${formatPercentWeight(mode.technicalWeight)}, 밸류 ${formatPercentWeight(
+          mode.valuationWeight
+        )}, 최종 ${roundPrice(mode.finalTarget).toLocaleString("ko-KR")}`
+    ),
+  ];
+
+  return {
+    method: "기술 목표가 + 밸류에이션 목표가 + 퀀트 보정",
+    summary:
+      selected != null
+        ? `${getTargetModeLabel(
+            selected.mode
+          )} 기준으로 기술 목표가와 밸류에이션 목표가를 가중 평균한 뒤 퀀트 리스크 보정을 적용했습니다.`
+        : "기술 목표가와 밸류에이션 목표가를 함께 계산했습니다.",
+    candidates: candidates.length > 0 ? candidates : technicalBasis.candidates,
+    adjustments,
   };
 }
 
@@ -724,7 +1225,7 @@ function calculateWeightedBaseTarget({
 
   const candidates = [
     {
-      label: "보수적 목표가",
+      label: "보수적 기술 목표가",
       value: conservativeTarget,
       weight: weights.conservative,
     },
@@ -776,9 +1277,9 @@ function calculateWeightedBaseTarget({
   return {
     target,
     basis: {
-      method: "가중 평균",
+      method: "기술 목표가 가중 평균",
       summary:
-        "기준 목표가는 최근 고점, 볼린저밴드, 변동성, 보수적 목표가를 가중 평균해 계산했습니다.",
+        "기술 목표가는 최근 고점, 볼린저밴드, 변동성, 보수적 목표가를 가중 평균해 계산했습니다.",
       candidates: normalizedCandidates,
       adjustments,
     },
@@ -792,21 +1293,24 @@ function getRecentHighClose(rows: ScoreChartRow[]): RecentHighResult | null {
 
   if (validRows.length === 0) return null;
 
-  return validRows.reduce<RecentHighResult>((max, row) => {
-    const close = row.close as number;
+  return validRows.reduce<RecentHighResult>(
+    (max, row) => {
+      const close = row.close as number;
 
-    if (close > max.value) {
-      return {
-        value: close,
-        date: row.date,
-      };
+      if (close > max.value) {
+        return {
+          value: close,
+          date: row.date,
+        };
+      }
+
+      return max;
+    },
+    {
+      value: validRows[0].close as number,
+      date: validRows[0].date,
     }
-
-    return max;
-  }, {
-    value: validRows[0].close as number,
-    date: validRows[0].date,
-  });
+  );
 }
 
 function sortRowsByDate(rows: ScoreChartRow[]) {
@@ -901,7 +1405,7 @@ function makeScoreComment({
   if (targetPrice.available && (targetPrice.score ?? 0) < 50) weakParts.push("목표여력");
 
   const targetMessage = targetPrice.available
-    ? " 목표가 참고 범위는 기술적 계산 기준입니다."
+    ? " 목표가 참고 범위는 기술·밸류에이션·퀀트 보정 기준입니다."
     : " 목표가 데이터는 아직 제외하고 계산했습니다.";
 
   if (strongParts.length > 0 && weakParts.length > 0) {
@@ -1000,4 +1504,79 @@ function roundPrice(value: number) {
 
 function clampScore(score: number) {
   return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+function getPerAdjustment(per?: number | null) {
+  if (per == null || !Number.isFinite(per) || per <= 0) return null;
+  if (per <= 15) return 1.05;
+  if (per <= 25) return 1.0;
+  if (per <= 35) return 0.95;
+  return 0.9;
+}
+
+function getPbrAdjustment(pbr?: number | null) {
+  if (pbr == null || !Number.isFinite(pbr) || pbr <= 0) return null;
+  if (pbr <= 1) return 1.05;
+  if (pbr <= 2) return 1.0;
+  if (pbr <= 3) return 0.95;
+  return 0.9;
+}
+
+function clampValuationTarget(value: number, currentPrice: number) {
+  if (!Number.isFinite(value) || value <= 0) return value;
+
+  const lowerLimit = currentPrice * 0.75;
+  const upperLimit = currentPrice * 1.25;
+
+  return roundPrice(Math.max(lowerLimit, Math.min(upperLimit, value)));
+}
+
+function stabilizeFinalTarget({
+  mode,
+  finalTarget,
+  currentPrice,
+  technicalTarget,
+  valuationTarget,
+  quant,
+}: {
+  mode: TargetMode;
+  finalTarget: number;
+  currentPrice: number;
+  technicalTarget: number;
+  valuationTarget: number;
+  quant?: ScoreQuantData;
+}) {
+  let minTarget = currentPrice * 0.82;
+  let maxTarget = Math.max(technicalTarget, valuationTarget, currentPrice) * 1.08;
+
+  if (mode === "conservative") {
+    minTarget = currentPrice * 0.78;
+    maxTarget = Math.max(technicalTarget, currentPrice) * 1.02;
+  }
+
+  if (mode === "aggressive") {
+    maxTarget = Math.max(technicalTarget, valuationTarget, currentPrice) * 1.12;
+  }
+
+  if (quant?.flags?.nearHigh52w || quant?.flags?.valuationBurden || quant?.flags?.targetAlmostReached) {
+    maxTarget = Math.min(maxTarget, Math.max(technicalTarget, currentPrice) * 1.03);
+  }
+
+  return roundPrice(Math.max(minTarget, Math.min(maxTarget, finalTarget)));
+}
+
+function clampAdjustmentPercent(value: number, mode: TargetMode) {
+  if (mode === "conservative") return Math.max(-12, Math.min(4, value));
+  if (mode === "aggressive") return Math.max(-10, Math.min(6, value));
+  return Math.max(-10, Math.min(5, value));
+}
+
+function getTargetModeLabel(mode: TargetMode) {
+  if (mode === "conservative") return "보수적 기준";
+  if (mode === "aggressive") return "공격적 기준";
+  return "기본 기준";
+}
+
+function formatPercentWeight(value: number) {
+  return `${(value * 100).toFixed(1)}%`;
 }
