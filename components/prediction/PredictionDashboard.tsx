@@ -16,7 +16,6 @@ import {
   formatHitRate,
   formatNumber,
   formatPercent,
-  formatPrice,
   formatScoreValue,
   formatSignedNumber,
 } from "../../utils/format";
@@ -286,7 +285,7 @@ function SectionTitleSmall({ children }: { children: ReactNode }) {
   return <h3 className="section-title small">{children}</h3>;
 }
 
-function MetricRow({ label, value }: { label: string }) {
+function MetricRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="metric-row">
       <span>{label}</span>
