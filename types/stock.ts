@@ -53,6 +53,32 @@ export type Fundamentals = {
   low52w: number | null;
 };
 
+export type EarningsGrowthData = {
+  available: boolean;
+  source: "none" | "manual" | "kis" | "dart" | "consensus";
+  updatedAt: string | null;
+  warning?: string;
+
+  lastYearNetIncome: number | null;
+  expectedNetIncome: number | null;
+  netIncomeGrowthRate: number | null;
+
+  lastYearOperatingProfit: number | null;
+  expectedOperatingProfit: number | null;
+  operatingProfitGrowthRate: number | null;
+
+  lastYearEps: number | null;
+  expectedEps: number | null;
+  epsGrowthRate: number | null;
+
+  turnaround: boolean | null;
+  deficitReduction: boolean | null;
+
+  score: number | null;
+  label: string;
+  reasons: string[];
+};
+
 export type QuantScorePart = {
   score: number;
   maxScore: number;
@@ -66,17 +92,28 @@ export type QuantModelResult = {
   grade: string;
   action: string;
   summary: string;
+
   momentum: QuantScorePart;
+  trend: QuantScorePart;
+  tradingValue: QuantScorePart;
   valuation: QuantScorePart;
   supply: QuantScorePart;
+  volatility: QuantScorePart;
   risk: QuantScorePart;
   target: QuantScorePart;
+
+  earningsGrowth?: QuantScorePart;
+
   flags: {
     nearHigh52w: boolean;
     valuationBurden: boolean;
     targetAlmostReached: boolean;
     supplyPositive: boolean;
     momentumPositive: boolean;
+    trendPositive: boolean;
+    tradingValuePositive: boolean;
+    volatilityHigh: boolean;
+    earningsGrowthPositive?: boolean;
   };
 };
 
@@ -92,6 +129,8 @@ export type ScoreWeights = {
   volume: number;
   supply: number;
   targetPrice: number;
+  signalAgreement: number;
+  earningsGrowth?: number;
 };
 
 export type TargetPriceRange = {
@@ -155,6 +194,7 @@ export type CompositeScore = {
   total: number | null;
   grade: string;
   comment: string;
+
   technical: ScorePart;
   volume: ScorePart;
   supply: ScorePart;
@@ -169,6 +209,9 @@ export type CompositeScore = {
     selectedTargetMode?: TargetMode;
     targetModes?: TargetModeResult[];
   };
+  signalAgreement: ScorePart;
+  earningsGrowth?: ScorePart;
+
   baseWeights: ScoreWeights;
   appliedWeights: Partial<ScoreWeights>;
   targetPricePlan: {
@@ -180,6 +223,7 @@ export type CompositeScore = {
 export type StockResponse = {
   ok?: boolean;
   symbol?: string;
+  rawSymbol?: string;
   name?: string;
   exchange?: string;
   currency?: string;
@@ -195,6 +239,7 @@ export type StockResponse = {
     label: string;
   };
   fundamentals?: Fundamentals;
+  earningsGrowth?: EarningsGrowthData;
   supply?: SupplyData;
   score?: CompositeScore;
   quant?: QuantModelResult;
@@ -205,4 +250,12 @@ export type StockResponse = {
   error?: string;
   detail?: string;
   status?: number;
+  meta?: {
+    cached?: boolean;
+    cacheSource?: string | null;
+    warning?: string | null;
+    updatedAt?: string;
+    range?: string;
+    source?: string;
+  };
 };
