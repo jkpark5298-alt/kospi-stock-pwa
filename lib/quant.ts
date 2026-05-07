@@ -43,6 +43,28 @@ export type QuantFundamentals = {
   low52w: number | null;
 };
 
+export type QuantEarningsGrowthData = {
+  available: boolean;
+  source?: "none" | "manual" | "kis" | "dart" | "consensus";
+  updatedAt?: string | null;
+  warning?: string;
+
+  lastYearNetIncome?: number | null;
+  expectedNetIncome?: number | null;
+  netIncomeGrowthRate?: number | null;
+
+  lastYearOperatingProfit?: number | null;
+  expectedOperatingProfit?: number | null;
+  operatingProfitGrowthRate?: number | null;
+
+  lastYearEps?: number | null;
+  expectedEps?: number | null;
+  epsGrowthRate?: number | null;
+
+  turnaround?: boolean | null;
+  deficitReduction?: boolean | null;
+};
+
 export type QuantTargetPriceRange = {
   currentPrice: number;
   conservativeTarget: number;
@@ -77,6 +99,7 @@ export type QuantModelResult = {
   volatility: QuantScorePart;
   risk: QuantScorePart;
   target: QuantScorePart;
+  earningsGrowth: QuantScorePart;
 
   flags: {
     nearHigh52w: boolean;
@@ -87,6 +110,7 @@ export type QuantModelResult = {
     trendPositive: boolean;
     tradingValuePositive: boolean;
     volatilityHigh: boolean;
+    earningsGrowthPositive: boolean;
   };
 };
 
@@ -95,11 +119,13 @@ export function calculateQuantModel({
   supply,
   fundamentals,
   targetRange,
+  earningsGrowth,
 }: {
   rows: QuantChartRow[];
   supply?: QuantSupplyData;
   fundamentals?: QuantFundamentals;
   targetRange?: QuantTargetPriceRange | null;
+  earningsGrowth?: QuantEarningsGrowthData | null;
 }): QuantModelResult {
   const sortedRows = sortRowsByDate(rows);
   const latest = sortedRows.length ? sortedRows[sortedRows.length - 1] : null;
@@ -123,18 +149,19 @@ export function calculateQuantModel({
     targetRange,
   });
   const target = calculateTargetPart(targetRange);
+  const earningsGrowthPart = calculateEarningsGrowthPart(earningsGrowth);
 
-  const rawTotal =
-    momentum.score +
-    trend.score +
-    tradingValue.score +
-    valuation.score +
-    supplyPart.score +
-    volatility.score +
-    risk.score +
-    target.score;
-
-  const total = clampScore(rawTotal);
+  const total = calculateQuantTotal([
+    momentum,
+    trend,
+    tradingValue,
+    valuation,
+    supplyPart,
+    volatility,
+    risk,
+    target,
+    earningsGrowthPart,
+  ]);
 
   const flags = makeQuantFlags({
     latest,
@@ -146,6 +173,7 @@ export function calculateQuantModel({
     valuation,
     supply: supplyPart,
     volatility,
+    earningsGrowth: earningsGrowthPart,
   });
 
   const grade = getQuantGrade(total);
@@ -163,6 +191,7 @@ export function calculateQuantModel({
     volatility,
     risk,
     target,
+    earningsGrowth: earningsGrowthPart,
   });
 
   return {
@@ -179,6 +208,7 @@ export function calculateQuantModel({
     volatility,
     risk,
     target,
+    earningsGrowth: earningsGrowthPart,
     flags,
   };
 }
@@ -610,6 +640,114 @@ function calculateVolatilityPart(rows: QuantChartRow[]): QuantScorePart {
   };
 }
 
+function calculateEarningsGrowthPart(
+  earningsGrowth?: QuantEarningsGrowthData | null,
+): QuantScorePart {
+  if (!earningsGrowth?.available) {
+    return {
+      score: 0,
+      maxScore: 0,
+      label: "데이터 대기",
+      reasons: ["예상 순이익·영업이익·EPS 성장률 데이터가 아직 연결되지 않았습니다."],
+    };
+  }
+
+  let score = 0;
+  const reasons: string[] = [];
+  const hasGrowthMetric =
+    earningsGrowth.netIncomeGrowthRate != null ||
+    earningsGrowth.operatingProfitGrowthRate != null ||
+    earningsGrowth.epsGrowthRate != null ||
+    earningsGrowth.turnaround != null ||
+    earningsGrowth.deficitReduction != null;
+
+  if (!hasGrowthMetric) {
+    return {
+      score: 0,
+      maxScore: 0,
+      label: "데이터 대기",
+      reasons: ["실적 성장 데이터가 있으나 계산 가능한 성장률 항목이 없습니다."],
+    };
+  }
+
+  const netIncomeGrowth = earningsGrowth.netIncomeGrowthRate ?? null;
+
+  if (netIncomeGrowth != null) {
+    if (netIncomeGrowth >= 50) {
+      score += 4;
+      reasons.push("예상 순이익 증가율이 50% 이상으로 강합니다.");
+    } else if (netIncomeGrowth >= 30) {
+      score += 3;
+      reasons.push("예상 순이익 증가율이 30% 이상입니다.");
+    } else if (netIncomeGrowth >= 10) {
+      score += 2;
+      reasons.push("예상 순이익 증가율이 10% 이상입니다.");
+    } else if (netIncomeGrowth > 0) {
+      score += 1;
+      reasons.push("예상 순이익이 소폭 증가할 전망입니다.");
+    } else {
+      reasons.push("예상 순이익 증가율이 양수가 아닙니다.");
+    }
+  } else {
+    reasons.push("예상 순이익 증가율 데이터가 없습니다.");
+  }
+
+  const operatingGrowth = earningsGrowth.operatingProfitGrowthRate ?? null;
+
+  if (operatingGrowth != null) {
+    if (operatingGrowth >= 30) {
+      score += 3;
+      reasons.push("예상 영업이익 증가율이 30% 이상입니다.");
+    } else if (operatingGrowth >= 10) {
+      score += 2;
+      reasons.push("예상 영업이익 증가율이 10% 이상입니다.");
+    } else if (operatingGrowth > 0) {
+      score += 1;
+      reasons.push("예상 영업이익이 소폭 증가할 전망입니다.");
+    } else {
+      reasons.push("예상 영업이익 증가율이 양수가 아닙니다.");
+    }
+  } else {
+    reasons.push("예상 영업이익 증가율 데이터가 없습니다.");
+  }
+
+  const epsGrowth = earningsGrowth.epsGrowthRate ?? null;
+
+  if (epsGrowth != null) {
+    if (epsGrowth >= 25) {
+      score += 2;
+      reasons.push("예상 EPS 증가율이 25% 이상입니다.");
+    } else if (epsGrowth >= 10) {
+      score += 1;
+      reasons.push("예상 EPS 증가율이 10% 이상입니다.");
+    } else if (epsGrowth > 0) {
+      score += 1;
+      reasons.push("예상 EPS가 소폭 증가할 전망입니다.");
+    } else {
+      reasons.push("예상 EPS 증가율이 양수가 아닙니다.");
+    }
+  } else {
+    reasons.push("예상 EPS 증가율 데이터가 없습니다.");
+  }
+
+  if (earningsGrowth.turnaround) {
+    score += 1;
+    reasons.push("흑자 전환 기대가 반영됐습니다.");
+  } else if (earningsGrowth.deficitReduction) {
+    score += 1;
+    reasons.push("적자 축소 기대가 반영됐습니다.");
+  }
+
+  const finalScore = clampPartScore(score, 10);
+
+  return {
+    score: finalScore,
+    maxScore: 10,
+    label: getPartLabel(finalScore, 10),
+    reasons,
+  };
+}
+
 function calculateRiskPart({
   latest,
   previous,
@@ -762,6 +900,7 @@ function makeQuantFlags({
   valuation,
   supply,
   volatility,
+  earningsGrowth,
 }: {
   latest: QuantChartRow;
   fundamentals?: QuantFundamentals;
@@ -772,6 +911,7 @@ function makeQuantFlags({
   valuation: QuantScorePart;
   supply: QuantScorePart;
   volatility: QuantScorePart;
+  earningsGrowth: QuantScorePart;
 }) {
   const currentPrice = latest.close ?? null;
   const high52w = fundamentals?.high52w ?? null;
@@ -798,6 +938,9 @@ function makeQuantFlags({
     trendPositive: trend.score >= 8,
     tradingValuePositive: tradingValue.score >= 8,
     volatilityHigh: volatility.score <= 4,
+    earningsGrowthPositive:
+      earningsGrowth.maxScore > 0 &&
+      earningsGrowth.score / Math.max(earningsGrowth.maxScore, 1) >= 0.65,
   };
 }
 
@@ -814,6 +957,7 @@ function makeQuantSummary({
   volatility,
   risk,
   target,
+  earningsGrowth,
 }: {
   total: number;
   grade: string;
@@ -827,6 +971,7 @@ function makeQuantSummary({
   volatility: QuantScorePart;
   risk: QuantScorePart;
   target: QuantScorePart;
+  earningsGrowth: QuantScorePart;
 }) {
   const positives: string[] = [];
   const cautions: string[] = [];
@@ -837,6 +982,7 @@ function makeQuantSummary({
   if (flags.supplyPositive) positives.push("수급");
   if (valuation.score >= 10) positives.push("밸류에이션");
   if (target.score >= 5) positives.push("목표여력");
+  if (flags.earningsGrowthPositive) positives.push("실적 성장");
 
   if (flags.nearHigh52w) cautions.push("52주 고가 근접");
   if (flags.valuationBurden) cautions.push("PER/PBR 부담");
@@ -844,6 +990,10 @@ function makeQuantSummary({
   if (flags.volatilityHigh) cautions.push("변동성 확대");
   if (risk.score <= 4) cautions.push("리스크");
   if (target.score <= 2) cautions.push("목표여력 부족");
+
+  if (earningsGrowth.maxScore === 0) {
+    cautions.push("실적 성장 데이터 대기");
+  }
 
   if (positives.length > 0 && cautions.length > 0) {
     return `${positives.join(", ")}은 긍정적이나 ${cautions.join(
@@ -858,10 +1008,23 @@ function makeQuantSummary({
   }
 
   if (cautions.length > 0) {
-    return `${cautions.join(", ")} 요인이 커서 ${action}이 적절합니다.`;
+    return `${cautions.join(", ")} 요인이 있어 ${action}이 적절합니다.`;
   }
 
   return `퀀트 점수는 ${total}점으로 ${grade}입니다. ${action}이 적절합니다.`;
+}
+
+function calculateQuantTotal(parts: QuantScorePart[]) {
+  const activeParts = parts.filter((part) => part.maxScore > 0);
+
+  if (!activeParts.length) return 0;
+
+  const scoreSum = activeParts.reduce((sum, part) => sum + part.score, 0);
+  const maxScoreSum = activeParts.reduce((sum, part) => sum + part.maxScore, 0);
+
+  if (maxScoreSum <= 0) return 0;
+
+  return clampScore((scoreSum / maxScoreSum) * 100);
 }
 
 function getQuantGrade(score: number) {
@@ -1072,6 +1235,7 @@ function makeUnavailableQuantResult(): QuantModelResult {
     volatility: emptyPart,
     risk: emptyPart,
     target: emptyPart,
+    earningsGrowth: emptyPart,
     flags: {
       nearHigh52w: false,
       valuationBurden: false,
@@ -1081,6 +1245,7 @@ function makeUnavailableQuantResult(): QuantModelResult {
       trendPositive: false,
       tradingValuePositive: false,
       volatilityHigh: false,
+      earningsGrowthPositive: false,
     },
   };
 }
