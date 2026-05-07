@@ -54,6 +54,7 @@ export type Fundamentals = {
 };
 
 export type EarningsGrowthSource = "none" | "manual" | "kis" | "dart" | "consensus";
+export type EarningsGrowthMode = "auto" | "manual";
 
 export type ManualEarningsGrowthInput = {
   lastYearNetIncome: string;
@@ -69,6 +70,8 @@ export type ManualEarningsGrowthInput = {
 export type EarningsGrowthData = {
   available: boolean;
   source: EarningsGrowthSource;
+  mode?: EarningsGrowthMode;
+  appliedSourceLabel?: string;
   updatedAt: string | null;
   warning?: string;
 

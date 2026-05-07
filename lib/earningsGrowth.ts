@@ -1,4 +1,5 @@
 export type EarningsGrowthSource = "none" | "manual" | "kis" | "dart" | "consensus";
+export type EarningsGrowthMode = "auto" | "manual";
 
 export type EarningsGrowthInput = {
   source?: EarningsGrowthSource;
@@ -20,6 +21,8 @@ export type EarningsGrowthInput = {
 export type EarningsGrowthData = {
   available: boolean;
   source: EarningsGrowthSource;
+  mode: EarningsGrowthMode;
+  appliedSourceLabel: string;
   updatedAt: string | null;
   warning?: string;
 
@@ -46,26 +49,50 @@ export type EarningsGrowthData = {
 export type EarningsGrowthBuildOptions = {
   automatic?: EarningsGrowthInput | null;
   manual?: EarningsGrowthInput | null;
+  mode?: EarningsGrowthMode;
 };
 
 export function calculateEarningsGrowthData({
   automatic,
   manual,
+  mode = "auto",
 }: EarningsGrowthBuildOptions): EarningsGrowthData {
-  const selected = hasUsableEarningsInput(automatic)
-    ? {
-        ...automatic,
-        source: automatic?.source && automatic.source !== "none" ? automatic.source : "kis",
-      }
-    : hasUsableEarningsInput(manual)
-      ? {
-          ...manual,
-          source: "manual" as const,
-        }
-      : null;
+  const automaticUsable = hasUsableEarningsInput(automatic);
+  const manualUsable = hasUsableEarningsInput(manual);
+
+  const selected =
+    mode === "manual"
+      ? manualUsable
+        ? {
+            ...manual,
+            source: "manual" as const,
+          }
+        : automaticUsable
+          ? {
+              ...automatic,
+              source:
+                automatic?.source && automatic.source !== "none"
+                  ? automatic.source
+                  : ("kis" as const),
+            }
+          : null
+      : automaticUsable
+        ? {
+            ...automatic,
+            source:
+              automatic?.source && automatic.source !== "none"
+                ? automatic.source
+                : ("kis" as const),
+          }
+        : manualUsable
+          ? {
+              ...manual,
+              source: "manual" as const,
+            }
+          : null;
 
   if (!selected) {
-    return makeEmptyEarningsGrowth();
+    return makeEmptyEarningsGrowth(mode);
   }
 
   const netIncomeGrowthRate = calculateGrowthRate(
@@ -111,6 +138,8 @@ export function calculateEarningsGrowthData({
   return {
     available: true,
     source: selected.source ?? "manual",
+    mode,
+    appliedSourceLabel: selected.source === "manual" ? "수동 적용" : "자동 적용",
     updatedAt: selected.updatedAt ?? new Date().toISOString(),
 
     lastYearNetIncome: normalizeNullableNumber(selected.lastYearNetIncome),
@@ -134,10 +163,12 @@ export function calculateEarningsGrowthData({
   };
 }
 
-export function makeEmptyEarningsGrowth(): EarningsGrowthData {
+export function makeEmptyEarningsGrowth(mode: EarningsGrowthMode = "auto"): EarningsGrowthData {
   return {
     available: false,
     source: "none",
+    mode,
+    appliedSourceLabel: "데이터 대기",
     updatedAt: null,
     warning: "예상 실적 데이터 연결 전입니다.",
 
@@ -198,6 +229,13 @@ export function parseManualEarningsGrowthFromSearchParams(
     manual.deficitReduction != null
     ? manual
     : null;
+}
+
+
+export function parseEarningsGrowthModeFromSearchParams(
+  searchParams: URLSearchParams,
+): EarningsGrowthMode {
+  return searchParams.get("earningsGrowthMode") === "manual" ? "manual" : "auto";
 }
 
 function scoreEarningsGrowth({
@@ -307,7 +345,7 @@ function readNumber(searchParams: URLSearchParams, key: string) {
 
   if (raw == null || raw.trim() === "") return null;
 
-  const parsed = Number(raw.replace(/,/g, ""));
+  const parsed = Number(raw.replaceAll(",", ""));
 
   return Number.isFinite(parsed) ? parsed : null;
 }

@@ -17,6 +17,7 @@ import { calculateQuantModel } from "@/lib/quant";
 import {
   calculateEarningsGrowthData,
   parseManualEarningsGrowthFromSearchParams,
+  parseEarningsGrowthModeFromSearchParams,
 } from "@/lib/earningsGrowth";
 import { calculateCompositeScore } from "@/lib/score";
 import {
@@ -438,7 +439,13 @@ export async function GET(req: NextRequest) {
     const supply = await getSupplyData(symbol);
     const fundamentals = await getFundamentalsData(symbol);
     const manualEarningsGrowth = parseManualEarningsGrowthFromSearchParams(searchParams);
-    const earningsGrowth = await getEarningsGrowthData(symbol, fundamentals, manualEarningsGrowth);
+    const earningsGrowthMode = parseEarningsGrowthModeFromSearchParams(searchParams);
+    const earningsGrowth = await getEarningsGrowthData(
+      symbol,
+      fundamentals,
+      manualEarningsGrowth,
+      earningsGrowthMode,
+    );
 
     const score = calculateCompositeScore({
       rows: chartData,
@@ -649,16 +656,19 @@ async function getEarningsGrowthData(
   _symbol: string,
   _fundamentals?: FundamentalsData,
   manualInput?: Parameters<typeof calculateEarningsGrowthData>[0]["manual"],
+  mode: Parameters<typeof calculateEarningsGrowthData>[0]["mode"] = "auto",
 ): Promise<EarningsGrowthData> {
   /**
    * 자동 실적 데이터는 다음 단계에서 DART/KIS/컨센서스 순서로 연결합니다.
    * 현재는 자동 데이터가 없으므로 수동 입력값이 있으면 수동값을 보조 데이터로 사용합니다.
+   * 자동/수동 데이터가 모두 있을 때는 mode 값에 따라 우선 적용 대상을 선택합니다.
    */
   const automaticInput = null;
 
   return calculateEarningsGrowthData({
     automatic: automaticInput,
     manual: manualInput,
+    mode,
   });
 }
 

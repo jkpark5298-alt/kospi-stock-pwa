@@ -95,6 +95,8 @@ type EarningsGrowthData = {
 };
 
 
+type EarningsGrowthMode = "auto" | "manual";
+
 type ManualEarningsGrowthInput = {
   lastYearNetIncome: string;
   expectedNetIncome: string;
@@ -301,6 +303,8 @@ export default function HomePage() {
   const [manualEarningsGrowth, setManualEarningsGrowth] = useState<ManualEarningsGrowthInput>(
     EMPTY_MANUAL_EARNINGS_GROWTH,
   );
+  const [earningsGrowthMode, setEarningsGrowthMode] =
+    useState<EarningsGrowthMode>("auto");
   const {
     kisRemainingCalls,
     kisSyncCode,
@@ -381,9 +385,10 @@ export default function HomePage() {
     }
   }, [watchlist, watchlistLoaded]);
 
-  async function fetchStock(targetSymbol?: string, targetRange?: string) {
+  async function fetchStock(targetSymbol?: string, targetRange?: string, targetEarningsGrowthMode?: EarningsGrowthMode) {
     const finalSymbol = (targetSymbol ?? symbol).trim();
     const finalRange = targetRange ?? range;
+    const finalEarningsGrowthMode = targetEarningsGrowthMode ?? earningsGrowthMode;
 
     if (!finalSymbol) {
       setUiError("종목 코드를 입력해 주세요.");
@@ -400,6 +405,7 @@ export default function HomePage() {
         range: finalRange,
       });
 
+      params.set("earningsGrowthMode", finalEarningsGrowthMode);
       appendManualEarningsParams(params, manualEarningsGrowth);
 
       const res = await fetch(`/api/stock?${params.toString()}`, {
@@ -441,6 +447,14 @@ export default function HomePage() {
 
   function handleApplyManualEarningsGrowth() {
     fetchStock();
+  }
+
+  function handleEarningsGrowthModeChange(nextMode: EarningsGrowthMode) {
+    setEarningsGrowthMode(nextMode);
+
+    if (data?.symbol) {
+      fetchStock(data.symbol, range, nextMode);
+    }
   }
 
   function handleSaveWatchlist() {
@@ -601,7 +615,9 @@ export default function HomePage() {
 
         <EarningsGrowthSection
           earningsGrowth={data?.earningsGrowth}
+          earningsGrowthMode={earningsGrowthMode}
           manualInput={manualEarningsGrowth}
+          onModeChange={handleEarningsGrowthModeChange}
           onManualInputChange={setManualEarningsGrowth}
           onApplyManualInput={handleApplyManualEarningsGrowth}
         />

@@ -1,28 +1,51 @@
 "use client";
 
-import type { ReactNode } from "react";
-import type { EarningsGrowthData, ManualEarningsGrowthInput } from "../../types/stock";
+import { useState, type ReactNode } from "react";
+import type {
+  EarningsGrowthData,
+  EarningsGrowthMode,
+  ManualEarningsGrowthInput,
+} from "../../types/stock";
 
 type Props = {
   earningsGrowth?: EarningsGrowthData;
+  earningsGrowthMode: EarningsGrowthMode;
   manualInput: ManualEarningsGrowthInput;
+  onModeChange: (mode: EarningsGrowthMode) => void;
   onManualInputChange: (next: ManualEarningsGrowthInput) => void;
   onApplyManualInput: () => void;
 };
 
 export default function EarningsGrowthSection({
   earningsGrowth,
+  earningsGrowthMode,
   manualInput,
+  onModeChange,
   onManualInputChange,
   onApplyManualInput,
 }: Props) {
+  const [isManualOpen, setIsManualOpen] = useState(false);
   const data = earningsGrowth ?? makeEmptyEarningsGrowth();
+  const hasManualInput = hasAnyManualValue(manualInput);
+  const isAutoDataActive =
+    data.available &&
+    data.source !== "manual" &&
+    data.source !== "none";
 
   function updateField(key: keyof ManualEarningsGrowthInput, value: string) {
     onManualInputChange({
       ...manualInput,
       [key]: value,
     });
+  }
+
+  function handleSaveOnly() {
+    setIsManualOpen(false);
+  }
+
+  function handleApplyManualInput() {
+    onApplyManualInput();
+    setIsManualOpen(false);
   }
 
   return (
@@ -33,13 +56,44 @@ export default function EarningsGrowthSection({
             <SectionTitleSmall>실적 성장 분석</SectionTitleSmall>
             <p className="score-subtitle">
               자동 데이터가 있으면 자동값을 우선 사용하고, 자동 데이터가 없거나
-              늦을 때는 수동 입력값으로 예상 순이익·영업이익·EPS 성장률을
+              늦을 때는 저장된 수동 입력값으로 예상 순이익·영업이익·EPS 성장률을
               계산합니다.
             </p>
           </div>
 
           <div className="score-mode-badge">
             {data.available ? `데이터 출처: ${formatSource(data.source)}` : "데이터 준비 중"}
+          </div>
+        </div>
+
+        <div className="score-weight-box">
+          <div>
+            <span className="score-weight-title">현재 실적 분석 적용 기준</span>
+            <strong style={{ color: "#dc2626" }}>{getAppliedLabel(data)}</strong>
+          </div>
+          <p>
+            기본값은 자동 적용입니다. 자동/수동 데이터가 모두 있을 때는 아래
+            버튼으로 적용 기준을 직접 선택할 수 있습니다.
+          </p>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
+            <button
+              className={`button ${
+                earningsGrowthMode === "auto" ? "primary-button" : "secondary-button"
+              }`}
+              onClick={() => onModeChange("auto")}
+              type="button"
+            >
+              자동 적용
+            </button>
+            <button
+              className={`button ${
+                earningsGrowthMode === "manual" ? "primary-button" : "secondary-button"
+              }`}
+              onClick={() => onModeChange("manual")}
+              type="button"
+            >
+              수동 적용
+            </button>
           </div>
         </div>
 
@@ -82,63 +136,29 @@ export default function EarningsGrowthSection({
           </div>
         </div>
 
-        <div className="manual-earnings-box">
-          <div className="manual-earnings-header">
-            <div>
-              <span>수동 입력</span>
-              <p>
-                단위: 순이익·영업이익은 억원, EPS는 원입니다. 자동 데이터가
-                들어오면 자동 데이터가 우선 적용됩니다.
-              </p>
-            </div>
-            <button className="button primary-button" onClick={onApplyManualInput}>
-              수동 입력값 반영
-            </button>
+        <div className="score-weight-box">
+          <div>
+            <span className="score-weight-title">수동 입력</span>
+            <strong>
+              {hasManualInput
+                ? isAutoDataActive
+                  ? "수동 입력값 저장됨 · 자동값 우선"
+                  : "수동 입력값 있음"
+                : "입력값 없음"}
+            </strong>
           </div>
-
-          <div className="manual-earnings-grid">
-            <InputField
-              label="전년 순이익(억원)"
-              value={manualInput.lastYearNetIncome}
-              onChange={(value) => updateField("lastYearNetIncome", value)}
-            />
-            <InputField
-              label="예상 순이익(억원)"
-              value={manualInput.expectedNetIncome}
-              onChange={(value) => updateField("expectedNetIncome", value)}
-            />
-            <InputField
-              label="전년 영업이익(억원)"
-              value={manualInput.lastYearOperatingProfit}
-              onChange={(value) => updateField("lastYearOperatingProfit", value)}
-            />
-            <InputField
-              label="예상 영업이익(억원)"
-              value={manualInput.expectedOperatingProfit}
-              onChange={(value) => updateField("expectedOperatingProfit", value)}
-            />
-            <InputField
-              label="전년 EPS(원)"
-              value={manualInput.lastYearEps}
-              onChange={(value) => updateField("lastYearEps", value)}
-            />
-            <InputField
-              label="예상 EPS(원)"
-              value={manualInput.expectedEps}
-              onChange={(value) => updateField("expectedEps", value)}
-            />
-
-            <SelectField
-              label="흑자 전환"
-              value={manualInput.turnaround}
-              onChange={(value) => updateField("turnaround", value)}
-            />
-            <SelectField
-              label="적자 축소"
-              value={manualInput.deficitReduction}
-              onChange={(value) => updateField("deficitReduction", value)}
-            />
-          </div>
+          <p>
+            자동 데이터가 있으면 자동값이 우선 적용됩니다. 그래도 수동 입력값은
+            언제든 열어서 수정·저장할 수 있으며, 자동 데이터가 없거나 오류가
+            발생하면 보조 데이터로 사용됩니다.
+          </p>
+          <button
+            className="button secondary-button"
+            onClick={() => setIsManualOpen(true)}
+            type="button"
+          >
+            수동 입력값 수정/저장
+          </button>
         </div>
 
         <div className="score-comment-box">
@@ -150,8 +170,8 @@ export default function EarningsGrowthSection({
           <span>데이터 우선순위</span>
           <p>
             자동 데이터(DART/KIS/컨센서스)가 있으면 자동값을 우선 사용합니다.
-            자동 데이터가 없거나 오류가 발생하면 수동 입력값이 보조 데이터로
-            사용됩니다.
+            자동 데이터가 없거나 오류가 발생하면 저장된 수동 입력값이 보조
+            데이터로 사용됩니다.
           </p>
         </div>
 
@@ -161,7 +181,188 @@ export default function EarningsGrowthSection({
           흐름과 함께 확인해야 합니다.
         </p>
       </Card>
+
+      {isManualOpen ? (
+        <ManualInputDialog
+          manualInput={manualInput}
+          isAutoDataActive={isAutoDataActive}
+          earningsGrowthMode={earningsGrowthMode}
+          onChange={updateField}
+          onModeChange={onModeChange}
+          onClose={() => setIsManualOpen(false)}
+          onSaveOnly={handleSaveOnly}
+          onApply={handleApplyManualInput}
+        />
+      ) : null}
     </section>
+  );
+}
+
+function ManualInputDialog({
+  manualInput,
+  isAutoDataActive,
+  earningsGrowthMode,
+  onChange,
+  onModeChange,
+  onClose,
+  onSaveOnly,
+  onApply,
+}: {
+  manualInput: ManualEarningsGrowthInput;
+  isAutoDataActive: boolean;
+  earningsGrowthMode: EarningsGrowthMode;
+  onChange: (key: keyof ManualEarningsGrowthInput, value: string) => void;
+  onModeChange: (mode: EarningsGrowthMode) => void;
+  onClose: () => void;
+  onSaveOnly: () => void;
+  onApply: () => void;
+}) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="실적 성장 수동 입력"
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 1000,
+        background: "rgba(15, 23, 42, 0.58)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 16,
+      }}
+    >
+      <div
+        style={{
+          width: "min(760px, 100%)",
+          maxHeight: "88vh",
+          overflow: "auto",
+          background: "white",
+          borderRadius: 20,
+          boxShadow: "0 24px 70px rgba(15, 23, 42, 0.32)",
+          padding: 20,
+        }}
+      >
+        <div className="score-header">
+          <div>
+            <SectionTitleSmall>실적 성장 수동 입력</SectionTitleSmall>
+            <p className="score-subtitle">
+              순이익·영업이익은 억원, EPS는 원 단위로 입력하세요.
+              자동 데이터가 연결되면 자동 데이터가 우선 적용되지만, 수동 입력값은
+              계속 수정·저장할 수 있습니다.
+            </p>
+          </div>
+          <button className="button secondary-button" onClick={onClose} type="button">
+            닫기
+          </button>
+        </div>
+
+        <div className="score-weight-box">
+          <div>
+            <span className="score-weight-title">선택 기준</span>
+            <strong style={{ color: "#dc2626" }}>
+              {earningsGrowthMode === "manual" ? "수동 적용 선택됨" : "자동 적용 선택됨"}
+            </strong>
+          </div>
+          <p>
+            자동/수동 데이터가 모두 있을 경우 기본은 자동입니다. 필요하면 수동
+            적용을 선택해 직접 입력한 값을 우선 반영하세요.
+          </p>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
+            <button
+              className={`button ${
+                earningsGrowthMode === "auto" ? "primary-button" : "secondary-button"
+              }`}
+              onClick={() => onModeChange("auto")}
+              type="button"
+            >
+              자동 적용
+            </button>
+            <button
+              className={`button ${
+                earningsGrowthMode === "manual" ? "primary-button" : "secondary-button"
+              }`}
+              onClick={() => onModeChange("manual")}
+              type="button"
+            >
+              수동 적용
+            </button>
+          </div>
+        </div>
+
+        {isAutoDataActive ? (
+          <div className="notice-text" style={{ marginBottom: 12 }}>
+            현재 자동 실적 데이터가 있습니다. 자동 적용을 선택하면 자동값이
+            우선이고, 수동 적용을 선택하면 아래 입력값이 우선입니다.
+          </div>
+        ) : null}
+
+        <div className="manual-earnings-grid" style={{ marginTop: 16 }}>
+          <InputField
+            label="전년 순이익(억원)"
+            value={manualInput.lastYearNetIncome}
+            onChange={(value) => onChange("lastYearNetIncome", value)}
+          />
+          <InputField
+            label="예상 순이익(억원)"
+            value={manualInput.expectedNetIncome}
+            onChange={(value) => onChange("expectedNetIncome", value)}
+          />
+          <InputField
+            label="전년 영업이익(억원)"
+            value={manualInput.lastYearOperatingProfit}
+            onChange={(value) => onChange("lastYearOperatingProfit", value)}
+          />
+          <InputField
+            label="예상 영업이익(억원)"
+            value={manualInput.expectedOperatingProfit}
+            onChange={(value) => onChange("expectedOperatingProfit", value)}
+          />
+          <InputField
+            label="전년 EPS(원)"
+            value={manualInput.lastYearEps}
+            onChange={(value) => onChange("lastYearEps", value)}
+          />
+          <InputField
+            label="예상 EPS(원)"
+            value={manualInput.expectedEps}
+            onChange={(value) => onChange("expectedEps", value)}
+          />
+
+          <SelectField
+            label="흑자 전환"
+            value={manualInput.turnaround}
+            onChange={(value) => onChange("turnaround", value)}
+          />
+          <SelectField
+            label="적자 축소"
+            value={manualInput.deficitReduction}
+            onChange={(value) => onChange("deficitReduction", value)}
+          />
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            justifyContent: "flex-end",
+            marginTop: 18,
+            flexWrap: "wrap",
+          }}
+        >
+          <button className="button secondary-button" onClick={onClose} type="button">
+            취소
+          </button>
+          <button className="button secondary-button" onClick={onSaveOnly} type="button">
+            입력값 저장
+          </button>
+          <button className="button primary-button" onClick={onApply} type="button">
+            저장 후 분석 반영
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -243,6 +444,8 @@ function makeEmptyEarningsGrowth(): EarningsGrowthData {
   return {
     available: false,
     source: "none",
+    mode: "auto",
+    appliedSourceLabel: "데이터 대기",
     updatedAt: null,
     warning: "예상 실적 데이터 연결 전입니다.",
 
@@ -306,6 +509,17 @@ function makeSummary(data: EarningsGrowthData) {
   }
 
   return "실적 성장 데이터는 있으나 뚜렷한 성장 신호는 아직 확인되지 않습니다.";
+}
+
+function hasAnyManualValue(input: ManualEarningsGrowthInput) {
+  return Object.values(input).some((value) => value.trim() !== "");
+}
+
+function getAppliedLabel(data: EarningsGrowthData) {
+  if (!data.available) return "데이터 대기";
+  if (data.source === "manual") return "수동 적용 중";
+  if (data.source === "none") return "데이터 대기";
+  return "자동 적용 중";
 }
 
 function formatPercent(value: number | null) {
