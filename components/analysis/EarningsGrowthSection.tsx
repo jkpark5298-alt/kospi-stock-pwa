@@ -27,6 +27,7 @@ export default function EarningsGrowthSection({
   const [isManualOpen, setIsManualOpen] = useState(false);
   const data = earningsGrowth ?? makeEmptyEarningsGrowth();
   const hasManualInput = hasAnyManualValue(manualInput);
+  const excluded = isExcluded(data);
   const isAutoDataActive =
     data.available &&
     data.source !== "manual" &&
@@ -62,7 +63,7 @@ export default function EarningsGrowthSection({
           </div>
 
           <div className="score-mode-badge">
-            {data.available ? `데이터 출처: ${formatSource(data.source)}` : "데이터 준비 중"}
+            {excluded ? "실적 성장 제외" : data.available ? `데이터 출처: ${formatSource(data.source)}` : "데이터 준비 중"}
           </div>
         </div>
 
@@ -443,6 +444,7 @@ function SectionTitleSmall({ children }: { children: ReactNode }) {
 function makeEmptyEarningsGrowth(): EarningsGrowthData {
   return {
     available: false,
+    excluded: false,
     source: "none",
     mode: "auto",
     appliedSourceLabel: "데이터 대기",
@@ -515,7 +517,12 @@ function hasAnyManualValue(input: ManualEarningsGrowthInput) {
   return Object.values(input).some((value) => value.trim() !== "");
 }
 
+function isExcluded(data: EarningsGrowthData) {
+  return data.excluded === true || data.label === "제외";
+}
+
 function getAppliedLabel(data: EarningsGrowthData) {
+  if (isExcluded(data)) return "실적 성장 제외";
   if (!data.available) return "데이터 대기";
   if (data.source === "manual") return "수동 적용 중";
   if (data.source === "none") return "데이터 대기";

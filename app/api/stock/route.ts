@@ -445,6 +445,7 @@ export async function GET(req: NextRequest) {
       fundamentals,
       manualEarningsGrowth,
       earningsGrowthMode,
+      stockMeta,
     );
 
     const score = calculateCompositeScore({
@@ -653,22 +654,26 @@ async function getFundamentalsData(symbol: string): Promise<FundamentalsData> {
 }
 
 async function getEarningsGrowthData(
-  _symbol: string,
+  symbol: string,
   _fundamentals?: FundamentalsData,
   manualInput?: Parameters<typeof calculateEarningsGrowthData>[0]["manual"],
   mode: Parameters<typeof calculateEarningsGrowthData>[0]["mode"] = "auto",
+  stockMeta?: StockMeta,
 ): Promise<EarningsGrowthData> {
   /**
    * 자동 실적 데이터는 다음 단계에서 DART/KIS/컨센서스 순서로 연결합니다.
-   * 현재는 자동 데이터가 없으므로 수동 입력값이 있으면 수동값을 보조 데이터로 사용합니다.
-   * 자동/수동 데이터가 모두 있을 때는 mode 값에 따라 우선 적용 대상을 선택합니다.
+   * ETF/ETN/지수형 상품은 일반 기업 실적 성장 분석 대상에서 제외합니다.
    */
   const automaticInput = null;
+  const excluded = isEarningsGrowthExcluded(symbol, stockMeta);
 
   return calculateEarningsGrowthData({
     automatic: automaticInput,
     manual: manualInput,
     mode,
+    excluded,
+    excludedReason:
+      "ETF/ETN/지수형 상품은 일반 기업처럼 순이익·영업이익·EPS 성장률을 비교하기 어려워 실적 성장 분석에서 제외했습니다.",
   });
 }
 
@@ -748,6 +753,33 @@ async function getStockMeta(
       currency: fallbackCurrency,
     };
   }
+}
+
+function isEarningsGrowthExcluded(symbol: string, stockMeta?: StockMeta) {
+  const upperSymbol = symbol.trim().toUpperCase();
+  const name = (stockMeta?.name || "").toUpperCase();
+
+  if (upperSymbol.startsWith("^")) return true;
+
+  const keywords = [
+    "ETF",
+    "ETN",
+    "KODEX",
+    "TIGER",
+    "ACE",
+    "SOL",
+    "KBSTAR",
+    "ARIRANG",
+    "KOSEF",
+    "HANARO",
+    "TIMEFOLIO",
+    "레버리지",
+    "인버스",
+    "선물",
+    "채권",
+  ];
+
+  return keywords.some((keyword) => name.includes(keyword));
 }
 
 function withCacheMeta(

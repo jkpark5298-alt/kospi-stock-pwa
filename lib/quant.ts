@@ -45,6 +45,7 @@ export type QuantFundamentals = {
 
 export type QuantEarningsGrowthData = {
   available: boolean;
+  excluded?: boolean;
   source?: "none" | "manual" | "kis" | "dart" | "consensus";
   updatedAt?: string | null;
   warning?: string;
@@ -643,6 +644,15 @@ function calculateVolatilityPart(rows: QuantChartRow[]): QuantScorePart {
 function calculateEarningsGrowthPart(
   earningsGrowth?: QuantEarningsGrowthData | null,
 ): QuantScorePart {
+  if (earningsGrowth?.excluded) {
+    return {
+      score: 0,
+      maxScore: 0,
+      label: "제외",
+      reasons: ["ETF/ETN/지수형 상품은 실적 성장 분석 대상에서 제외했습니다."],
+    };
+  }
+
   if (!earningsGrowth?.available) {
     return {
       score: 0,

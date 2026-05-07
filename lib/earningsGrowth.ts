@@ -20,6 +20,7 @@ export type EarningsGrowthInput = {
 
 export type EarningsGrowthData = {
   available: boolean;
+  excluded?: boolean;
   source: EarningsGrowthSource;
   mode: EarningsGrowthMode;
   appliedSourceLabel: string;
@@ -50,13 +51,21 @@ export type EarningsGrowthBuildOptions = {
   automatic?: EarningsGrowthInput | null;
   manual?: EarningsGrowthInput | null;
   mode?: EarningsGrowthMode;
+  excluded?: boolean;
+  excludedReason?: string;
 };
 
 export function calculateEarningsGrowthData({
   automatic,
   manual,
   mode = "auto",
+  excluded = false,
+  excludedReason,
 }: EarningsGrowthBuildOptions): EarningsGrowthData {
+  if (excluded) {
+    return makeExcludedEarningsGrowth(mode, excludedReason);
+  }
+
   const automaticUsable = hasUsableEarningsInput(automatic);
   const manualUsable = hasUsableEarningsInput(manual);
 
@@ -137,6 +146,7 @@ export function calculateEarningsGrowthData({
 
   return {
     available: true,
+    excluded: false,
     source: selected.source ?? "manual",
     mode,
     appliedSourceLabel: selected.source === "manual" ? "수동 적용" : "자동 적용",
@@ -166,6 +176,7 @@ export function calculateEarningsGrowthData({
 export function makeEmptyEarningsGrowth(mode: EarningsGrowthMode = "auto"): EarningsGrowthData {
   return {
     available: false,
+    excluded: false,
     source: "none",
     mode,
     appliedSourceLabel: "데이터 대기",
@@ -345,7 +356,7 @@ function readNumber(searchParams: URLSearchParams, key: string) {
 
   if (raw == null || raw.trim() === "") return null;
 
-  const parsed = Number(raw.replaceAll(",", ""));
+  const parsed = Number(raw.replace(/,/g, ""));
 
   return Number.isFinite(parsed) ? parsed : null;
 }

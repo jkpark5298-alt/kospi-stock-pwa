@@ -69,6 +69,7 @@ export type ManualEarningsGrowthInput = {
 
 export type EarningsGrowthData = {
   available: boolean;
+  excluded?: boolean;
   source: EarningsGrowthSource;
   mode?: EarningsGrowthMode;
   appliedSourceLabel?: string;
