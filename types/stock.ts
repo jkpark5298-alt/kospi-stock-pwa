@@ -53,9 +53,22 @@ export type Fundamentals = {
   low52w: number | null;
 };
 
+export type EarningsGrowthSource = "none" | "manual" | "kis" | "dart" | "consensus";
+
+export type ManualEarningsGrowthInput = {
+  lastYearNetIncome: string;
+  expectedNetIncome: string;
+  lastYearOperatingProfit: string;
+  expectedOperatingProfit: string;
+  lastYearEps: string;
+  expectedEps: string;
+  turnaround: "" | "true" | "false";
+  deficitReduction: "" | "true" | "false";
+};
+
 export type EarningsGrowthData = {
   available: boolean;
-  source: "none" | "manual" | "kis" | "dart" | "consensus";
+  source: EarningsGrowthSource;
   updatedAt: string | null;
   warning?: string;
 
@@ -94,11 +107,6 @@ export type QuantModelResult = {
   summary: string;
 
   momentum: QuantScorePart;
-
-  /**
-   * 아래 항목들은 2026-05 점수 모델 개선 때 추가된 항목입니다.
-   * 기존 예측 저장 데이터와 호환되도록 선택값으로 둡니다.
-   */
   trend?: QuantScorePart;
   tradingValue?: QuantScorePart;
   valuation: QuantScorePart;
@@ -106,10 +114,6 @@ export type QuantModelResult = {
   volatility?: QuantScorePart;
   risk: QuantScorePart;
   target: QuantScorePart;
-
-  /**
-   * 실적 성장 점수는 데이터 소스 연결 전에는 없을 수 있습니다.
-   */
   earningsGrowth?: QuantScorePart;
 
   flags: {
@@ -118,11 +122,6 @@ export type QuantModelResult = {
     targetAlmostReached: boolean;
     supplyPositive: boolean;
     momentumPositive: boolean;
-
-    /**
-     * 아래 플래그들은 신규 퀀트 항목입니다.
-     * 기존 저장 데이터와 호환되도록 선택값으로 둡니다.
-     */
     trendPositive?: boolean;
     tradingValuePositive?: boolean;
     volatilityHigh?: boolean;
@@ -142,16 +141,7 @@ export type ScoreWeights = {
   volume: number;
   supply: number;
   targetPrice: number;
-
-  /**
-   * 신호 일치도는 신규 항목입니다.
-   * 기존 저장 데이터와 호환되도록 선택값으로 둡니다.
-   */
   signalAgreement?: number;
-
-  /**
-   * 실적 성장 점수는 다음 단계에서 연결할 항목입니다.
-   */
   earningsGrowth?: number;
 };
 
@@ -231,16 +221,7 @@ export type CompositeScore = {
     selectedTargetMode?: TargetMode;
     targetModes?: TargetModeResult[];
   };
-
-  /**
-   * 신호 일치도는 신규 항목입니다.
-   * 기존 예측 기록에는 없을 수 있으므로 선택값으로 둡니다.
-   */
   signalAgreement?: ScorePart;
-
-  /**
-   * 실적 성장 점수는 다음 단계에서 연결할 항목입니다.
-   */
   earningsGrowth?: ScorePart;
 
   baseWeights: ScoreWeights;
@@ -270,13 +251,7 @@ export type StockResponse = {
     label: string;
   };
   fundamentals?: Fundamentals;
-
-  /**
-   * 실적 성장 점수 데이터입니다.
-   * 아직 자동 수집 전이면 없거나 available=false일 수 있습니다.
-   */
   earningsGrowth?: EarningsGrowthData;
-
   supply?: SupplyData;
   score?: CompositeScore;
   quant?: QuantModelResult;

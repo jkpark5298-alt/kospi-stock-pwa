@@ -14,6 +14,10 @@ import {
   getKisStockFundamentals,
 } from "@/lib/kis";
 import { calculateQuantModel } from "@/lib/quant";
+import {
+  calculateEarningsGrowthData,
+  parseManualEarningsGrowthFromSearchParams,
+} from "@/lib/earningsGrowth";
 import { calculateCompositeScore } from "@/lib/score";
 import {
   fallbackResolveStockSymbol,
@@ -146,35 +150,6 @@ const EMPTY_FUNDAMENTALS: FundamentalsData = {
   sharesOutstanding: null,
   high52w: null,
   low52w: null,
-};
-
-const EMPTY_EARNINGS_GROWTH: EarningsGrowthData = {
-  available: false,
-  source: "none",
-  updatedAt: null,
-  warning: "예상 실적 데이터 연결 전입니다.",
-
-  lastYearNetIncome: null,
-  expectedNetIncome: null,
-  netIncomeGrowthRate: null,
-
-  lastYearOperatingProfit: null,
-  expectedOperatingProfit: null,
-  operatingProfitGrowthRate: null,
-
-  lastYearEps: null,
-  expectedEps: null,
-  epsGrowthRate: null,
-
-  turnaround: null,
-  deficitReduction: null,
-
-  score: null,
-  label: "데이터 대기",
-  reasons: [
-    "예상 순이익·영업이익·EPS 성장률 데이터는 다음 단계에서 연결됩니다.",
-    "현재는 실적 성장 점수 구조만 먼저 준비한 상태입니다.",
-  ],
 };
 
 export async function GET(req: NextRequest) {
@@ -462,7 +437,8 @@ export async function GET(req: NextRequest) {
     const stockMeta = await getStockMeta(symbol, chartMeta, resolvedStock);
     const supply = await getSupplyData(symbol);
     const fundamentals = await getFundamentalsData(symbol);
-    const earningsGrowth = await getEarningsGrowthData(symbol, fundamentals);
+    const manualEarningsGrowth = parseManualEarningsGrowthFromSearchParams(searchParams);
+    const earningsGrowth = await getEarningsGrowthData(symbol, fundamentals, manualEarningsGrowth);
 
     const score = calculateCompositeScore({
       rows: chartData,
@@ -672,11 +648,18 @@ async function getFundamentalsData(symbol: string): Promise<FundamentalsData> {
 async function getEarningsGrowthData(
   _symbol: string,
   _fundamentals?: FundamentalsData,
+  manualInput?: Parameters<typeof calculateEarningsGrowthData>[0]["manual"],
 ): Promise<EarningsGrowthData> {
-  return {
-    ...EMPTY_EARNINGS_GROWTH,
-    updatedAt: new Date().toISOString(),
-  };
+  /**
+   * 자동 실적 데이터는 다음 단계에서 DART/KIS/컨센서스 순서로 연결합니다.
+   * 현재는 자동 데이터가 없으므로 수동 입력값이 있으면 수동값을 보조 데이터로 사용합니다.
+   */
+  const automaticInput = null;
+
+  return calculateEarningsGrowthData({
+    automatic: automaticInput,
+    manual: manualInput,
+  });
 }
 
 async function getStockMeta(

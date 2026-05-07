@@ -94,6 +94,29 @@ type EarningsGrowthData = {
   reasons: string[];
 };
 
+
+type ManualEarningsGrowthInput = {
+  lastYearNetIncome: string;
+  expectedNetIncome: string;
+  lastYearOperatingProfit: string;
+  expectedOperatingProfit: string;
+  lastYearEps: string;
+  expectedEps: string;
+  turnaround: "" | "true" | "false";
+  deficitReduction: "" | "true" | "false";
+};
+
+const EMPTY_MANUAL_EARNINGS_GROWTH: ManualEarningsGrowthInput = {
+  lastYearNetIncome: "",
+  expectedNetIncome: "",
+  lastYearOperatingProfit: "",
+  expectedOperatingProfit: "",
+  lastYearEps: "",
+  expectedEps: "",
+  turnaround: "",
+  deficitReduction: "",
+};
+
 type QuantScorePart = {
   score: number;
   maxScore: number;
@@ -275,6 +298,9 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [uiError, setUiError] = useState("");
   const [lastFetchedAt, setLastFetchedAt] = useState<string | null>(null);
+  const [manualEarningsGrowth, setManualEarningsGrowth] = useState<ManualEarningsGrowthInput>(
+    EMPTY_MANUAL_EARNINGS_GROWTH,
+  );
   const {
     kisRemainingCalls,
     kisSyncCode,
@@ -369,10 +395,16 @@ export default function HomePage() {
     setUiError("");
 
     try {
-      const res = await fetch(
-        `/api/stock?symbol=${encodeURIComponent(finalSymbol)}&range=${encodeURIComponent(finalRange)}`,
-        { cache: "no-store" },
-      );
+      const params = new URLSearchParams({
+        symbol: finalSymbol,
+        range: finalRange,
+      });
+
+      appendManualEarningsParams(params, manualEarningsGrowth);
+
+      const res = await fetch(`/api/stock?${params.toString()}`, {
+        cache: "no-store",
+      });
 
       const json: StockResponse = await res.json();
 
@@ -404,6 +436,10 @@ export default function HomePage() {
   }
 
   function handleAnalyze() {
+    fetchStock();
+  }
+
+  function handleApplyManualEarningsGrowth() {
     fetchStock();
   }
 
@@ -563,7 +599,12 @@ export default function HomePage() {
 
         <QuantScoreSection quant={data?.quant} />
 
-        <EarningsGrowthSection earningsGrowth={data?.earningsGrowth} />
+        <EarningsGrowthSection
+          earningsGrowth={data?.earningsGrowth}
+          manualInput={manualEarningsGrowth}
+          onManualInputChange={setManualEarningsGrowth}
+          onApplyManualInput={handleApplyManualEarningsGrowth}
+        />
 
         <TargetPriceSection score={data?.score} />
 
@@ -594,6 +635,31 @@ export default function HomePage() {
       </div>
     </main>
   );
+}
+
+
+function appendManualEarningsParams(
+  params: URLSearchParams,
+  input: ManualEarningsGrowthInput,
+) {
+  const entries: Array<[keyof ManualEarningsGrowthInput, string]> = [
+    ["lastYearNetIncome", input.lastYearNetIncome],
+    ["expectedNetIncome", input.expectedNetIncome],
+    ["lastYearOperatingProfit", input.lastYearOperatingProfit],
+    ["expectedOperatingProfit", input.expectedOperatingProfit],
+    ["lastYearEps", input.lastYearEps],
+    ["expectedEps", input.expectedEps],
+    ["turnaround", input.turnaround],
+    ["deficitReduction", input.deficitReduction],
+  ];
+
+  entries.forEach(([key, value]) => {
+    const trimmed = value.trim();
+
+    if (trimmed) {
+      params.set(key, trimmed);
+    }
+  });
 }
 
 function StockIdentity({

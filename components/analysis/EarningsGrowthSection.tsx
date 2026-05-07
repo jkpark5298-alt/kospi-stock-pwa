@@ -1,14 +1,29 @@
 "use client";
 
 import type { ReactNode } from "react";
-import type { EarningsGrowthData } from "../../types/stock";
+import type { EarningsGrowthData, ManualEarningsGrowthInput } from "../../types/stock";
 
 type Props = {
   earningsGrowth?: EarningsGrowthData;
+  manualInput: ManualEarningsGrowthInput;
+  onManualInputChange: (next: ManualEarningsGrowthInput) => void;
+  onApplyManualInput: () => void;
 };
 
-export default function EarningsGrowthSection({ earningsGrowth }: Props) {
+export default function EarningsGrowthSection({
+  earningsGrowth,
+  manualInput,
+  onManualInputChange,
+  onApplyManualInput,
+}: Props) {
   const data = earningsGrowth ?? makeEmptyEarningsGrowth();
+
+  function updateField(key: keyof ManualEarningsGrowthInput, value: string) {
+    onManualInputChange({
+      ...manualInput,
+      [key]: value,
+    });
+  }
 
   return (
     <section className="score-section">
@@ -17,13 +32,14 @@ export default function EarningsGrowthSection({ earningsGrowth }: Props) {
           <div>
             <SectionTitleSmall>실적 성장 분석</SectionTitleSmall>
             <p className="score-subtitle">
-              예상 순이익·영업이익·EPS 성장률과 흑자 전환 여부를 기준으로
-              회사의 이익 성장 가능성을 확인합니다.
+              자동 데이터가 있으면 자동값을 우선 사용하고, 자동 데이터가 없거나
+              늦을 때는 수동 입력값으로 예상 순이익·영업이익·EPS 성장률을
+              계산합니다.
             </p>
           </div>
 
           <div className="score-mode-badge">
-            {data.available ? "실적 데이터 반영" : "데이터 준비 중"}
+            {data.available ? `데이터 출처: ${formatSource(data.source)}` : "데이터 준비 중"}
           </div>
         </div>
 
@@ -43,12 +59,8 @@ export default function EarningsGrowthSection({ earningsGrowth }: Props) {
             <MetricCard
               title="예상 순이익 증가율"
               value={formatPercent(data.netIncomeGrowthRate)}
-              caption={formatIncomePair(
-                data.lastYearNetIncome,
-                data.expectedNetIncome,
-              )}
+              caption={formatIncomePair(data.lastYearNetIncome, data.expectedNetIncome)}
             />
-
             <MetricCard
               title="예상 영업이익 증가율"
               value={formatPercent(data.operatingProfitGrowthRate)}
@@ -57,17 +69,74 @@ export default function EarningsGrowthSection({ earningsGrowth }: Props) {
                 data.expectedOperatingProfit,
               )}
             />
-
             <MetricCard
               title="예상 EPS 증가율"
               value={formatPercent(data.epsGrowthRate)}
               caption={formatEpsPair(data.lastYearEps, data.expectedEps)}
             />
-
             <MetricCard
               title="흑자 전환 여부"
               value={formatTurnaround(data.turnaround, data.deficitReduction)}
               caption="순이익 또는 영업이익 개선 여부"
+            />
+          </div>
+        </div>
+
+        <div className="manual-earnings-box">
+          <div className="manual-earnings-header">
+            <div>
+              <span>수동 입력</span>
+              <p>
+                단위: 순이익·영업이익은 억원, EPS는 원입니다. 자동 데이터가
+                들어오면 자동 데이터가 우선 적용됩니다.
+              </p>
+            </div>
+            <button className="button primary-button" onClick={onApplyManualInput}>
+              수동 입력값 반영
+            </button>
+          </div>
+
+          <div className="manual-earnings-grid">
+            <InputField
+              label="전년 순이익(억원)"
+              value={manualInput.lastYearNetIncome}
+              onChange={(value) => updateField("lastYearNetIncome", value)}
+            />
+            <InputField
+              label="예상 순이익(억원)"
+              value={manualInput.expectedNetIncome}
+              onChange={(value) => updateField("expectedNetIncome", value)}
+            />
+            <InputField
+              label="전년 영업이익(억원)"
+              value={manualInput.lastYearOperatingProfit}
+              onChange={(value) => updateField("lastYearOperatingProfit", value)}
+            />
+            <InputField
+              label="예상 영업이익(억원)"
+              value={manualInput.expectedOperatingProfit}
+              onChange={(value) => updateField("expectedOperatingProfit", value)}
+            />
+            <InputField
+              label="전년 EPS(원)"
+              value={manualInput.lastYearEps}
+              onChange={(value) => updateField("lastYearEps", value)}
+            />
+            <InputField
+              label="예상 EPS(원)"
+              value={manualInput.expectedEps}
+              onChange={(value) => updateField("expectedEps", value)}
+            />
+
+            <SelectField
+              label="흑자 전환"
+              value={manualInput.turnaround}
+              onChange={(value) => updateField("turnaround", value)}
+            />
+            <SelectField
+              label="적자 축소"
+              value={manualInput.deficitReduction}
+              onChange={(value) => updateField("deficitReduction", value)}
             />
           </div>
         </div>
@@ -78,11 +147,11 @@ export default function EarningsGrowthSection({ earningsGrowth }: Props) {
         </div>
 
         <div className="target-plan-box">
-          <span>데이터 연결 상태</span>
+          <span>데이터 우선순위</span>
           <p>
-            {data.available
-              ? `실적 성장 데이터 출처: ${formatSource(data.source)}`
-              : "현재는 실적 성장 점수 구조만 준비된 상태입니다. 다음 단계에서 KIS, DART, 컨센서스 또는 수동 입력 데이터를 연결할 수 있습니다."}
+            자동 데이터(DART/KIS/컨센서스)가 있으면 자동값을 우선 사용합니다.
+            자동 데이터가 없거나 오류가 발생하면 수동 입력값이 보조 데이터로
+            사용됩니다.
           </p>
         </div>
 
@@ -93,6 +162,54 @@ export default function EarningsGrowthSection({ earningsGrowth }: Props) {
         </p>
       </Card>
     </section>
+  );
+}
+
+function InputField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="manual-earnings-field">
+      <span>{label}</span>
+      <input
+        className="form-control"
+        value={value}
+        inputMode="decimal"
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="예: 1200"
+      />
+    </label>
+  );
+}
+
+function SelectField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: "" | "true" | "false";
+  onChange: (value: "" | "true" | "false") => void;
+}) {
+  return (
+    <label className="manual-earnings-field">
+      <span>{label}</span>
+      <select
+        className="form-control"
+        value={value}
+        onChange={(e) => onChange(e.target.value as "" | "true" | "false")}
+      >
+        <option value="">자동 판단</option>
+        <option value="true">예</option>
+        <option value="false">아니오</option>
+      </select>
+    </label>
   );
 }
 
@@ -114,13 +231,7 @@ function MetricCard({
   );
 }
 
-function Card({
-  children,
-  className = "",
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
+function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
   return <div className={`card ${className}`}>{children}</div>;
 }
 
@@ -152,47 +263,33 @@ function makeEmptyEarningsGrowth(): EarningsGrowthData {
 
     score: null,
     label: "데이터 대기",
-    reasons: [
-      "예상 순이익·영업이익·EPS 성장률 데이터는 다음 단계에서 연결됩니다.",
-    ],
+    reasons: ["자동 데이터 또는 수동 입력값이 필요합니다."],
   };
 }
 
 function makeSummary(data: EarningsGrowthData) {
   if (!data.available) {
-    return (
-      data.reasons?.[0] ||
-      "예상 순이익·영업이익·EPS 성장률 데이터 연결 전입니다."
-    );
+    return data.reasons?.[0] || "자동 데이터 또는 수동 입력값이 필요합니다.";
   }
 
   const positives: string[] = [];
   const cautions: string[] = [];
 
-  if ((data.netIncomeGrowthRate ?? 0) >= 10) {
-    positives.push("예상 순이익 증가");
-  } else if (data.netIncomeGrowthRate != null && data.netIncomeGrowthRate <= 0) {
+  if ((data.netIncomeGrowthRate ?? 0) >= 10) positives.push("예상 순이익 증가");
+  else if (data.netIncomeGrowthRate != null && data.netIncomeGrowthRate <= 0)
     cautions.push("예상 순이익 정체 또는 감소");
-  }
 
-  if ((data.operatingProfitGrowthRate ?? 0) >= 10) {
+  if ((data.operatingProfitGrowthRate ?? 0) >= 10)
     positives.push("예상 영업이익 증가");
-  } else if (
+  else if (
     data.operatingProfitGrowthRate != null &&
     data.operatingProfitGrowthRate <= 0
-  ) {
+  )
     cautions.push("예상 영업이익 정체 또는 감소");
-  }
 
-  if ((data.epsGrowthRate ?? 0) >= 10) {
-    positives.push("예상 EPS 증가");
-  }
-
-  if (data.turnaround) {
-    positives.push("흑자 전환 기대");
-  } else if (data.deficitReduction) {
-    positives.push("적자 축소 기대");
-  }
+  if ((data.epsGrowthRate ?? 0) >= 10) positives.push("예상 EPS 증가");
+  if (data.turnaround) positives.push("흑자 전환 기대");
+  else if (data.deficitReduction) positives.push("적자 축소 기대");
 
   if (positives.length > 0 && cautions.length > 0) {
     return `${positives.join(", ")}는 긍정적이나 ${cautions.join(
@@ -213,31 +310,21 @@ function makeSummary(data: EarningsGrowthData) {
 
 function formatPercent(value: number | null) {
   if (value == null || !Number.isFinite(value)) return "데이터 준비 중";
-
   const sign = value > 0 ? "+" : "";
   return `${sign}${value.toFixed(1)}%`;
 }
 
 function formatIncomePair(previous: number | null, expected: number | null) {
-  if (previous == null || expected == null) {
-    return "전년/예상 데이터 준비 중";
-  }
-
-  return `전년 ${formatNumber(previous)} → 예상 ${formatNumber(expected)}`;
+  if (previous == null || expected == null) return "전년/예상 데이터 준비 중";
+  return `전년 ${formatNumber(previous)}억원 → 예상 ${formatNumber(expected)}억원`;
 }
 
 function formatEpsPair(previous: number | null, expected: number | null) {
-  if (previous == null || expected == null) {
-    return "전년/예상 EPS 준비 중";
-  }
-
-  return `전년 ${formatNumber(previous)} → 예상 ${formatNumber(expected)}`;
+  if (previous == null || expected == null) return "전년/예상 EPS 준비 중";
+  return `전년 ${formatNumber(previous)}원 → 예상 ${formatNumber(expected)}원`;
 }
 
-function formatTurnaround(
-  turnaround: boolean | null,
-  deficitReduction: boolean | null,
-) {
+function formatTurnaround(turnaround: boolean | null, deficitReduction: boolean | null) {
   if (turnaround === true) return "흑자 전환 기대";
   if (deficitReduction === true) return "적자 축소 기대";
   if (turnaround === false || deficitReduction === false) return "해당 없음";
@@ -253,9 +340,7 @@ function formatSource(source: EarningsGrowthData["source"]) {
 }
 
 function formatNumber(value: number) {
-  return new Intl.NumberFormat("ko-KR", {
-    maximumFractionDigits: 0,
-  }).format(value);
+  return new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 0 }).format(value);
 }
 
 function getScoreGradeTone(value?: number | null) {
