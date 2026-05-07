@@ -7,7 +7,13 @@ type Props = {
   score?: CompositeScore;
 };
 
+type ExtendedScoreKey =
+  | keyof ScoreWeights
+  | "signalAgreement";
+
 export default function CompositeScoreSection({ score }: Props) {
+  const signalAgreement = getScorePart(score, "signalAgreement");
+
   return (
     <section className="score-section">
       <Card>
@@ -15,12 +21,15 @@ export default function CompositeScoreSection({ score }: Props) {
           <div>
             <SectionTitleSmall>종합 신뢰도 점수</SectionTitleSmall>
             <p className="score-subtitle">
-              기술·거래량·수급·목표여력 점수를 합산해 현재 관심 구간 여부를
-              진단합니다.
+              기술·거래량·거래대금·수급·목표여력·신호 일치도를 합산해
+              현재 심리 구간과 분석 신뢰도를 판단합니다.
             </p>
           </div>
+
           <div className="score-mode-badge">
-            {score?.targetPrice?.available ? "목표여력 반영" : "목표여력 대기"}
+            {score?.targetPrice?.available
+              ? "목표여력 반영"
+              : "목표여력 대기"}
           </div>
         </div>
 
@@ -38,9 +47,10 @@ export default function CompositeScoreSection({ score }: Props) {
 
           <div className="score-detail-grid">
             <ScorePartCard title="기술 점수" part={score?.technical} />
-            <ScorePartCard title="거래량 점수" part={score?.volume} />
+            <ScorePartCard title="거래량·거래대금 점수" part={score?.volume} />
             <ScorePartCard title="수급 점수" part={score?.supply} />
             <ScorePartCard title="목표여력 점수" part={score?.targetPrice} />
+            <ScorePartCard title="신호 일치도" part={signalAgreement} />
           </div>
         </div>
 
@@ -50,8 +60,9 @@ export default function CompositeScoreSection({ score }: Props) {
             <strong>{formatAppliedWeights(score?.appliedWeights)}</strong>
           </div>
           <p>
-            목표여력 점수는 기준 목표가 대비 남은 상승 공간과 수급·거래량 보정을
-            함께 반영합니다. 컨센서스 목표가는 아직 연결하지 않았습니다.
+            종합 신뢰도는 기술·거래 흐름·수급·목표여력에 더해 신호 일치도를
+            반영합니다. 신호 일치도는 기술, 거래, 수급, 목표여력, 퀀트 방향이
+            얼마나 같은 방향인지 확인하는 보정 항목입니다.
           </p>
         </div>
 
@@ -87,7 +98,19 @@ function ScorePartCard({ title, part }: { title: string; part?: ScorePart }) {
   );
 }
 
-function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
+function getScorePart(score: CompositeScore | undefined, key: string) {
+  if (!score) return undefined;
+
+  return (score as unknown as Record<string, ScorePart | undefined>)[key];
+}
+
+function Card({
+  children,
+  className = "",
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
   return <div className={`card ${className}`}>{children}</div>;
 }
 
@@ -103,19 +126,22 @@ function getScoreGradeTone(value?: number | null) {
 }
 
 function formatAppliedWeights(weights?: Partial<ScoreWeights>) {
-  if (!weights || Object.keys(weights).length === 0) return "데이터 대기";
+  if (!weights || Object.keys(weights).length === 0) {
+    return "데이터 대기";
+  }
 
-  const labels: Array<[keyof ScoreWeights, string]> = [
+  const weightMap = weights as Partial<Record<ExtendedScoreKey, number>>;
+
+  const labels: Array<[ExtendedScoreKey, string]> = [
     ["technical", "기술"],
     ["volume", "거래량"],
     ["supply", "수급"],
     ["targetPrice", "목표여력"],
+    ["signalAgreement", "신호일치도"],
   ];
 
   return labels
-    .filter(([key]) => weights[key] != null)
-    .map(
-      ([key, label]) => `${label} ${((weights[key] ?? 0) * 100).toFixed(1)}%`,
-    )
+    .filter(([key]) => weightMap[key] != null)
+    .map(([key, label]) => `${label} ${((weightMap[key] ?? 0) * 100).toFixed(1)}%`)
     .join(" / ");
 }
