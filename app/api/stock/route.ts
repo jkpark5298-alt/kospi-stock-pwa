@@ -63,6 +63,32 @@ type FundamentalsData = {
   low52w: number | null;
 };
 
+type EarningsGrowthData = {
+  available: boolean;
+  source: "none" | "manual" | "kis" | "dart" | "consensus";
+  updatedAt: string | null;
+  warning?: string;
+
+  lastYearNetIncome: number | null;
+  expectedNetIncome: number | null;
+  netIncomeGrowthRate: number | null;
+
+  lastYearOperatingProfit: number | null;
+  expectedOperatingProfit: number | null;
+  operatingProfitGrowthRate: number | null;
+
+  lastYearEps: number | null;
+  expectedEps: number | null;
+  epsGrowthRate: number | null;
+
+  turnaround: boolean | null;
+  deficitReduction: boolean | null;
+
+  score: number | null;
+  label: string;
+  reasons: string[];
+};
+
 type SupplyData = {
   available: boolean;
   warning?: string;
@@ -120,6 +146,35 @@ const EMPTY_FUNDAMENTALS: FundamentalsData = {
   sharesOutstanding: null,
   high52w: null,
   low52w: null,
+};
+
+const EMPTY_EARNINGS_GROWTH: EarningsGrowthData = {
+  available: false,
+  source: "none",
+  updatedAt: null,
+  warning: "예상 실적 데이터 연결 전입니다.",
+
+  lastYearNetIncome: null,
+  expectedNetIncome: null,
+  netIncomeGrowthRate: null,
+
+  lastYearOperatingProfit: null,
+  expectedOperatingProfit: null,
+  operatingProfitGrowthRate: null,
+
+  lastYearEps: null,
+  expectedEps: null,
+  epsGrowthRate: null,
+
+  turnaround: null,
+  deficitReduction: null,
+
+  score: null,
+  label: "데이터 대기",
+  reasons: [
+    "예상 순이익·영업이익·EPS 성장률 데이터는 다음 단계에서 연결됩니다.",
+    "현재는 실적 성장 점수 구조만 먼저 준비한 상태입니다.",
+  ],
 };
 
 export async function GET(req: NextRequest) {
@@ -407,10 +462,12 @@ export async function GET(req: NextRequest) {
     const stockMeta = await getStockMeta(symbol, chartMeta, resolvedStock);
     const supply = await getSupplyData(symbol);
     const fundamentals = await getFundamentalsData(symbol);
+    const earningsGrowth = await getEarningsGrowthData(symbol, fundamentals);
 
     const score = calculateCompositeScore({
       rows: chartData,
       supply,
+      fundamentals,
     });
 
     const latestTechnical = chartData[chartData.length - 1] ?? null;
@@ -423,6 +480,7 @@ export async function GET(req: NextRequest) {
       supply,
       fundamentals,
       targetRange,
+      earningsGrowth,
     });
 
     const targetProgress =
@@ -455,6 +513,7 @@ export async function GET(req: NextRequest) {
       forecast,
       fearGreed,
       fundamentals,
+      earningsGrowth,
       supply,
       score,
       quant,
@@ -514,7 +573,7 @@ export async function GET(req: NextRequest) {
         updatedAt: new Date().toISOString(),
         range,
         source:
-          "Yahoo Finance chart + KIS investor summary + KIS fundamentals + quant model",
+          "Yahoo Finance chart + KIS investor summary + KIS fundamentals + earnings growth placeholder + quant model",
       },
     };
 
@@ -608,6 +667,16 @@ async function getFundamentalsData(symbol: string): Promise<FundamentalsData> {
     console.warn("KIS fundamentals unavailable:", error);
     return EMPTY_FUNDAMENTALS;
   }
+}
+
+async function getEarningsGrowthData(
+  _symbol: string,
+  _fundamentals?: FundamentalsData,
+): Promise<EarningsGrowthData> {
+  return {
+    ...EMPTY_EARNINGS_GROWTH,
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 async function getStockMeta(
