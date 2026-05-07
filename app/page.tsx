@@ -5,6 +5,7 @@ import ChartAnalysisSections from "../components/chart/ChartAnalysisSections";
 import SupplySection from "../components/analysis/SupplySection";
 import CompositeScoreSection from "../components/analysis/CompositeScoreSection";
 import QuantScoreSection from "../components/analysis/QuantScoreSection";
+import EarningsGrowthSection from "../components/analysis/EarningsGrowthSection";
 import TargetPriceSection from "../components/analysis/TargetPriceSection";
 import BasicInfoSection from "../components/stock/BasicInfoSection";
 import CurrentStockSummaryCard from "../components/stock/CurrentStockSummaryCard";
@@ -67,6 +68,32 @@ type Fundamentals = {
   low52w: number | null;
 };
 
+type EarningsGrowthData = {
+  available: boolean;
+  source: "none" | "manual" | "kis" | "dart" | "consensus";
+  updatedAt: string | null;
+  warning?: string;
+
+  lastYearNetIncome: number | null;
+  expectedNetIncome: number | null;
+  netIncomeGrowthRate: number | null;
+
+  lastYearOperatingProfit: number | null;
+  expectedOperatingProfit: number | null;
+  operatingProfitGrowthRate: number | null;
+
+  lastYearEps: number | null;
+  expectedEps: number | null;
+  epsGrowthRate: number | null;
+
+  turnaround: boolean | null;
+  deficitReduction: boolean | null;
+
+  score: number | null;
+  label: string;
+  reasons: string[];
+};
+
 type QuantScorePart = {
   score: number;
   maxScore: number;
@@ -81,16 +108,24 @@ type QuantModelResult = {
   action: string;
   summary: string;
   momentum: QuantScorePart;
+  trend?: QuantScorePart;
+  tradingValue?: QuantScorePart;
   valuation: QuantScorePart;
   supply: QuantScorePart;
+  volatility?: QuantScorePart;
   risk: QuantScorePart;
   target: QuantScorePart;
+  earningsGrowth?: QuantScorePart;
   flags: {
     nearHigh52w: boolean;
     valuationBurden: boolean;
     targetAlmostReached: boolean;
     supplyPositive: boolean;
     momentumPositive: boolean;
+    trendPositive?: boolean;
+    tradingValuePositive?: boolean;
+    volatilityHigh?: boolean;
+    earningsGrowthPositive?: boolean;
   };
 };
 
@@ -106,6 +141,8 @@ type ScoreWeights = {
   volume: number;
   supply: number;
   targetPrice: number;
+  signalAgreement?: number;
+  earningsGrowth?: number;
 };
 
 type TargetPriceRange = {
@@ -183,6 +220,8 @@ type CompositeScore = {
     selectedTargetMode?: TargetMode;
     targetModes?: TargetModeResult[];
   };
+  signalAgreement?: ScorePart;
+  earningsGrowth?: ScorePart;
   baseWeights: ScoreWeights;
   appliedWeights: Partial<ScoreWeights>;
   targetPricePlan: {
@@ -194,6 +233,7 @@ type CompositeScore = {
 type StockResponse = {
   ok?: boolean;
   symbol?: string;
+  rawSymbol?: string;
   name?: string;
   exchange?: string;
   currency?: string;
@@ -209,6 +249,7 @@ type StockResponse = {
     label: string;
   };
   fundamentals?: Fundamentals;
+  earningsGrowth?: EarningsGrowthData;
   supply?: SupplyData;
   score?: CompositeScore;
   quant?: QuantModelResult;
@@ -221,11 +262,9 @@ type StockResponse = {
   status?: number;
 };
 
-
 const DEFAULT_SYMBOL = "005930.KS";
 const DEFAULT_RANGE = "6mo";
 const WATCHLIST_KEY = "kospi-watchlist";
-
 
 export default function HomePage() {
   const [symbol, setSymbol] = useState(DEFAULT_SYMBOL);
@@ -273,8 +312,6 @@ export default function HomePage() {
   async function handleClearAllPredictions() {
     await clearAllPredictions();
   }
-
-
 
   useEffect(() => {
     try {
@@ -399,7 +436,6 @@ export default function HomePage() {
 
   const chartData = data?.chartData ?? [];
 
-
   return (
     <main className="app-shell">
       <div className="page-container">
@@ -426,7 +462,7 @@ export default function HomePage() {
                 onKeyDown={(e) => {
                   if (e.key === "Enter") handleAnalyze();
                 }}
-                placeholder="예: 005930.KS"
+                placeholder="예: 삼성전자 / 005930 / 일진전기 / 103590"
               />
 
               <select
@@ -489,8 +525,8 @@ export default function HomePage() {
             </div>
 
             <p className="watch-tip">
-              자주 쓰는 예시: ^KS11 / 005930.KS / 000660.KS / 035420.KS /
-              035720.KS
+              한글 종목명 또는 6자리 종목코드 입력 가능: 삼성전자 / 005930 /
+              일진전기 / 103590
             </p>
           </Card>
         </section>
@@ -526,6 +562,8 @@ export default function HomePage() {
         <CompositeScoreSection score={data?.score} />
 
         <QuantScoreSection quant={data?.quant} />
+
+        <EarningsGrowthSection earningsGrowth={data?.earningsGrowth} />
 
         <TargetPriceSection score={data?.score} />
 
@@ -598,7 +636,7 @@ function StatusMessage({
     );
   return (
     <p className="status-message muted-text">
-      종목 코드를 입력하고 분석하기를 눌러주세요.
+      종목명 또는 종목코드를 입력하고 분석하기를 눌러주세요.
     </p>
   );
 }
@@ -648,7 +686,6 @@ function SectionTitle({ children }: { children: ReactNode }) {
 function SectionTitleSmall({ children }: { children: ReactNode }) {
   return <h3 className="section-title small">{children}</h3>;
 }
-
 
 function formatNumber(value?: number | null) {
   if (value == null || Number.isNaN(value)) return "데이터 없음";
