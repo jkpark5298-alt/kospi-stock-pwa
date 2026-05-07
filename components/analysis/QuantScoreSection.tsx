@@ -15,10 +15,11 @@ export default function QuantScoreSection({ quant }: Props) {
           <div>
             <SectionTitleSmall>퀀트 모델 점수</SectionTitleSmall>
             <p className="score-subtitle">
-              모멘텀·밸류에이션·수급·리스크·목표여력을 합산해 현재 구간을
-              판단합니다.
+              모멘텀·추세 지속성·거래대금·밸류에이션·수급·변동성·리스크·목표여력을
+              종합해 현재 구간의 숫자 조건을 판단합니다.
             </p>
           </div>
+
           <div className="score-mode-badge">
             {quant?.available ? quant.action : "데이터 대기"}
           </div>
@@ -38,8 +39,11 @@ export default function QuantScoreSection({ quant }: Props) {
 
           <div className="score-detail-grid">
             <QuantPartCard title="모멘텀" part={quant?.momentum} />
+            <QuantPartCard title="추세 지속성" part={getQuantPart(quant, "trend")} />
+            <QuantPartCard title="거래대금" part={getQuantPart(quant, "tradingValue")} />
             <QuantPartCard title="밸류에이션" part={quant?.valuation} />
             <QuantPartCard title="수급" part={quant?.supply} />
+            <QuantPartCard title="변동성" part={getQuantPart(quant, "volatility")} />
             <QuantPartCard title="리스크" part={quant?.risk} />
             <QuantPartCard title="목표여력" part={quant?.target} />
           </div>
@@ -53,8 +57,8 @@ export default function QuantScoreSection({ quant }: Props) {
         </div>
 
         <p className="notice-text">
-          퀀트 점수는 매수·매도 신호가 아니라 현재 가격 위치와 위험도를 함께
-          보기 위한 참고 지표입니다.
+          퀀트 점수는 매수·매도 신호가 아니라 현재 가격 위치, 거래 흐름,
+          수급, 변동성, 목표여력을 함께 보기 위한 참고 지표입니다.
         </p>
       </Card>
     </section>
@@ -80,7 +84,19 @@ function QuantPartCard({
   );
 }
 
-function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
+function getQuantPart(quant: QuantModelResult | undefined, key: string) {
+  if (!quant) return undefined;
+
+  return (quant as unknown as Record<string, QuantScorePart | undefined>)[key];
+}
+
+function Card({
+  children,
+  className = "",
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
   return <div className={`card ${className}`}>{children}</div>;
 }
 
