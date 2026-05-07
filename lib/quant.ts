@@ -68,17 +68,25 @@ export type QuantModelResult = {
   grade: string;
   action: string;
   summary: string;
+
   momentum: QuantScorePart;
+  trend: QuantScorePart;
+  tradingValue: QuantScorePart;
   valuation: QuantScorePart;
   supply: QuantScorePart;
+  volatility: QuantScorePart;
   risk: QuantScorePart;
   target: QuantScorePart;
+
   flags: {
     nearHigh52w: boolean;
     valuationBurden: boolean;
     targetAlmostReached: boolean;
     supplyPositive: boolean;
     momentumPositive: boolean;
+    trendPositive: boolean;
+    tradingValuePositive: boolean;
+    volatilityHigh: boolean;
   };
 };
 
@@ -95,15 +103,19 @@ export function calculateQuantModel({
 }): QuantModelResult {
   const sortedRows = sortRowsByDate(rows);
   const latest = sortedRows.length ? sortedRows[sortedRows.length - 1] : null;
-  const previous = sortedRows.length >= 2 ? sortedRows[sortedRows.length - 2] : null;
+  const previous =
+    sortedRows.length >= 2 ? sortedRows[sortedRows.length - 2] : null;
 
   if (!latest || latest.close == null) {
     return makeUnavailableQuantResult();
   }
 
   const momentum = calculateMomentumPart(sortedRows, latest);
+  const trend = calculateTrendPart(sortedRows, latest);
+  const tradingValue = calculateTradingValuePart(sortedRows);
   const valuation = calculateValuationPart(fundamentals);
   const supplyPart = calculateSupplyPart(supply, fundamentals);
+  const volatility = calculateVolatilityPart(sortedRows);
   const risk = calculateRiskPart({
     latest,
     previous,
@@ -114,19 +126,26 @@ export function calculateQuantModel({
 
   const rawTotal =
     momentum.score +
+    trend.score +
+    tradingValue.score +
     valuation.score +
     supplyPart.score +
+    volatility.score +
     risk.score +
     target.score;
 
   const total = clampScore(rawTotal);
+
   const flags = makeQuantFlags({
     latest,
     fundamentals,
     targetRange,
     momentum,
+    trend,
+    tradingValue,
     valuation,
     supply: supplyPart,
+    volatility,
   });
 
   const grade = getQuantGrade(total);
@@ -137,8 +156,11 @@ export function calculateQuantModel({
     action,
     flags,
     momentum,
+    trend,
+    tradingValue,
     valuation,
     supply: supplyPart,
+    volatility,
     risk,
     target,
   });
@@ -150,21 +172,27 @@ export function calculateQuantModel({
     action,
     summary,
     momentum,
+    trend,
+    tradingValue,
     valuation,
     supply: supplyPart,
+    volatility,
     risk,
     target,
     flags,
   };
 }
 
-function calculateMomentumPart(rows: QuantChartRow[], latest: QuantChartRow): QuantScorePart {
+function calculateMomentumPart(
+  rows: QuantChartRow[],
+  latest: QuantChartRow,
+): QuantScorePart {
   let score = 0;
   const reasons: string[] = [];
 
   if (latest.close != null && latest.sma20 != null) {
     if (latest.close > latest.sma20) {
-      score += 8;
+      score += 4;
       reasons.push("현재가가 SMA20 위에 있어 단기 모멘텀이 긍정적입니다.");
     } else {
       reasons.push("현재가가 SMA20 아래에 있어 단기 모멘텀 확인이 필요합니다.");
@@ -173,37 +201,35 @@ function calculateMomentumPart(rows: QuantChartRow[], latest: QuantChartRow): Qu
     reasons.push("SMA20 비교 데이터가 부족합니다.");
   }
 
-  if (latest.sma20 != null && latest.sma60 != null) {
-    if (latest.sma20 > latest.sma60) {
-      score += 7;
-      reasons.push("SMA20이 SMA60 위에 있어 중기 추세가 긍정적입니다.");
-    } else {
-      reasons.push("SMA20이 SMA60 아래에 있어 중기 추세가 약합니다.");
-    }
-  } else {
-    reasons.push("SMA20/SMA60 비교 데이터가 부족합니다.");
-  }
-
   if (latest.macd != null && latest.signal != null) {
     if (latest.macd > latest.signal) {
-      score += 5;
-      reasons.push("MACD가 Signal 위에 있습니다.");
+      score += 4;
+      reasons.push("MACD가 Signal 위에 있어 모멘텀이 우세합니다.");
     } else {
-      reasons.push("MACD가 Signal 아래에 있습니다.");
+      reasons.push("MACD가 Signal 아래에 있어 모멘텀이 약합니다.");
     }
   } else {
     reasons.push("MACD 데이터가 부족합니다.");
   }
 
+  if (latest.histogram != null) {
+    if (latest.histogram > 0) {
+      score += 2;
+      reasons.push("MACD 히스토그램이 양수입니다.");
+    } else {
+      reasons.push("MACD 히스토그램이 음수입니다.");
+    }
+  }
+
   if (latest.rsi14 != null) {
-    if (latest.rsi14 >= 45 && latest.rsi14 <= 70) {
-      score += 5;
-      reasons.push("RSI가 모멘텀 확인에 적절한 구간입니다.");
-    } else if (latest.rsi14 > 70 && latest.rsi14 < 75) {
+    if (latest.rsi14 >= 45 && latest.rsi14 <= 68) {
+      score += 4;
+      reasons.push("RSI가 상승 모멘텀 확인에 적절한 구간입니다.");
+    } else if (latest.rsi14 > 68 && latest.rsi14 < 75) {
       score += 2;
       reasons.push("RSI가 강하지만 과열에 가까워지고 있습니다.");
     } else if (latest.rsi14 >= 75) {
-      score -= 5;
+      score -= 3;
       reasons.push("RSI가 과열권에 있어 단기 추격은 주의가 필요합니다.");
     } else {
       reasons.push("RSI가 약한 구간입니다.");
@@ -216,25 +242,168 @@ function calculateMomentumPart(rows: QuantChartRow[], latest: QuantChartRow): Qu
 
   if (recentReturn != null) {
     if (recentReturn > 5) {
-      score += 2;
+      score += 4;
       reasons.push("최근 5거래일 수익률이 강합니다.");
+    } else if (recentReturn > 0) {
+      score += 2;
+      reasons.push("최근 5거래일 수익률이 양수입니다.");
     } else if (recentReturn < -5) {
       score -= 2;
       reasons.push("최근 5거래일 수익률이 약합니다.");
+    } else {
+      reasons.push("최근 5거래일 수익률은 보합권입니다.");
     }
   }
 
-  const finalScore = clampPartScore(score, 25);
+  const finalScore = clampPartScore(score, 18);
 
   return {
     score: finalScore,
-    maxScore: 25,
-    label: getPartLabel(finalScore, 25),
+    maxScore: 18,
+    label: getPartLabel(finalScore, 18),
     reasons,
   };
 }
 
-function calculateValuationPart(fundamentals?: QuantFundamentals): QuantScorePart {
+function calculateTrendPart(
+  rows: QuantChartRow[],
+  latest: QuantChartRow,
+): QuantScorePart {
+  let score = 0;
+  const reasons: string[] = [];
+
+  if (latest.close != null && latest.sma20 != null) {
+    if (latest.close > latest.sma20) {
+      score += 3;
+      reasons.push("현재가가 20일선 위에서 유지되고 있습니다.");
+    } else {
+      reasons.push("현재가가 20일선 아래에 있습니다.");
+    }
+  } else {
+    reasons.push("20일선 추세 데이터가 부족합니다.");
+  }
+
+  if (latest.sma20 != null && latest.sma60 != null) {
+    if (latest.sma20 > latest.sma60) {
+      score += 3;
+      reasons.push("20일선이 60일선 위에 있어 중기 추세가 양호합니다.");
+    } else {
+      reasons.push("20일선이 60일선 아래에 있어 중기 추세가 약합니다.");
+    }
+  } else {
+    reasons.push("20일선·60일선 비교 데이터가 부족합니다.");
+  }
+
+  const sma20Slope = calculateSmaSlope(rows, "sma20", 5);
+
+  if (sma20Slope != null) {
+    if (sma20Slope > 1.5) {
+      score += 3;
+      reasons.push("최근 20일선 기울기가 상승 방향입니다.");
+    } else if (sma20Slope > 0) {
+      score += 2;
+      reasons.push("최근 20일선이 완만하게 상승 중입니다.");
+    } else {
+      reasons.push("최근 20일선 기울기가 약하거나 하락 중입니다.");
+    }
+  }
+
+  if (hasHigherRecentLows(rows)) {
+    score += 3;
+    reasons.push("최근 저점이 높아지는 구조가 확인됩니다.");
+  } else {
+    reasons.push("최근 저점 상승 구조는 뚜렷하지 않습니다.");
+  }
+
+  const finalScore = clampPartScore(score, 12);
+
+  return {
+    score: finalScore,
+    maxScore: 12,
+    label: getPartLabel(finalScore, 12),
+    reasons,
+  };
+}
+
+function calculateTradingValuePart(rows: QuantChartRow[]): QuantScorePart {
+  const reasons: string[] = [];
+  const latest = rows[rows.length - 1] ?? null;
+
+  if (!latest || latest.close == null || latest.volume == null) {
+    return {
+      score: 5,
+      maxScore: 12,
+      label: "데이터 대기",
+      reasons: ["거래대금 계산에 필요한 현재가·거래량 데이터가 부족합니다."],
+    };
+  }
+
+  let score = 0;
+  const avg5 = calculateAverageTradingValue(rows, 5);
+  const avg20 = calculateAverageTradingValue(rows, 20);
+  const latestTradingValue = latest.close * latest.volume;
+
+  if (avg5 != null && avg20 != null && avg20 > 0) {
+    const ratio = avg5 / avg20;
+
+    if (ratio >= 1.8) {
+      score += 6;
+      reasons.push("최근 5일 평균 거래대금이 20일 평균보다 크게 증가했습니다.");
+    } else if (ratio >= 1.3) {
+      score += 5;
+      reasons.push("최근 5일 평균 거래대금이 20일 평균보다 증가했습니다.");
+    } else if (ratio >= 0.9) {
+      score += 3;
+      reasons.push("최근 거래대금은 20일 평균과 비슷한 수준입니다.");
+    } else {
+      score += 1;
+      reasons.push("최근 거래대금이 20일 평균보다 줄었습니다.");
+    }
+  } else {
+    score += 2;
+    reasons.push("거래대금 평균 비교 데이터가 부족합니다.");
+  }
+
+  if (avg20 != null) {
+    if (avg20 >= 50_000_000_000) {
+      score += 4;
+      reasons.push("20일 평균 거래대금이 커서 유동성이 양호합니다.");
+    } else if (avg20 >= 10_000_000_000) {
+      score += 3;
+      reasons.push("20일 평균 거래대금이 보통 이상입니다.");
+    } else if (avg20 >= 3_000_000_000) {
+      score += 2;
+      reasons.push("20일 평균 거래대금은 보통 수준입니다.");
+    } else {
+      reasons.push("20일 평균 거래대금이 작아 유동성 확인이 필요합니다.");
+    }
+  }
+
+  const previous = rows.length >= 2 ? rows[rows.length - 2] : null;
+
+  if (
+    previous?.close != null &&
+    previous.volume != null &&
+    latest.close > previous.close &&
+    latestTradingValue > previous.close * previous.volume
+  ) {
+    score += 2;
+    reasons.push("상승일에 거래대금이 함께 증가했습니다.");
+  }
+
+  const finalScore = clampPartScore(score, 12);
+
+  return {
+    score: finalScore,
+    maxScore: 12,
+    label: getPartLabel(finalScore, 12),
+    reasons,
+  };
+}
+
+function calculateValuationPart(
+  fundamentals?: QuantFundamentals,
+): QuantScorePart {
   let score = 0;
   const reasons: string[] = [];
 
@@ -245,84 +414,84 @@ function calculateValuationPart(fundamentals?: QuantFundamentals): QuantScorePar
 
   if (per != null && Number.isFinite(per) && per > 0) {
     if (per <= 10) {
-      score += 10;
+      score += 6;
       reasons.push("PER이 낮아 밸류에이션 부담이 작습니다.");
     } else if (per <= 20) {
-      score += 8;
+      score += 5;
       reasons.push("PER이 보통 수준입니다.");
     } else if (per <= 30) {
-      score += 5;
+      score += 3;
       reasons.push("PER이 다소 높아 밸류에이션 확인이 필요합니다.");
     } else if (per <= 40) {
-      score += 2;
+      score += 1;
       reasons.push("PER이 높은 편이라 밸류에이션 부담이 있습니다.");
     } else {
       reasons.push("PER이 매우 높아 밸류에이션 부담이 큽니다.");
     }
   } else {
-    score += 3;
-    reasons.push("PER 데이터가 없어 중립보다 낮게 반영했습니다.");
+    score += 2;
+    reasons.push("PER 데이터가 없어 낮은 중립값으로 반영했습니다.");
   }
 
   if (pbr != null && Number.isFinite(pbr) && pbr > 0) {
     if (pbr <= 1) {
-      score += 8;
+      score += 5;
       reasons.push("PBR이 낮아 자산가치 대비 부담이 작습니다.");
     } else if (pbr <= 2) {
-      score += 6;
+      score += 4;
       reasons.push("PBR이 보통 수준입니다.");
     } else if (pbr <= 3) {
-      score += 4;
+      score += 2;
       reasons.push("PBR이 다소 높습니다.");
     } else if (pbr <= 5) {
-      score += 2;
+      score += 1;
       reasons.push("PBR이 높은 편입니다.");
     } else {
       reasons.push("PBR이 매우 높아 자산가치 대비 부담이 큽니다.");
     }
   } else {
-    score += 2;
-    reasons.push("PBR 데이터가 없어 중립보다 낮게 반영했습니다.");
+    score += 1;
+    reasons.push("PBR 데이터가 없어 낮은 중립값으로 반영했습니다.");
   }
 
   if (eps != null && eps > 0) {
-    score += 4;
+    score += 2;
     reasons.push("EPS가 양수입니다.");
   } else if (eps != null && eps <= 0) {
-    score -= 3;
+    score -= 2;
     reasons.push("EPS가 양수가 아닙니다.");
   } else {
     reasons.push("EPS 데이터가 없습니다.");
   }
 
   if (bps != null && bps > 0) {
-    score += 3;
+    score += 2;
     reasons.push("BPS가 양수입니다.");
   } else {
     reasons.push("BPS 데이터가 없습니다.");
   }
 
-  const finalScore = clampPartScore(score, 25);
+  const finalScore = clampPartScore(score, 15);
 
   return {
     score: finalScore,
-    maxScore: 25,
-    label: getPartLabel(finalScore, 25),
+    maxScore: 15,
+    label: getPartLabel(finalScore, 15),
     reasons,
   };
 }
 
 function calculateSupplyPart(
   supply?: QuantSupplyData,
-  fundamentals?: QuantFundamentals
+  fundamentals?: QuantFundamentals,
 ): QuantScorePart {
   let score = 0;
   const reasons: string[] = [];
 
   if (!supply?.available) {
     return {
-      score: 8,
-      maxScore: 20,
+      score: 6,
+      maxScore: 15,
       label: "데이터 대기",
       reasons: ["수급 데이터가 없어 보수적으로 반영했습니다."],
     };
@@ -334,32 +503,32 @@ function calculateSupplyPart(
   const institution5 = supply.recent5?.institutionNetBuy ?? 0;
 
   if (recent5Smart > 0) {
-    score += 5;
+    score += 4;
     reasons.push("최근 5일 외국인+기관 합산 수급이 양수입니다.");
   } else if (recent5Smart < 0) {
     reasons.push("최근 5일 외국인+기관 합산 수급이 음수입니다.");
   } else {
-    score += 2;
+    score += 1;
     reasons.push("최근 5일 외국인+기관 합산 수급이 보합입니다.");
   }
 
   if (recent20Smart > 0) {
-    score += 5;
+    score += 4;
     reasons.push("최근 20일 외국인+기관 합산 수급이 양수입니다.");
   } else if (recent20Smart < 0) {
     reasons.push("최근 20일 외국인+기관 합산 수급이 음수입니다.");
   } else {
-    score += 2;
+    score += 1;
     reasons.push("최근 20일 외국인+기관 합산 수급이 보합입니다.");
   }
 
   if (foreign5 > 0) {
-    score += 3;
+    score += 2;
     reasons.push("최근 5일 외국인 순매수가 양수입니다.");
   }
 
   if (institution5 > 0) {
-    score += 3;
+    score += 2;
     reasons.push("최근 5일 기관 순매수가 양수입니다.");
   }
 
@@ -372,7 +541,7 @@ function calculateSupplyPart(
 
   if (foreignOwnershipRate != null) {
     if (foreignOwnershipRate >= 40) {
-      score += 2;
+      score += 1;
       reasons.push("외국인 보유율이 높은 편입니다.");
     } else if (foreignOwnershipRate >= 20) {
       score += 1;
@@ -382,12 +551,61 @@ function calculateSupplyPart(
     }
   }
 
-  const finalScore = clampPartScore(score, 20);
+  const finalScore = clampPartScore(score, 15);
 
   return {
     score: finalScore,
-    maxScore: 20,
-    label: getPartLabel(finalScore, 20),
+    maxScore: 15,
+    label: getPartLabel(finalScore, 15),
+    reasons,
+  };
+}
+
+function calculateVolatilityPart(rows: QuantChartRow[]): QuantScorePart {
+  const reasons: string[] = [];
+  const returns = calculateDailyReturns(rows, 20);
+
+  if (returns.length < 10) {
+    return {
+      score: 5,
+      maxScore: 10,
+      label: "데이터 대기",
+      reasons: ["변동성 계산에 필요한 최근 데이터가 부족합니다."],
+    };
+  }
+
+  let score = 0;
+  const volatility = calculateStandardDeviation(returns);
+
+  if (volatility <= 1) {
+    score += 6;
+    reasons.push("최근 변동성이 낮아 안정적이지만 탄력은 제한될 수 있습니다.");
+  } else if (volatility <= 3) {
+    score += 10;
+    reasons.push("최근 변동성이 적정 범위입니다.");
+  } else if (volatility <= 5) {
+    score += 7;
+    reasons.push("최근 변동성이 다소 큰 편입니다.");
+  } else if (volatility <= 8) {
+    score += 3;
+    reasons.push("최근 변동성이 커서 리스크 관리가 필요합니다.");
+  } else {
+    reasons.push("최근 변동성이 매우 큽니다.");
+  }
+
+  const downDays = returns.filter((value) => value < -3).length;
+
+  if (downDays >= 3) {
+    score -= 2;
+    reasons.push("최근 20일 중 큰 하락일이 여러 번 발생했습니다.");
+  }
+
+  const finalScore = clampPartScore(score, 10);
+
+  return {
+    score: finalScore,
+    maxScore: 10,
+    label: getPartLabel(finalScore, 10),
     reasons,
   };
 }
@@ -403,7 +621,7 @@ function calculateRiskPart({
   fundamentals?: QuantFundamentals;
   targetRange?: QuantTargetPriceRange | null;
 }): QuantScorePart {
-  let score = 15;
+  let score = 10;
   const reasons: string[] = [];
 
   const currentPrice = latest.close ?? null;
@@ -414,10 +632,10 @@ function calculateRiskPart({
     const highRatio = currentPrice / high52w;
 
     if (highRatio >= 0.98) {
-      score -= 6;
+      score -= 4;
       reasons.push("현재가가 52주 고가에 매우 근접해 추격 위험이 있습니다.");
     } else if (highRatio >= 0.9) {
-      score -= 3;
+      score -= 2;
       reasons.push("현재가가 52주 고가권에 있습니다.");
     } else {
       reasons.push("현재가가 52주 고가와 충분한 거리가 있습니다.");
@@ -426,11 +644,16 @@ function calculateRiskPart({
     reasons.push("52주 고가 비교 데이터가 부족합니다.");
   }
 
-  if (currentPrice != null && low52w != null && high52w != null && high52w > low52w) {
+  if (
+    currentPrice != null &&
+    low52w != null &&
+    high52w != null &&
+    high52w > low52w
+  ) {
     const rangePosition = (currentPrice - low52w) / (high52w - low52w);
 
     if (rangePosition >= 0.85) {
-      score -= 2;
+      score -= 1;
       reasons.push("52주 가격 범위에서 상단권입니다.");
     } else if (rangePosition <= 0.25) {
       score += 1;
@@ -440,7 +663,7 @@ function calculateRiskPart({
 
   if (targetRange?.riskDownsidePercent != null) {
     if (targetRange.riskDownsidePercent > -3) {
-      score -= 3;
+      score -= 2;
       reasons.push("위험 기준선이 현재가와 가까워 손익비가 좋지 않습니다.");
     } else if (targetRange.riskDownsidePercent <= -10) {
       score += 1;
@@ -465,21 +688,23 @@ function calculateRiskPart({
     reasons.push("하락일에 거래량이 증가해 단기 위험이 있습니다.");
   }
 
-  const finalScore = clampPartScore(score, 15);
+  const finalScore = clampPartScore(score, 10);
 
   return {
     score: finalScore,
-    maxScore: 15,
-    label: getPartLabel(finalScore, 15),
+    maxScore: 10,
+    label: getPartLabel(finalScore, 10),
     reasons,
   };
 }
 
-function calculateTargetPart(targetRange?: QuantTargetPriceRange | null): QuantScorePart {
+function calculateTargetPart(
+  targetRange?: QuantTargetPriceRange | null,
+): QuantScorePart {
   if (!targetRange) {
     return {
-      score: 6,
-      maxScore: 15,
+      score: 3,
+      maxScore: 8,
       label: "데이터 대기",
       reasons: ["목표가 데이터가 없어 보수적으로 반영했습니다."],
     };
@@ -494,35 +719,35 @@ function calculateTargetPart(targetRange?: QuantTargetPriceRange | null): QuantS
       : null;
 
   if (upside >= 12) {
-    score += 15;
+    score += 8;
     reasons.push("기준 목표가 대비 상승 여력이 큽니다.");
   } else if (upside >= 8) {
-    score += 12;
+    score += 6;
     reasons.push("기준 목표가 대비 상승 여력이 양호합니다.");
   } else if (upside >= 5) {
-    score += 9;
+    score += 4;
     reasons.push("기준 목표가 대비 상승 여력이 보통입니다.");
   } else if (upside >= 2) {
-    score += 6;
+    score += 2;
     reasons.push("기준 목표가 대비 상승 여력이 작습니다.");
   } else if (upside > 0) {
-    score += 3;
+    score += 1;
     reasons.push("기준 목표가 대비 상승 여력이 매우 작습니다.");
   } else {
     reasons.push("현재가가 기준 목표가 이상이어서 목표여력은 낮습니다.");
   }
 
   if (targetProgress != null && targetProgress >= 97) {
-    score -= 2;
+    score -= 1;
     reasons.push("목표 도달률이 높아 추격 주의가 필요합니다.");
   }
 
-  const finalScore = clampPartScore(score, 15);
+  const finalScore = clampPartScore(score, 8);
 
   return {
     score: finalScore,
-    maxScore: 15,
-    label: getPartLabel(finalScore, 15),
+    maxScore: 8,
+    label: getPartLabel(finalScore, 8),
     reasons,
   };
 }
@@ -532,15 +757,21 @@ function makeQuantFlags({
   fundamentals,
   targetRange,
   momentum,
+  trend,
+  tradingValue,
   valuation,
   supply,
+  volatility,
 }: {
   latest: QuantChartRow;
   fundamentals?: QuantFundamentals;
   targetRange?: QuantTargetPriceRange | null;
   momentum: QuantScorePart;
+  trend: QuantScorePart;
+  tradingValue: QuantScorePart;
   valuation: QuantScorePart;
   supply: QuantScorePart;
+  volatility: QuantScorePart;
 }) {
   const currentPrice = latest.close ?? null;
   const high52w = fundamentals?.high52w ?? null;
@@ -560,11 +791,13 @@ function makeQuantFlags({
     valuationBurden:
       (per != null && per >= 35) ||
       (pbr != null && pbr >= 3) ||
-      valuation.score <= 8,
-    targetAlmostReached:
-      targetProgress != null && targetProgress >= 97,
-    supplyPositive: supply.score >= 14,
-    momentumPositive: momentum.score >= 17,
+      valuation.score <= 5,
+    targetAlmostReached: targetProgress != null && targetProgress >= 97,
+    supplyPositive: supply.score >= 10,
+    momentumPositive: momentum.score >= 12,
+    trendPositive: trend.score >= 8,
+    tradingValuePositive: tradingValue.score >= 8,
+    volatilityHigh: volatility.score <= 4,
   };
 }
 
@@ -574,8 +807,11 @@ function makeQuantSummary({
   action,
   flags,
   momentum,
+  trend,
+  tradingValue,
   valuation,
   supply,
+  volatility,
   risk,
   target,
 }: {
@@ -584,8 +820,11 @@ function makeQuantSummary({
   action: string;
   flags: QuantModelResult["flags"];
   momentum: QuantScorePart;
+  trend: QuantScorePart;
+  tradingValue: QuantScorePart;
   valuation: QuantScorePart;
   supply: QuantScorePart;
+  volatility: QuantScorePart;
   risk: QuantScorePart;
   target: QuantScorePart;
 }) {
@@ -593,24 +832,29 @@ function makeQuantSummary({
   const cautions: string[] = [];
 
   if (flags.momentumPositive) positives.push("모멘텀");
+  if (flags.trendPositive) positives.push("추세 지속성");
+  if (flags.tradingValuePositive) positives.push("거래대금");
   if (flags.supplyPositive) positives.push("수급");
-  if (valuation.score >= 16) positives.push("밸류에이션");
-  if (target.score >= 10) positives.push("목표여력");
+  if (valuation.score >= 10) positives.push("밸류에이션");
+  if (target.score >= 5) positives.push("목표여력");
 
   if (flags.nearHigh52w) cautions.push("52주 고가 근접");
   if (flags.valuationBurden) cautions.push("PER/PBR 부담");
   if (flags.targetAlmostReached) cautions.push("목표가 근접");
-  if (risk.score <= 7) cautions.push("리스크");
-  if (target.score <= 5) cautions.push("목표여력 부족");
+  if (flags.volatilityHigh) cautions.push("변동성 확대");
+  if (risk.score <= 4) cautions.push("리스크");
+  if (target.score <= 2) cautions.push("목표여력 부족");
 
   if (positives.length > 0 && cautions.length > 0) {
     return `${positives.join(", ")}은 긍정적이나 ${cautions.join(
-      ", "
+      ", ",
     )} 요인이 있어 ${action}이 적절합니다.`;
   }
 
   if (positives.length > 0) {
-    return `${positives.join(", ")} 흐름이 긍정적입니다. 퀀트 등급은 ${grade}이며 ${action}이 적절합니다.`;
+    return `${positives.join(
+      ", ",
+    )} 흐름이 긍정적입니다. 퀀트 등급은 ${grade}이며 ${action}이 적절합니다.`;
   }
 
   if (cautions.length > 0) {
@@ -629,12 +873,22 @@ function getQuantGrade(score: number) {
 }
 
 function getQuantAction(score: number, flags: QuantModelResult["flags"]) {
-  if (score >= 75 && !flags.nearHigh52w && !flags.targetAlmostReached) {
+  if (
+    score >= 75 &&
+    !flags.nearHigh52w &&
+    !flags.targetAlmostReached &&
+    !flags.volatilityHigh
+  ) {
     return "관심 확대";
   }
 
   if (score >= 65) {
-    if (flags.nearHigh52w || flags.targetAlmostReached || flags.valuationBurden) {
+    if (
+      flags.nearHigh52w ||
+      flags.targetAlmostReached ||
+      flags.valuationBurden ||
+      flags.volatilityHigh
+    ) {
       return "추격보다 눌림 확인";
     }
 
@@ -681,6 +935,100 @@ function calculateReturn(rows: QuantChartRow[], period: number) {
   return ((latest - past) / past) * 100;
 }
 
+function calculateAverageTradingValue(rows: QuantChartRow[], period: number) {
+  const targetRows = rows
+    .slice(-period)
+    .filter(
+      (row) =>
+        row.close != null &&
+        row.volume != null &&
+        Number.isFinite(row.close) &&
+        Number.isFinite(row.volume) &&
+        row.close > 0 &&
+        row.volume >= 0,
+    );
+
+  if (!targetRows.length) return null;
+
+  const total = targetRows.reduce((sum, row) => {
+    return sum + Number(row.close) * Number(row.volume);
+  }, 0);
+
+  return total / targetRows.length;
+}
+
+function calculateDailyReturns(rows: QuantChartRow[], period: number) {
+  const targetRows = rows.slice(-(period + 1));
+  const returns: number[] = [];
+
+  for (let i = 1; i < targetRows.length; i += 1) {
+    const previous = targetRows[i - 1]?.close;
+    const current = targetRows[i]?.close;
+
+    if (
+      previous == null ||
+      current == null ||
+      !Number.isFinite(previous) ||
+      !Number.isFinite(current) ||
+      previous <= 0
+    ) {
+      continue;
+    }
+
+    returns.push(((current - previous) / previous) * 100);
+  }
+
+  return returns;
+}
+
+function calculateStandardDeviation(values: number[]) {
+  if (!values.length) return 0;
+
+  const average = values.reduce((sum, value) => sum + value, 0) / values.length;
+  const variance =
+    values.reduce((sum, value) => sum + (value - average) ** 2, 0) /
+    values.length;
+
+  return Math.sqrt(variance);
+}
+
+function calculateSmaSlope(
+  rows: QuantChartRow[],
+  key: "sma20" | "sma60",
+  period: number,
+) {
+  if (rows.length <= period) return null;
+
+  const latest = rows[rows.length - 1]?.[key];
+  const past = rows[rows.length - 1 - period]?.[key];
+
+  if (
+    latest == null ||
+    past == null ||
+    !Number.isFinite(latest) ||
+    !Number.isFinite(past) ||
+    past <= 0
+  ) {
+    return null;
+  }
+
+  return ((latest - past) / past) * 100;
+}
+
+function hasHigherRecentLows(rows: QuantChartRow[]) {
+  const closes = rows
+    .slice(-15)
+    .map((row) => row.close)
+    .filter((value): value is number => value != null && Number.isFinite(value));
+
+  if (closes.length < 10) return false;
+
+  const firstHalfLow = Math.min(...closes.slice(0, Math.floor(closes.length / 2)));
+  const secondHalfLow = Math.min(...closes.slice(Math.floor(closes.length / 2)));
+
+  return secondHalfLow > firstHalfLow;
+}
+
 function sortRowsByDate(rows: QuantChartRow[]) {
   return [...rows].sort((a, b) => {
     const aTime = new Date(a.date).getTime();
@@ -717,8 +1065,11 @@ function makeUnavailableQuantResult(): QuantModelResult {
     action: "데이터 확인",
     summary: "퀀트 모델을 계산할 데이터가 부족합니다.",
     momentum: emptyPart,
+    trend: emptyPart,
+    tradingValue: emptyPart,
     valuation: emptyPart,
     supply: emptyPart,
+    volatility: emptyPart,
     risk: emptyPart,
     target: emptyPart,
     flags: {
@@ -727,6 +1078,9 @@ function makeUnavailableQuantResult(): QuantModelResult {
       targetAlmostReached: false,
       supplyPositive: false,
       momentumPositive: false,
+      trendPositive: false,
+      tradingValuePositive: false,
+      volatilityHigh: false,
     },
   };
 }
