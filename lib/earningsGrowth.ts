@@ -206,6 +206,40 @@ export function makeEmptyEarningsGrowth(mode: EarningsGrowthMode = "auto"): Earn
   };
 }
 
+export function makeExcludedEarningsGrowth(
+  mode: EarningsGrowthMode = "auto",
+  reason = "ETF/ETN/지수형 상품은 일반 기업 실적 성장 분석 대상에서 제외됩니다.",
+): EarningsGrowthData {
+  return {
+    available: false,
+    excluded: true,
+    source: "none",
+    mode,
+    appliedSourceLabel: "실적 성장 제외",
+    updatedAt: null,
+    warning: reason,
+
+    lastYearNetIncome: null,
+    expectedNetIncome: null,
+    netIncomeGrowthRate: null,
+
+    lastYearOperatingProfit: null,
+    expectedOperatingProfit: null,
+    operatingProfitGrowthRate: null,
+
+    lastYearEps: null,
+    expectedEps: null,
+    epsGrowthRate: null,
+
+    turnaround: null,
+    deficitReduction: null,
+
+    score: null,
+    label: "제외",
+    reasons: [reason],
+  };
+}
+
 export function hasUsableEarningsInput(input?: EarningsGrowthInput | null) {
   if (!input) return false;
 
@@ -241,7 +275,6 @@ export function parseManualEarningsGrowthFromSearchParams(
     ? manual
     : null;
 }
-
 
 export function parseEarningsGrowthModeFromSearchParams(
   searchParams: URLSearchParams,
