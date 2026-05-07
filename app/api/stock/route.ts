@@ -15,7 +15,11 @@ import {
 } from "@/lib/kis";
 import { calculateQuantModel } from "@/lib/quant";
 import { calculateCompositeScore } from "@/lib/score";
-import { resolveStockSymbol } from "@/lib/stockDirectory";
+import {
+  fallbackResolveStockSymbol,
+  resolveKrxStockSymbol,
+  type KrxStock,
+} from "@/lib/krxStocks";
 
 export const runtime = "nodejs";
 
@@ -93,7 +97,6 @@ const stockCache = new Map<string, CacheEntry>();
 
 const KNOWN_KOREAN_STOCK_NAMES: Record<string, string> = {
   "005930.KS": "삼성전자",
-  "194700.KQ": "노바렉스",
   "000660.KS": "SK하이닉스",
   "035420.KS": "NAVER",
   "035720.KS": "카카오",
@@ -122,7 +125,10 @@ const EMPTY_FUNDAMENTALS: FundamentalsData = {
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const rawSymbol = (searchParams.get("symbol") || "005930.KS").trim();
-  const symbol = resolveStockSymbol(rawSymbol);
+
+  const resolvedStock = await resolveKrxStockSymbol(rawSymbol);
+  const symbol = resolvedStock?.symbol || fallbackResolveStockSymbol(rawSymbol);
+
   const range = (searchParams.get("range") || "6mo").trim();
   const cacheKey = `${symbol}:${range}`;
 
@@ -133,7 +139,7 @@ export async function GET(req: NextRequest) {
       withCacheMeta(cached.data, {
         cached: true,
         cacheSource: "memory",
-      })
+      }),
     );
   }
 
@@ -168,7 +174,7 @@ export async function GET(req: NextRequest) {
             cacheSource: "stale-memory",
             warning:
               "외부 주가 서버가 요청을 제한하여 최근 저장 데이터로 표시 중입니다.",
-          })
+          }),
         );
       }
 
@@ -189,7 +195,7 @@ export async function GET(req: NextRequest) {
             range,
           },
         },
-        { status: 429 }
+        { status: 429 },
       );
     }
 
@@ -210,7 +216,7 @@ export async function GET(req: NextRequest) {
             range,
           },
         },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
@@ -225,7 +231,7 @@ export async function GET(req: NextRequest) {
             cached: true,
             cacheSource: "stale-memory",
             warning: "외부 응답이 비정상이라 최근 저장 데이터로 표시 중입니다.",
-          })
+          }),
         );
       }
 
@@ -244,7 +250,7 @@ export async function GET(req: NextRequest) {
             range,
           },
         },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
@@ -268,7 +274,7 @@ export async function GET(req: NextRequest) {
             range,
           },
         },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
@@ -302,7 +308,7 @@ export async function GET(req: NextRequest) {
             cached: true,
             cacheSource: "stale-memory",
             warning: "새 데이터를 받지 못해 최근 저장 데이터로 표시 중입니다.",
-          })
+          }),
         );
       }
 
@@ -320,7 +326,7 @@ export async function GET(req: NextRequest) {
             range,
           },
         },
-        { status: 404 }
+        { status: 404 },
       );
     }
 
@@ -398,7 +404,7 @@ export async function GET(req: NextRequest) {
           })
         : "신호 분석 데이터가 아직 충분하지 않습니다.";
 
-    const stockMeta = await getStockMeta(symbol, chartMeta);
+    const stockMeta = await getStockMeta(symbol, chartMeta, resolvedStock);
     const supply = await getSupplyData(symbol);
     const fundamentals = await getFundamentalsData(symbol);
 
@@ -423,8 +429,8 @@ export async function GET(req: NextRequest) {
       targetRange && targetRange.baseTarget > 0
         ? Number(
             ((targetRange.currentPrice / targetRange.baseTarget) * 100).toFixed(
-              1
-            )
+              1,
+            ),
           )
         : null;
 
@@ -435,9 +441,6 @@ export async function GET(req: NextRequest) {
     const responseData = {
       ok: true,
 
-      /*
-       * 기존 화면 호환용 필드
-       */
       symbol,
       rawSymbol,
       name: stockMeta.name,
@@ -457,9 +460,6 @@ export async function GET(req: NextRequest) {
       quant,
       cached: false,
 
-      /*
-       * 신규 구조화 응답
-       */
       stock: {
         symbol,
         rawSymbol,
@@ -533,7 +533,7 @@ export async function GET(req: NextRequest) {
           cached: true,
           cacheSource: "stale-memory",
           warning: "일시 오류로 최근 저장 데이터로 표시 중입니다.",
-        })
+        }),
       );
     }
 
@@ -551,7 +551,7 @@ export async function GET(req: NextRequest) {
           updatedAt: new Date().toISOString(),
         },
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -610,9 +610,15 @@ async function getFundamentalsData(symbol: string): Promise<FundamentalsData> {
   }
 }
 
-async function getStockMeta(symbol: string, chartMeta: any): Promise<StockMeta> {
+async function getStockMeta(
+  symbol: string,
+  chartMeta: any,
+  resolvedStock?: KrxStock | null,
+): Promise<StockMeta> {
   const normalizedSymbol = symbol.trim().toUpperCase();
+
   const fallbackName =
+    resolvedStock?.name ||
     KNOWN_KOREAN_STOCK_NAMES[normalizedSymbol] ||
     chartMeta?.shortName ||
     chartMeta?.longName ||
@@ -620,17 +626,19 @@ async function getStockMeta(symbol: string, chartMeta: any): Promise<StockMeta> 
     "종목명 정보 없음";
 
   const fallbackExchange =
+    resolvedStock?.market ||
     normalizeExchange(
       chartMeta?.exchangeName ||
         chartMeta?.fullExchangeName ||
-        chartMeta?.exchangeTimezoneName
-    ) || guessExchange(normalizedSymbol);
+        chartMeta?.exchangeTimezoneName,
+    ) ||
+    guessExchange(normalizedSymbol);
 
   const fallbackCurrency = chartMeta?.currency || "KRW";
 
   try {
     const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(
-      symbol
+      symbol,
     )}`;
 
     const res = await fetch(url, {
@@ -657,15 +665,18 @@ async function getStockMeta(symbol: string, chartMeta: any): Promise<StockMeta> 
 
     return {
       name:
+        resolvedStock?.name ||
         KNOWN_KOREAN_STOCK_NAMES[normalizedSymbol] ||
         quote?.shortName ||
         quote?.longName ||
         quote?.displayName ||
         fallbackName,
       exchange:
+        resolvedStock?.market ||
         normalizeExchange(
-          quote?.fullExchangeName || quote?.exchange || quote?.market
-        ) || fallbackExchange,
+          quote?.fullExchangeName || quote?.exchange || quote?.market,
+        ) ||
+        fallbackExchange,
       currency: quote?.currency || fallbackCurrency,
     };
   } catch {
@@ -683,7 +694,7 @@ function withCacheMeta(
     cached: boolean;
     cacheSource: string;
     warning?: string;
-  }
+  },
 ) {
   return {
     ...data,
@@ -705,7 +716,11 @@ function normalizeExchange(value?: string) {
 
   const upper = String(value).toUpperCase();
 
-  if (upper.includes("KSC") || upper.includes("KOSPI") || upper.includes("SEOUL")) {
+  if (
+    upper.includes("KSC") ||
+    upper.includes("KOSPI") ||
+    upper.includes("SEOUL")
+  ) {
     return "KOSPI";
   }
 
