@@ -54,7 +54,12 @@ export default function CompositeScoreSection({ score }: Props) {
             <ScorePartCard title="수급 점수" part={score?.supply} />
             <ScorePartCard title="목표여력 점수" part={score?.targetPrice} />
             <ScorePartCard title="신호 일치도" part={signalAgreement} />
-            <ScorePartCard title="실적 성장" part={earningsGrowth} />
+            <ScorePartCard
+              title="실적 성장"
+              part={earningsGrowth}
+              unavailableScoreText="가중치 제외"
+              unavailableLabelText="데이터 없음"
+            />
           </div>
         </div>
 
@@ -64,9 +69,9 @@ export default function CompositeScoreSection({ score }: Props) {
             <strong>{formatAppliedWeights(score?.appliedWeights)}</strong>
           </div>
           <p>
-            종합 신뢰도는 기술·거래 흐름·수급·목표여력에 더해 신호 일치도를
-            반영합니다. 신호 일치도는 기술, 거래, 수급, 목표여력, 퀀트 방향이
-            얼마나 같은 방향인지 확인하는 보정 항목입니다.
+            종합 신뢰도는 기술·거래 흐름·수급·목표여력에 더해 신호 일치도와
+            실적 성장을 반영합니다. 실적 성장 데이터가 없으면 해당 가중치는
+            계산에서 제외하고, 나머지 사용 가능한 항목에 자동 재분배합니다.
           </p>
         </div>
 
@@ -89,9 +94,20 @@ export default function CompositeScoreSection({ score }: Props) {
   );
 }
 
-function ScorePartCard({ title, part }: { title: string; part?: ScorePart }) {
-  const scoreText = part?.score != null ? `${part.score}` : "대기";
-  const labelText = part?.label || "데이터 대기";
+function ScorePartCard({
+  title,
+  part,
+  unavailableScoreText = "대기",
+  unavailableLabelText = "데이터 대기",
+}: {
+  title: string;
+  part?: ScorePart;
+  unavailableScoreText?: string;
+  unavailableLabelText?: string;
+}) {
+  const isAvailable = Boolean(part?.available && part?.score != null);
+  const scoreText = isAvailable ? `${part?.score}` : unavailableScoreText;
+  const labelText = isAvailable ? part?.label || "데이터 표시" : unavailableLabelText;
 
   return (
     <div className="score-part-card">
