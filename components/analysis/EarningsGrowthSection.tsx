@@ -68,8 +68,8 @@ export default function EarningsGrowthSection({
             <SectionTitleSmall>실적 성장 분석</SectionTitleSmall>
             <p className="score-subtitle">
               자동 데이터가 있으면 자동값을 우선 사용하고, 자동 데이터가 없거나
-              늦을 때는 저장된 수동 입력값으로 예상 순이익·영업이익·EPS 성장률을
-              계산합니다.
+              늦을 때는 저장된 수동 입력값으로 순이익·영업이익·EPS 성장률을
+              계산합니다. DART 연결 전에는 수동 입력값 기준으로 표시됩니다.
             </p>
           </div>
 
@@ -123,12 +123,12 @@ export default function EarningsGrowthSection({
 
           <div className="score-detail-grid">
             <MetricCard
-              title="예상 순이익 증가율"
+              title="순이익 성장률"
               value={formatPercent(data.netIncomeGrowthRate)}
               caption={formatIncomePair(data.lastYearNetIncome, data.expectedNetIncome)}
             />
             <MetricCard
-              title="예상 영업이익 증가율"
+              title="영업이익 성장률"
               value={formatPercent(data.operatingProfitGrowthRate)}
               caption={formatIncomePair(
                 data.lastYearOperatingProfit,
@@ -136,7 +136,7 @@ export default function EarningsGrowthSection({
               )}
             />
             <MetricCard
-              title="예상 EPS 증가율"
+              title="EPS 성장률"
               value={formatPercent(data.epsGrowthRate)}
               caption={formatEpsPair(data.lastYearEps, data.expectedEps)}
             />
@@ -189,7 +189,7 @@ export default function EarningsGrowthSection({
 
         <p className="notice-text">
           실적 성장 점수는 회사의 이익 성장 가능성을 보기 위한 보조 지표입니다.
-          예상치는 실제 발표 실적과 달라질 수 있으므로 기술·수급·거래대금
+          현재/전망치는 실제 발표 실적과 달라질 수 있으므로 기술·수급·거래대금
           흐름과 함께 확인해야 합니다.
         </p>
       </Card>
@@ -324,32 +324,32 @@ function ManualInputDialog({
 
         <div className="manual-earnings-grid" style={{ marginTop: 16 }}>
           <InputField
-            label="전년 순이익(억원)"
+            label="이전 순이익(억원)"
             value={manualInput.lastYearNetIncome}
             onChange={(value) => onChange("lastYearNetIncome", value)}
           />
           <InputField
-            label="예상 순이익(억원)"
+            label="현재/전망 순이익(억원)"
             value={manualInput.expectedNetIncome}
             onChange={(value) => onChange("expectedNetIncome", value)}
           />
           <InputField
-            label="전년 영업이익(억원)"
+            label="이전 영업이익(억원)"
             value={manualInput.lastYearOperatingProfit}
             onChange={(value) => onChange("lastYearOperatingProfit", value)}
           />
           <InputField
-            label="예상 영업이익(억원)"
+            label="현재/전망 영업이익(억원)"
             value={manualInput.expectedOperatingProfit}
             onChange={(value) => onChange("expectedOperatingProfit", value)}
           />
           <InputField
-            label="전년 EPS(원)"
+            label="이전 EPS(원)"
             value={manualInput.lastYearEps}
             onChange={(value) => onChange("lastYearEps", value)}
           />
           <InputField
-            label="예상 EPS(원)"
+            label="현재/전망 EPS(원)"
             value={manualInput.expectedEps}
             onChange={(value) => onChange("expectedEps", value)}
           />
@@ -474,7 +474,7 @@ function makeEmptyEarningsGrowth(): EarningsGrowthData {
     mode: "auto",
     appliedSourceLabel: "데이터 대기",
     updatedAt: null,
-    warning: "예상 실적 데이터 연결 전입니다.",
+    warning: "현재/전망 실적 데이터 연결 전입니다.",
 
     lastYearNetIncome: null,
     expectedNetIncome: null,
@@ -505,19 +505,19 @@ function makeSummary(data: EarningsGrowthData) {
   const positives: string[] = [];
   const cautions: string[] = [];
 
-  if ((data.netIncomeGrowthRate ?? 0) >= 10) positives.push("예상 순이익 증가");
+  if ((data.netIncomeGrowthRate ?? 0) >= 10) positives.push("현재/전망 순이익 증가");
   else if (data.netIncomeGrowthRate != null && data.netIncomeGrowthRate <= 0)
-    cautions.push("예상 순이익 정체 또는 감소");
+    cautions.push("현재/전망 순이익 정체 또는 감소");
 
   if ((data.operatingProfitGrowthRate ?? 0) >= 10)
-    positives.push("예상 영업이익 증가");
+    positives.push("현재/전망 영업이익 증가");
   else if (
     data.operatingProfitGrowthRate != null &&
     data.operatingProfitGrowthRate <= 0
   )
-    cautions.push("예상 영업이익 정체 또는 감소");
+    cautions.push("현재/전망 영업이익 정체 또는 감소");
 
-  if ((data.epsGrowthRate ?? 0) >= 10) positives.push("예상 EPS 증가");
+  if ((data.epsGrowthRate ?? 0) >= 10) positives.push("현재/전망 EPS 증가");
   if (data.turnaround) positives.push("흑자 전환 기대");
   else if (data.deficitReduction) positives.push("적자 축소 기대");
 
@@ -570,13 +570,13 @@ function formatPercent(value: number | null) {
 }
 
 function formatIncomePair(previous: number | null, expected: number | null) {
-  if (previous == null || expected == null) return "전년/예상 데이터 준비 중";
-  return `전년 ${formatNumber(previous)}억원 → 예상 ${formatNumber(expected)}억원`;
+  if (previous == null || expected == null) return "이전/현재/전망 데이터 준비 중";
+  return `이전 ${formatNumber(previous)}억원 → 현재/전망 ${formatNumber(expected)}억원`;
 }
 
 function formatEpsPair(previous: number | null, expected: number | null) {
-  if (previous == null || expected == null) return "전년/예상 EPS 준비 중";
-  return `전년 ${formatNumber(previous)}원 → 예상 ${formatNumber(expected)}원`;
+  if (previous == null || expected == null) return "이전/현재/전망 EPS 준비 중";
+  return `이전 ${formatNumber(previous)}원 → 현재/전망 ${formatNumber(expected)}원`;
 }
 
 function formatTurnaround(turnaround: boolean | null, deficitReduction: boolean | null) {
