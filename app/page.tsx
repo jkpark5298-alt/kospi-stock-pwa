@@ -108,6 +108,14 @@ type ManualEarningsGrowthInput = {
   deficitReduction: "" | "true" | "false";
 };
 
+type ManualEarningsGrowthStorageItem = {
+  mode: EarningsGrowthMode;
+  input: ManualEarningsGrowthInput;
+  savedAt: string;
+};
+
+type ManualEarningsGrowthStorage = Record<string, ManualEarningsGrowthStorageItem>;
+
 const EMPTY_MANUAL_EARNINGS_GROWTH: ManualEarningsGrowthInput = {
   lastYearNetIncome: "",
   expectedNetIncome: "",
@@ -290,6 +298,112 @@ type StockResponse = {
 const DEFAULT_SYMBOL = "005930.KS";
 const DEFAULT_RANGE = "6mo";
 const WATCHLIST_KEY = "kospi-watchlist";
+const MANUAL_EARNINGS_STORAGE_KEY = "kospi-manual-earnings-growth";
+
+
+function normalizeManualEarningsKey(value?: string | null) {
+  return (value || "").trim().toUpperCase();
+}
+
+function getManualEarningsStorage(): ManualEarningsGrowthStorage {
+  if (typeof window === "undefined") return {};
+
+  try {
+    const saved = window.localStorage.getItem(MANUAL_EARNINGS_STORAGE_KEY);
+
+    if (!saved) return {};
+
+    const parsed = JSON.parse(saved);
+
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {};
+    }
+
+    return parsed as ManualEarningsGrowthStorage;
+  } catch {
+    return {};
+  }
+}
+
+function getStoredManualEarnings(
+  ...keys: Array<string | null | undefined>
+): ManualEarningsGrowthStorageItem | null {
+  const storage = getManualEarningsStorage();
+
+  for (const rawKey of keys) {
+    const key = normalizeManualEarningsKey(rawKey);
+
+    if (key && storage[key]) {
+      return storage[key];
+    }
+  }
+
+  return null;
+}
+
+function saveManualEarnings(
+  input: ManualEarningsGrowthInput,
+  mode: EarningsGrowthMode,
+  ...keys: Array<string | null | undefined>
+) {
+  if (typeof window === "undefined") return null;
+
+  const storage = getManualEarningsStorage();
+  const savedAt = new Date().toISOString();
+  let saved = false;
+
+  keys.forEach((rawKey) => {
+    const key = normalizeManualEarningsKey(rawKey);
+
+    if (!key) return;
+
+    storage[key] = {
+      mode,
+      input,
+      savedAt,
+    };
+    saved = true;
+  });
+
+  if (!saved) return null;
+
+  window.localStorage.setItem(
+    MANUAL_EARNINGS_STORAGE_KEY,
+    JSON.stringify(storage),
+  );
+
+  return savedAt;
+}
+
+function removeManualEarnings(...keys: Array<string | null | undefined>) {
+  if (typeof window === "undefined") return;
+
+  const storage = getManualEarningsStorage();
+  let removed = false;
+
+  keys.forEach((rawKey) => {
+    const key = normalizeManualEarningsKey(rawKey);
+
+    if (!key) return;
+
+    if (storage[key]) {
+      delete storage[key];
+      removed = true;
+    }
+  });
+
+  if (removed) {
+    window.localStorage.setItem(
+      MANUAL_EARNINGS_STORAGE_KEY,
+      JSON.stringify(storage),
+    );
+  }
+}
+
+function hasManualEarningsValue(input: ManualEarningsGrowthInput) {
+  return Object.values(input).some((value) => value.trim() !== "");
+}
+
 
 export default function HomePage() {
   const [symbol, setSymbol] = useState(DEFAULT_SYMBOL);
@@ -305,6 +419,9 @@ export default function HomePage() {
   );
   const [earningsGrowthMode, setEarningsGrowthMode] =
     useState<EarningsGrowthMode>("auto");
+  const [manualEarningsSavedAt, setManualEarningsSavedAt] = useState<string | null>(
+    null,
+  );
   const {
     kisRemainingCalls,
     kisSyncCode,
@@ -385,10 +502,22 @@ export default function HomePage() {
     }
   }, [watchlist, watchlistLoaded]);
 
-  async function fetchStock(targetSymbol?: string, targetRange?: string, targetEarningsGrowthMode?: EarningsGrowthMode) {
+  async function fetchStock(
+    targetSymbol?: string,
+    targetRange?: string,
+    targetEarningsGrowthMode?: EarningsGrowthMode,
+    targetManualInput?: ManualEarningsGrowthInput,
+    skipStoredRefetch = false,
+  ) {
     const finalSymbol = (targetSymbol ?? symbol).trim();
     const finalRange = targetRange ?? range;
-    const finalEarningsGrowthMode = targetEarningsGrowthMode ?? earningsGrowthMode;
+    const storedManual = getStoredManualEarnings(finalSymbol);
+    const effectiveManualInput =
+      targetManualInput ??
+      storedManual?.input ??
+      manualEarningsGrowth;
+    const finalEarningsGrowthMode =
+      targetEarningsGrowthMode ?? storedManual?.mode ?? earningsGrowthMode;
 
     if (!finalSymbol) {
       setUiError("종목 코드를 입력해 주세요.");
@@ -406,7 +535,7 @@ export default function HomePage() {
       });
 
       params.set("earningsGrowthMode", finalEarningsGrowthMode);
-      appendManualEarningsParams(params, manualEarningsGrowth);
+      appendManualEarningsParams(params, effectiveManualInput);
 
       const res = await fetch(`/api/stock?${params.toString()}`, {
         cache: "no-store",
@@ -426,8 +555,38 @@ export default function HomePage() {
         return;
       }
 
+      const restored = getStoredManualEarnings(
+        json.symbol,
+        json.rawSymbol,
+        json.name,
+        finalSymbol,
+      );
+
+      if (restored) {
+        setManualEarningsGrowth(restored.input);
+        setEarningsGrowthMode(restored.mode);
+        setManualEarningsSavedAt(restored.savedAt);
+
+        const currentRequestHadManualInput =
+          hasManualEarningsValue(effectiveManualInput);
+
+        if (!currentRequestHadManualInput && !skipStoredRefetch) {
+          await fetchStock(
+            json.symbol || finalSymbol,
+            finalRange,
+            restored.mode,
+            restored.input,
+            true,
+          );
+          return;
+        }
+      } else {
+        setManualEarningsSavedAt(null);
+      }
+
       setData(json);
       setLastFetchedAt(new Date().toISOString());
+
       await recordKisApiUsageFromResponse(json);
     } catch (error: unknown) {
       setData(null);
@@ -445,15 +604,65 @@ export default function HomePage() {
     fetchStock();
   }
 
+  function handleSaveManualEarningsGrowth() {
+    const savedAt = saveManualEarnings(
+      manualEarningsGrowth,
+      earningsGrowthMode,
+      data?.symbol,
+      data?.rawSymbol,
+      data?.name,
+      symbol,
+    );
+
+    if (savedAt) {
+      setManualEarningsSavedAt(savedAt);
+    }
+  }
+
   function handleApplyManualEarningsGrowth() {
-    fetchStock();
+    const savedAt = saveManualEarnings(
+      manualEarningsGrowth,
+      earningsGrowthMode,
+      data?.symbol,
+      data?.rawSymbol,
+      data?.name,
+      symbol,
+    );
+
+    if (savedAt) {
+      setManualEarningsSavedAt(savedAt);
+    }
+
+    fetchStock(undefined, undefined, earningsGrowthMode, manualEarningsGrowth);
+  }
+
+  function handleClearManualEarningsGrowth() {
+    removeManualEarnings(data?.symbol, data?.rawSymbol, data?.name, symbol);
+    setManualEarningsGrowth(EMPTY_MANUAL_EARNINGS_GROWTH);
+    setManualEarningsSavedAt(null);
+    setEarningsGrowthMode("auto");
   }
 
   function handleEarningsGrowthModeChange(nextMode: EarningsGrowthMode) {
     setEarningsGrowthMode(nextMode);
 
+    if (hasManualEarningsValue(manualEarningsGrowth)) {
+      const savedAt = saveManualEarnings(
+        manualEarningsGrowth,
+        nextMode,
+        data?.symbol,
+        data?.rawSymbol,
+        data?.name,
+        symbol,
+      );
+
+      if (savedAt) {
+        setManualEarningsSavedAt(savedAt);
+      }
+    }
+
     if (data?.symbol) {
-      fetchStock(data.symbol, range, nextMode);
+      fetchStock(data.symbol, range, nextMode, manualEarningsGrowth);
     }
   }
 
@@ -617,9 +826,12 @@ export default function HomePage() {
           earningsGrowth={data?.earningsGrowth}
           earningsGrowthMode={earningsGrowthMode}
           manualInput={manualEarningsGrowth}
+          manualInputSavedAt={manualEarningsSavedAt}
           onModeChange={handleEarningsGrowthModeChange}
           onManualInputChange={setManualEarningsGrowth}
+          onSaveManualInput={handleSaveManualEarningsGrowth}
           onApplyManualInput={handleApplyManualEarningsGrowth}
+          onClearManualInput={handleClearManualEarningsGrowth}
         />
 
         <TargetPriceSection score={data?.score} />
