@@ -20,6 +20,8 @@ import {
   parseEarningsGrowthModeFromSearchParams,
 } from "@/lib/earningsGrowth";
 import { calculateCompositeScore } from "@/lib/score";
+import { fetchDartEarningsGrowth } from "@/lib/dartEarnings";
+import { resolveDartCorpCode } from "@/lib/dartCorpCode";
 import {
   fallbackResolveStockSymbol,
   resolveKrxStockSymbol,
@@ -661,20 +663,76 @@ async function getEarningsGrowthData(
   stockMeta?: StockMeta,
 ): Promise<EarningsGrowthData> {
   /**
-   * 자동 실적 데이터는 다음 단계에서 DART/KIS/컨센서스 순서로 연결합니다.
-   * ETF/ETN/지수형 상품은 일반 기업 실적 성장 분석 대상에서 제외합니다.
+   * 자동 실적 데이터 1차 연결:
+   * - ETF/ETN/지수형 상품은 일반 기업 실적 성장 분석에서 제외합니다.
+   * - DART_API_KEY 또는 OPENDART_API_KEY가 있고 corp_code 매핑이 있는 종목은
+   *   DART 확정 실적을 자동 데이터로 사용합니다.
+   * - DART 데이터가 없거나 실패하면 기존 수동 입력 구조를 그대로 유지합니다.
    */
-  const automaticInput = null;
   const excluded = isEarningsGrowthExcluded(symbol, stockMeta);
+
+  if (excluded) {
+    return calculateEarningsGrowthData({
+      automatic: null,
+      manual: manualInput,
+      mode,
+      excluded: true,
+      excludedReason:
+        "ETF/ETN/지수형 상품은 일반 기업처럼 순이익·영업이익·EPS 성장률을 비교하기 어려워 실적 성장 분석에서 제외했습니다.",
+    });
+  }
+
+  const dartCorp = resolveDartCorpCode(symbol);
+  const dartEarnings = await fetchDartEarningsGrowth({
+    stockCode: dartCorp.stockCode,
+    corpCode: dartCorp.corpCode,
+  });
+
+  const automaticInput = dartEarnings.available
+    ? {
+        source: "dart" as const,
+        updatedAt: dartEarnings.updatedAt,
+        lastYearNetIncome: dartEarnings.lastYearNetIncome,
+        expectedNetIncome: dartEarnings.expectedNetIncome,
+        lastYearOperatingProfit: dartEarnings.lastYearOperatingProfit,
+        expectedOperatingProfit: dartEarnings.expectedOperatingProfit,
+        lastYearEps: dartEarnings.lastYearEps,
+        expectedEps: dartEarnings.expectedEps,
+      }
+    : null;
 
   return calculateEarningsGrowthData({
     automatic: automaticInput,
     manual: manualInput,
     mode,
-    excluded,
-    excludedReason:
-      "ETF/ETN/지수형 상품은 일반 기업처럼 순이익·영업이익·EPS 성장률을 비교하기 어려워 실적 성장 분석에서 제외했습니다.",
   });
+}
+
+function isEarningsGrowthExcluded(symbol: string, stockMeta?: StockMeta) {
+  const upperSymbol = symbol.trim().toUpperCase();
+  const name = (stockMeta?.name || "").toUpperCase();
+
+  if (upperSymbol.startsWith("^")) return true;
+
+  const keywords = [
+    "ETF",
+    "ETN",
+    "KODEX",
+    "TIGER",
+    "ACE",
+    "SOL",
+    "KBSTAR",
+    "ARIRANG",
+    "KOSEF",
+    "HANARO",
+    "TIMEFOLIO",
+    "레버리지",
+    "인버스",
+    "선물",
+    "채권",
+  ];
+
+  return keywords.some((keyword) => name.includes(keyword));
 }
 
 async function getStockMeta(
@@ -753,33 +811,6 @@ async function getStockMeta(
       currency: fallbackCurrency,
     };
   }
-}
-
-function isEarningsGrowthExcluded(symbol: string, stockMeta?: StockMeta) {
-  const upperSymbol = symbol.trim().toUpperCase();
-  const name = (stockMeta?.name || "").toUpperCase();
-
-  if (upperSymbol.startsWith("^")) return true;
-
-  const keywords = [
-    "ETF",
-    "ETN",
-    "KODEX",
-    "TIGER",
-    "ACE",
-    "SOL",
-    "KBSTAR",
-    "ARIRANG",
-    "KOSEF",
-    "HANARO",
-    "TIMEFOLIO",
-    "레버리지",
-    "인버스",
-    "선물",
-    "채권",
-  ];
-
-  return keywords.some((keyword) => name.includes(keyword));
 }
 
 function withCacheMeta(
