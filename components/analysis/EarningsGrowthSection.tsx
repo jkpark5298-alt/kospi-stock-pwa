@@ -11,23 +11,28 @@ type Props = {
   earningsGrowth?: EarningsGrowthData;
   earningsGrowthMode: EarningsGrowthMode;
   manualInput: ManualEarningsGrowthInput;
+  manualInputSavedAt?: string | null;
   onModeChange: (mode: EarningsGrowthMode) => void;
   onManualInputChange: (next: ManualEarningsGrowthInput) => void;
+  onSaveManualInput: () => void;
   onApplyManualInput: () => void;
+  onClearManualInput: () => void;
 };
 
 export default function EarningsGrowthSection({
   earningsGrowth,
   earningsGrowthMode,
   manualInput,
+  manualInputSavedAt,
   onModeChange,
   onManualInputChange,
+  onSaveManualInput,
   onApplyManualInput,
+  onClearManualInput,
 }: Props) {
   const [isManualOpen, setIsManualOpen] = useState(false);
   const data = earningsGrowth ?? makeEmptyEarningsGrowth();
   const hasManualInput = hasAnyManualValue(manualInput);
-  const excluded = isExcluded(data);
   const isAutoDataActive =
     data.available &&
     data.source !== "manual" &&
@@ -41,6 +46,12 @@ export default function EarningsGrowthSection({
   }
 
   function handleSaveOnly() {
+    onSaveManualInput();
+    setIsManualOpen(false);
+  }
+
+  function handleClearManualInput() {
+    onClearManualInput();
     setIsManualOpen(false);
   }
 
@@ -63,7 +74,7 @@ export default function EarningsGrowthSection({
           </div>
 
           <div className="score-mode-badge">
-            {excluded ? "실적 성장 제외" : data.available ? `데이터 출처: ${formatSource(data.source)}` : "데이터 준비 중"}
+            {data.available ? `데이터 출처: ${formatSource(data.source)}` : "데이터 준비 중"}
           </div>
         </div>
 
@@ -186,12 +197,14 @@ export default function EarningsGrowthSection({
       {isManualOpen ? (
         <ManualInputDialog
           manualInput={manualInput}
+          manualInputSavedAt={manualInputSavedAt}
           isAutoDataActive={isAutoDataActive}
           earningsGrowthMode={earningsGrowthMode}
           onChange={updateField}
           onModeChange={onModeChange}
           onClose={() => setIsManualOpen(false)}
           onSaveOnly={handleSaveOnly}
+          onClear={handleClearManualInput}
           onApply={handleApplyManualInput}
         />
       ) : null}
@@ -201,21 +214,25 @@ export default function EarningsGrowthSection({
 
 function ManualInputDialog({
   manualInput,
+  manualInputSavedAt,
   isAutoDataActive,
   earningsGrowthMode,
   onChange,
   onModeChange,
   onClose,
   onSaveOnly,
+  onClear,
   onApply,
 }: {
   manualInput: ManualEarningsGrowthInput;
+  manualInputSavedAt?: string | null;
   isAutoDataActive: boolean;
   earningsGrowthMode: EarningsGrowthMode;
   onChange: (key: keyof ManualEarningsGrowthInput, value: string) => void;
   onModeChange: (mode: EarningsGrowthMode) => void;
   onClose: () => void;
   onSaveOnly: () => void;
+  onClear: () => void;
   onApply: () => void;
 }) {
   return (
@@ -299,6 +316,12 @@ function ManualInputDialog({
           </div>
         ) : null}
 
+        {manualInputSavedAt ? (
+          <div className="notice-text" style={{ marginBottom: 12 }}>
+            저장일: {formatSavedAt(manualInputSavedAt)}
+          </div>
+        ) : null}
+
         <div className="manual-earnings-grid" style={{ marginTop: 16 }}>
           <InputField
             label="전년 순이익(억원)"
@@ -354,6 +377,9 @@ function ManualInputDialog({
         >
           <button className="button secondary-button" onClick={onClose} type="button">
             취소
+          </button>
+          <button className="button secondary-button" onClick={onClear} type="button">
+            입력값 삭제
           </button>
           <button className="button secondary-button" onClick={onSaveOnly} type="button">
             입력값 저장
@@ -444,7 +470,6 @@ function SectionTitleSmall({ children }: { children: ReactNode }) {
 function makeEmptyEarningsGrowth(): EarningsGrowthData {
   return {
     available: false,
-    excluded: false,
     source: "none",
     mode: "auto",
     appliedSourceLabel: "데이터 대기",
@@ -517,16 +542,25 @@ function hasAnyManualValue(input: ManualEarningsGrowthInput) {
   return Object.values(input).some((value) => value.trim() !== "");
 }
 
-function isExcluded(data: EarningsGrowthData) {
-  return data.excluded === true || data.label === "제외";
-}
-
 function getAppliedLabel(data: EarningsGrowthData) {
-  if (isExcluded(data)) return "실적 성장 제외";
   if (!data.available) return "데이터 대기";
   if (data.source === "manual") return "수동 적용 중";
   if (data.source === "none") return "데이터 대기";
   return "자동 적용 중";
+}
+
+function formatSavedAt(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return value;
+
+  return new Intl.DateTimeFormat("ko-KR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
 }
 
 function formatPercent(value: number | null) {
