@@ -407,13 +407,44 @@ function InputField({
       <span>{label}</span>
       <input
         className="form-control"
-        value={value}
+        value={formatManualNumberInput(value)}
         inputMode="decimal"
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="예: 1200"
+        onChange={(e) => onChange(formatManualNumberInput(e.target.value))}
+        placeholder="예: 1,200"
       />
     </label>
   );
+}
+
+function formatManualNumberInput(value: string) {
+  const raw = value.replace(/,/g, "").replace(/\s/g, "");
+
+  if (!raw) return "";
+
+  const isNegative = raw.startsWith("-");
+  const cleaned = raw
+    .replace(/-/g, "")
+    .replace(/[^0-9.]/g, "");
+
+  if (!cleaned) return isNegative ? "-" : "";
+
+  const dotIndex = cleaned.indexOf(".");
+  const integerPart =
+    dotIndex >= 0 ? cleaned.slice(0, dotIndex) : cleaned;
+  const decimalPart =
+    dotIndex >= 0 ? cleaned.slice(dotIndex + 1).replace(/\./g, "") : "";
+
+  const formattedInteger = integerPart
+    ? Number(integerPart).toLocaleString("en-US")
+    : "0";
+
+  const sign = isNegative ? "-" : "";
+
+  if (dotIndex >= 0) {
+    return `${sign}${formattedInteger}.${decimalPart}`;
+  }
+
+  return `${sign}${formattedInteger}`;
 }
 
 function SelectField({
