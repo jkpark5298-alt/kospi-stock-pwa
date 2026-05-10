@@ -563,9 +563,21 @@ export default function HomePage() {
       );
 
       if (restored) {
+        const restoredSavedAt =
+          restored.savedAt ||
+          saveManualEarnings(
+            restored.input,
+            restored.mode,
+            json.symbol,
+            json.rawSymbol,
+            json.name,
+            finalSymbol,
+          ) ||
+          new Date().toISOString();
+
         setManualEarningsGrowth(restored.input);
         setEarningsGrowthMode(restored.mode);
-        setManualEarningsSavedAt(restored.savedAt);
+        setManualEarningsSavedAt(restoredSavedAt);
 
         const currentRequestHadManualInput =
           hasManualEarningsValue(effectiveManualInput);
