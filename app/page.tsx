@@ -325,6 +325,10 @@ function getManualEarningsStorage(): ManualEarningsGrowthStorage {
   }
 }
 
+function normalizeManualEarningsKey(value?: string | null) {
+  return (value || "").trim().toUpperCase();
+}
+
 function getStoredManualEarnings(
   ...keys: Array<string | null | undefined>
 ): ManualEarningsGrowthStorageItem | null {
@@ -515,7 +519,7 @@ export default function HomePage() {
     const effectiveManualInput =
       targetManualInput ??
       storedManual?.input ??
-      manualEarningsGrowth;
+      EMPTY_MANUAL_EARNINGS_GROWTH;
     const finalEarningsGrowthMode =
       targetEarningsGrowthMode ?? storedManual?.mode ?? earningsGrowthMode;
 
@@ -581,6 +585,8 @@ export default function HomePage() {
           return;
         }
       } else {
+        setManualEarningsGrowth(EMPTY_MANUAL_EARNINGS_GROWTH);
+        setEarningsGrowthMode(targetEarningsGrowthMode ?? "auto");
         setManualEarningsSavedAt(null);
       }
 
