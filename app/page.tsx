@@ -269,6 +269,36 @@ type StockResponse = {
   status?: number;
 };
 
+type ManualEarningsGrowthInput = {
+  lastYearNetIncome: string;
+  expectedNetIncome: string;
+  lastYearOperatingProfit: string;
+  expectedOperatingProfit: string;
+  lastYearEps: string;
+  expectedEps: string;
+  turnaround: "" | "true" | "false";
+  deficitReduction: "" | "true" | "false";
+};
+
+type ManualEarningsGrowthStorageItem = {
+  mode: EarningsGrowthMode;
+  input: ManualEarningsGrowthInput;
+  savedAt: string;
+};
+
+type ManualEarningsGrowthStorage = Record<string, ManualEarningsGrowthStorageItem>;
+
+const EMPTY_MANUAL_EARNINGS_GROWTH: ManualEarningsGrowthInput = {
+  lastYearNetIncome: "",
+  expectedNetIncome: "",
+  lastYearOperatingProfit: "",
+  expectedOperatingProfit: "",
+  lastYearEps: "",
+  expectedEps: "",
+  turnaround: "",
+  deficitReduction: "",
+};
+
 const DEFAULT_SYMBOL = "005930.KS";
 const DEFAULT_RANGE = "6mo";
 const WATCHLIST_KEY = "kospi-watchlist";
