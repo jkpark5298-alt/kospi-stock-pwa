@@ -68,9 +68,16 @@ type Fundamentals = {
   low52w: number | null;
 };
 
+type EarningsGrowthSource = "none" | "manual" | "kis" | "dart" | "consensus";
+
+type EarningsGrowthMode = "auto" | "manual";
+
 type EarningsGrowthData = {
   available: boolean;
-  source: "none" | "manual" | "kis" | "dart" | "consensus";
+  excluded?: boolean;
+  source: EarningsGrowthSource;
+  mode: EarningsGrowthMode;
+  appliedSourceLabel: string;
   updatedAt: string | null;
   warning?: string;
 
@@ -94,39 +101,6 @@ type EarningsGrowthData = {
   reasons: string[];
 };
 
-
-type EarningsGrowthMode = "auto" | "manual";
-
-type ManualEarningsGrowthInput = {
-  lastYearNetIncome: string;
-  expectedNetIncome: string;
-  lastYearOperatingProfit: string;
-  expectedOperatingProfit: string;
-  lastYearEps: string;
-  expectedEps: string;
-  turnaround: "" | "true" | "false";
-  deficitReduction: "" | "true" | "false";
-};
-
-type ManualEarningsGrowthStorageItem = {
-  mode: EarningsGrowthMode;
-  input: ManualEarningsGrowthInput;
-  savedAt: string;
-};
-
-type ManualEarningsGrowthStorage = Record<string, ManualEarningsGrowthStorageItem>;
-
-const EMPTY_MANUAL_EARNINGS_GROWTH: ManualEarningsGrowthInput = {
-  lastYearNetIncome: "",
-  expectedNetIncome: "",
-  lastYearOperatingProfit: "",
-  expectedOperatingProfit: "",
-  lastYearEps: "",
-  expectedEps: "",
-  turnaround: "",
-  deficitReduction: "",
-};
-
 type QuantScorePart = {
   score: number;
   maxScore: number;
@@ -141,11 +115,11 @@ type QuantModelResult = {
   action: string;
   summary: string;
   momentum: QuantScorePart;
-  trend?: QuantScorePart;
-  tradingValue?: QuantScorePart;
+  trend: QuantScorePart;
+  tradingValue: QuantScorePart;
   valuation: QuantScorePart;
   supply: QuantScorePart;
-  volatility?: QuantScorePart;
+  volatility: QuantScorePart;
   risk: QuantScorePart;
   target: QuantScorePart;
   earningsGrowth?: QuantScorePart;
@@ -155,9 +129,9 @@ type QuantModelResult = {
     targetAlmostReached: boolean;
     supplyPositive: boolean;
     momentumPositive: boolean;
-    trendPositive?: boolean;
-    tradingValuePositive?: boolean;
-    volatilityHigh?: boolean;
+    trendPositive: boolean;
+    tradingValuePositive: boolean;
+    volatilityHigh: boolean;
     earningsGrowthPositive?: boolean;
   };
 };
