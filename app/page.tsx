@@ -325,10 +325,6 @@ function getManualEarningsStorage(): ManualEarningsGrowthStorage {
   }
 }
 
-function normalizeManualEarningsKey(value?: string | null) {
-  return (value || "").trim().toUpperCase();
-}
-
 function getStoredManualEarnings(
   ...keys: Array<string | null | undefined>
 ): ManualEarningsGrowthStorageItem | null {
