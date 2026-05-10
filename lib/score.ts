@@ -60,6 +60,15 @@ export type ScoreQuantData = {
   };
 };
 
+export type ScoreEarningsGrowthData = {
+  available: boolean;
+  excluded?: boolean;
+  score: number | null;
+  label: string;
+  source?: string;
+  reasons?: string[];
+};
+
 export type TargetMode = "conservative" | "base" | "aggressive";
 
 export type ScoreWeights = {
@@ -68,6 +77,7 @@ export type ScoreWeights = {
   supply: number;
   targetPrice: number;
   signalAgreement: number;
+  earningsGrowth: number;
 };
 
 export type ScorePart = {
@@ -154,6 +164,7 @@ export type CompositeScore = {
   supply: ScorePart;
   targetPrice: TargetPriceScore;
   signalAgreement: ScorePart;
+  earningsGrowth: ScorePart;
   baseWeights: ScoreWeights;
   appliedWeights: Partial<ScoreWeights>;
   targetPricePlan: {
@@ -168,11 +179,12 @@ type TechnicalTargetResult = {
 };
 
 export const DEFAULT_SCORE_WEIGHTS: ScoreWeights = {
-  technical: 0.25,
-  volume: 0.15,
-  supply: 0.25,
-  targetPrice: 0.15,
-  signalAgreement: 0.2,
+  technical: 0.23,
+  volume: 0.14,
+  supply: 0.23,
+  targetPrice: 0.14,
+  signalAgreement: 0.16,
+  earningsGrowth: 0.1,
 };
 
 export const DEFAULT_TARGET_MODE: TargetMode = "conservative";
@@ -182,6 +194,7 @@ export function calculateCompositeScore({
   supply,
   fundamentals,
   quant,
+  earningsGrowth,
   targetMode = DEFAULT_TARGET_MODE,
   weights = DEFAULT_SCORE_WEIGHTS,
 }: {
@@ -189,6 +202,7 @@ export function calculateCompositeScore({
   supply?: ScoreSupplyData;
   fundamentals?: ScoreFundamentalsData;
   quant?: ScoreQuantData;
+  earningsGrowth?: ScoreEarningsGrowthData;
   targetMode?: TargetMode;
   weights?: ScoreWeights;
 }): CompositeScore {
@@ -215,12 +229,15 @@ export function calculateCompositeScore({
     quant,
   });
 
+  const earningsGrowthScore = calculateEarningsGrowthScore(earningsGrowth);
+
   const parts = {
     technical,
     volume,
     supply: supplyScore,
     targetPrice,
     signalAgreement,
+    earningsGrowth: earningsGrowthScore,
   };
 
   const appliedWeights = normalizeAvailableWeights(weights, parts);
@@ -234,6 +251,7 @@ export function calculateCompositeScore({
     supply: supplyScore,
     targetPrice,
     signalAgreement,
+    earningsGrowth: earningsGrowthScore,
   });
 
   return {
@@ -245,6 +263,7 @@ export function calculateCompositeScore({
     supply: supplyScore,
     targetPrice,
     signalAgreement,
+    earningsGrowth: earningsGrowthScore,
     baseWeights: weights,
     appliedWeights,
     targetPricePlan: {
@@ -793,7 +812,41 @@ function calculateSignalAgreementScore({
   };
 }
 
-export function normalizeAvailableWeights(
+export function calculateEarningsGrowthScore(
+  earningsGrowth?: ScoreEarningsGrowthData | null,
+): ScorePart {
+  if (earningsGrowth?.excluded) {
+    return {
+      available: false,
+      score: null,
+      label: "제외",
+      reasons: ["ETF/ETN/지수형 상품은 실적 성장 점수 가중치에서 제외했습니다."],
+    };
+  }
+
+  if (!earningsGrowth?.available || earningsGrowth.score == null) {
+    return {
+      available: false,
+      score: null,
+      label: "데이터 대기",
+      reasons: ["실적 성장 데이터가 없어 종합 신뢰도 가중치에서 제외했습니다."],
+    };
+  }
+
+  const score = clampScore(earningsGrowth.score);
+
+  return {
+    available: true,
+    score,
+    label: earningsGrowth.label || getPartLabel(score),
+    reasons:
+      earningsGrowth.reasons && earningsGrowth.reasons.length > 0
+        ? earningsGrowth.reasons
+        : ["실적 성장 점수를 종합 신뢰도에 보조 반영했습니다."],
+  };
+}
+
+function normalizeAvailableWeights(
   weights: ScoreWeights,
   parts: {
     technical: ScorePart;
@@ -801,6 +854,7 @@ export function normalizeAvailableWeights(
     supply: ScorePart;
     targetPrice: ScorePart;
     signalAgreement: ScorePart;
+    earningsGrowth: ScorePart;
   },
 ): Partial<ScoreWeights> {
   const availableWeightEntries = Object.entries(weights).filter(([key]) => {
@@ -1392,6 +1446,7 @@ function calculateWeightedTotal(
     supply: ScorePart;
     targetPrice: ScorePart;
     signalAgreement: ScorePart;
+    earningsGrowth: ScorePart;
   },
   weights: Partial<ScoreWeights>,
 ) {
@@ -1414,6 +1469,7 @@ function makeScoreComment({
   supply,
   targetPrice,
   signalAgreement,
+  earningsGrowth,
 }: {
   total: number | null;
   technical: ScorePart;
@@ -1421,6 +1477,7 @@ function makeScoreComment({
   supply: ScorePart;
   targetPrice: ScorePart;
   signalAgreement: ScorePart;
+  earningsGrowth: ScorePart;
 }) {
   if (total == null) {
     return "점수 계산에 필요한 데이터가 부족합니다.";
@@ -1434,12 +1491,14 @@ function makeScoreComment({
   if ((supply.score ?? 0) >= 70) strongParts.push("수급");
   if ((targetPrice.score ?? 0) >= 70) strongParts.push("목표여력");
   if ((signalAgreement.score ?? 0) >= 70) strongParts.push("신호 일치도");
+  if ((earningsGrowth.score ?? 0) >= 70) strongParts.push("실적 성장");
 
   if (technical.available && (technical.score ?? 0) < 50) weakParts.push("기술");
   if (volume.available && (volume.score ?? 0) < 50) weakParts.push("거래량·거래대금");
   if (supply.available && (supply.score ?? 0) < 50) weakParts.push("수급");
   if (targetPrice.available && (targetPrice.score ?? 0) < 50) weakParts.push("목표여력");
   if (signalAgreement.available && (signalAgreement.score ?? 0) < 50) weakParts.push("신호 일치도");
+  if (earningsGrowth.available && (earningsGrowth.score ?? 0) < 50) weakParts.push("실적 성장");
 
   const targetMessage = targetPrice.available
     ? " 목표가 참고 범위는 기술·밸류에이션·퀀트 보정 기준입니다."
@@ -1449,19 +1508,23 @@ function makeScoreComment({
     ? " 신호 일치도는 기술·거래·수급·퀀트 방향이 얼마나 맞는지 반영합니다."
     : " 신호 일치도는 데이터가 충분할 때 반영됩니다.";
 
+  const earningsMessage = earningsGrowth.available
+    ? " 실적 성장 점수는 보조 가중치로 반영했습니다."
+    : " 실적 성장 데이터가 없으면 해당 가중치는 제외하고 나머지 항목으로 재분배합니다.";
+
   if (strongParts.length > 0 && weakParts.length > 0) {
-    return `${strongParts.join(", ")}은 긍정적이나 ${weakParts.join(", ")} 확인이 필요합니다.${targetMessage}${agreementMessage}`;
+    return `${strongParts.join(", ")}은 긍정적이나 ${weakParts.join(", ")} 확인이 필요합니다.${targetMessage}${agreementMessage}${earningsMessage}`;
   }
 
   if (strongParts.length > 0) {
-    return `${strongParts.join(", ")} 흐름이 상대적으로 긍정적입니다.${targetMessage}${agreementMessage}`;
+    return `${strongParts.join(", ")} 흐름이 상대적으로 긍정적입니다.${targetMessage}${agreementMessage}${earningsMessage}`;
   }
 
   if (weakParts.length > 0) {
-    return `${weakParts.join(", ")} 지표가 약해 보수적 확인이 필요합니다.${targetMessage}${agreementMessage}`;
+    return `${weakParts.join(", ")} 지표가 약해 보수적 확인이 필요합니다.${targetMessage}${agreementMessage}${earningsMessage}`;
   }
 
-  return `전반적으로 중립 구간입니다.${targetMessage}${agreementMessage}`;
+  return `전반적으로 중립 구간입니다.${targetMessage}${agreementMessage}${earningsMessage}`;
 }
 
 function getScoreGrade(score: number | null) {

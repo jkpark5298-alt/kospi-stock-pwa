@@ -454,6 +454,7 @@ export async function GET(req: NextRequest) {
       rows: chartData,
       supply,
       fundamentals,
+      earningsGrowth,
     });
 
     const latestTechnical = chartData[chartData.length - 1] ?? null;

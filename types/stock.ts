@@ -53,26 +53,9 @@ export type Fundamentals = {
   low52w: number | null;
 };
 
-export type EarningsGrowthSource = "none" | "manual" | "kis" | "dart" | "consensus";
-export type EarningsGrowthMode = "auto" | "manual";
-
-export type ManualEarningsGrowthInput = {
-  lastYearNetIncome: string;
-  expectedNetIncome: string;
-  lastYearOperatingProfit: string;
-  expectedOperatingProfit: string;
-  lastYearEps: string;
-  expectedEps: string;
-  turnaround: "" | "true" | "false";
-  deficitReduction: "" | "true" | "false";
-};
-
 export type EarningsGrowthData = {
   available: boolean;
-  excluded?: boolean;
-  source: EarningsGrowthSource;
-  mode?: EarningsGrowthMode;
-  appliedSourceLabel?: string;
+  source: "none" | "manual" | "kis" | "dart" | "consensus";
   updatedAt: string | null;
   warning?: string;
 
@@ -111,13 +94,14 @@ export type QuantModelResult = {
   summary: string;
 
   momentum: QuantScorePart;
-  trend?: QuantScorePart;
-  tradingValue?: QuantScorePart;
+  trend: QuantScorePart;
+  tradingValue: QuantScorePart;
   valuation: QuantScorePart;
   supply: QuantScorePart;
-  volatility?: QuantScorePart;
+  volatility: QuantScorePart;
   risk: QuantScorePart;
   target: QuantScorePart;
+
   earningsGrowth?: QuantScorePart;
 
   flags: {
@@ -126,9 +110,9 @@ export type QuantModelResult = {
     targetAlmostReached: boolean;
     supplyPositive: boolean;
     momentumPositive: boolean;
-    trendPositive?: boolean;
-    tradingValuePositive?: boolean;
-    volatilityHigh?: boolean;
+    trendPositive: boolean;
+    tradingValuePositive: boolean;
+    volatilityHigh: boolean;
     earningsGrowthPositive?: boolean;
   };
 };
@@ -145,8 +129,8 @@ export type ScoreWeights = {
   volume: number;
   supply: number;
   targetPrice: number;
-  signalAgreement?: number;
-  earningsGrowth?: number;
+  signalAgreement: number;
+  earningsGrowth: number;
 };
 
 export type TargetPriceRange = {
@@ -225,8 +209,8 @@ export type CompositeScore = {
     selectedTargetMode?: TargetMode;
     targetModes?: TargetModeResult[];
   };
-  signalAgreement?: ScorePart;
-  earningsGrowth?: ScorePart;
+  signalAgreement: ScorePart;
+  earningsGrowth: ScorePart;
 
   baseWeights: ScoreWeights;
   appliedWeights: Partial<ScoreWeights>;

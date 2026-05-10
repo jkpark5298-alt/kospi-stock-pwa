@@ -9,10 +9,12 @@ type Props = {
 
 type ExtendedScoreKey =
   | keyof ScoreWeights
-  | "signalAgreement";
+  | "signalAgreement"
+  | "earningsGrowth";
 
 export default function CompositeScoreSection({ score }: Props) {
   const signalAgreement = getScorePart(score, "signalAgreement");
+  const earningsGrowth = getScorePart(score, "earningsGrowth");
 
   return (
     <section className="score-section">
@@ -21,8 +23,9 @@ export default function CompositeScoreSection({ score }: Props) {
           <div>
             <SectionTitleSmall>종합 신뢰도 점수</SectionTitleSmall>
             <p className="score-subtitle">
-              기술·거래량·거래대금·수급·목표여력·신호 일치도를 합산해
-              현재 심리 구간과 분석 신뢰도를 판단합니다.
+              기술·거래량·거래대금·수급·목표여력·신호 일치도·실적 성장을
+              합산해 현재 심리 구간과 분석 신뢰도를 판단합니다. 실적 성장
+              데이터가 없으면 해당 가중치는 제외하고 나머지 항목에 재분배합니다.
             </p>
           </div>
 
@@ -51,6 +54,7 @@ export default function CompositeScoreSection({ score }: Props) {
             <ScorePartCard title="수급 점수" part={score?.supply} />
             <ScorePartCard title="목표여력 점수" part={score?.targetPrice} />
             <ScorePartCard title="신호 일치도" part={signalAgreement} />
+            <ScorePartCard title="실적 성장" part={earningsGrowth} />
           </div>
         </div>
 
@@ -138,6 +142,7 @@ function formatAppliedWeights(weights?: Partial<ScoreWeights>) {
     ["supply", "수급"],
     ["targetPrice", "목표여력"],
     ["signalAgreement", "신호일치도"],
+    ["earningsGrowth", "실적성장"],
   ];
 
   return labels
