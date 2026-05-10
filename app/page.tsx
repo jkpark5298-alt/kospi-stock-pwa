@@ -174,8 +174,8 @@ type ScoreWeights = {
   volume: number;
   supply: number;
   targetPrice: number;
-  signalAgreement?: number;
-  earningsGrowth?: number;
+  signalAgreement: number;
+  earningsGrowth: number;
 };
 
 type TargetPriceRange = {
@@ -253,8 +253,8 @@ type CompositeScore = {
     selectedTargetMode?: TargetMode;
     targetModes?: TargetModeResult[];
   };
-  signalAgreement?: ScorePart;
-  earningsGrowth?: ScorePart;
+  signalAgreement: ScorePart;
+  earningsGrowth: ScorePart;
   baseWeights: ScoreWeights;
   appliedWeights: Partial<ScoreWeights>;
   targetPricePlan: {
