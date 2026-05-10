@@ -155,6 +155,26 @@ const EMPTY_FUNDAMENTALS: FundamentalsData = {
   low52w: null,
 };
 
+
+function makeEarningsGrowthCacheKey(searchParams: URLSearchParams) {
+  const manualKeys = [
+    "earningsGrowthMode",
+    "lastYearNetIncome",
+    "expectedNetIncome",
+    "lastYearOperatingProfit",
+    "expectedOperatingProfit",
+    "lastYearEps",
+    "expectedEps",
+    "turnaround",
+    "deficitReduction",
+  ];
+
+  return manualKeys
+    .map((key) => `${key}=${searchParams.get(key) || ""}`)
+    .join("|");
+}
+
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const rawSymbol = (searchParams.get("symbol") || "005930.KS").trim();
@@ -163,7 +183,8 @@ export async function GET(req: NextRequest) {
   const symbol = resolvedStock?.symbol || fallbackResolveStockSymbol(rawSymbol);
 
   const range = (searchParams.get("range") || "6mo").trim();
-  const cacheKey = `${symbol}:${range}`;
+  const earningsGrowthCacheKey = makeEarningsGrowthCacheKey(searchParams);
+  const cacheKey = `${symbol}:${range}:${earningsGrowthCacheKey}`;
 
   const cached = stockCache.get(cacheKey);
 
