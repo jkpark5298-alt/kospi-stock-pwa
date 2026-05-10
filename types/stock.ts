@@ -53,9 +53,50 @@ export type Fundamentals = {
   low52w: number | null;
 };
 
+export type EarningsGrowthSource = "none" | "manual" | "kis" | "dart" | "consensus";
+
+export type EarningsGrowthMode = "auto" | "manual";
+
+export type EarningsGrowthInput = {
+  source?: EarningsGrowthSource;
+  updatedAt?: string | null;
+
+  lastYearNetIncome?: number | null;
+  expectedNetIncome?: number | null;
+
+  lastYearOperatingProfit?: number | null;
+  expectedOperatingProfit?: number | null;
+
+  lastYearEps?: number | null;
+  expectedEps?: number | null;
+
+  turnaround?: boolean | null;
+  deficitReduction?: boolean | null;
+};
+
+export type ManualEarningsGrowthInput = {
+  lastYearNetIncome: string;
+  expectedNetIncome: string;
+  lastYearOperatingProfit: string;
+  expectedOperatingProfit: string;
+  lastYearEps: string;
+  expectedEps: string;
+  turnaround: "" | "true" | "false";
+  deficitReduction: "" | "true" | "false";
+};
+
+export type ManualEarningsGrowthStorageItem = {
+  mode: EarningsGrowthMode;
+  input: ManualEarningsGrowthInput;
+  savedAt: string;
+};
+
 export type EarningsGrowthData = {
   available: boolean;
-  source: "none" | "manual" | "kis" | "dart" | "consensus";
+  excluded?: boolean;
+  source: EarningsGrowthSource;
+  mode: EarningsGrowthMode;
+  appliedSourceLabel: string;
   updatedAt: string | null;
   warning?: string;
 
