@@ -13,6 +13,7 @@ type ExtendedScoreKey =
   | "earningsGrowth";
 
 export default function CompositeScoreSection({ score }: Props) {
+  const [isKisAdjustmentOpen, setIsKisAdjustmentOpen] = useState(false);
   const [isWeightDetailOpen, setIsWeightDetailOpen] = useState(false);
   const signalAgreement = getScorePart(score, "signalAgreement");
   const earningsGrowth = getScorePart(score, "earningsGrowth");
@@ -87,6 +88,11 @@ export default function CompositeScoreSection({ score }: Props) {
           ) : null}
         </div>
 
+        <KisAdjustmentDetailBox
+          score={score}
+          isOpen={isKisAdjustmentOpen}
+          onToggle={() => setIsKisAdjustmentOpen((value) => !value)}
+        />
         <div className="score-comment-box">
           <span>해석</span>
           <strong>
@@ -156,6 +162,78 @@ function WeightAdjustmentTable({
       </table>
     </div>
   );
+}
+
+function KisAdjustmentDetailBox({
+  score,
+  isOpen,
+  onToggle,
+}: {
+  score?: CompositeScore;
+  isOpen: boolean;
+  onToggle: () => void;
+}) {
+  const items = getKisAdjustmentItems(score);
+
+  return (
+    <div className="score-weight-box">
+      <div>
+        <span className="score-weight-title">KIS 蹂댁“?됯? 諛섏쁺 ?댁뿭</span>
+        <strong>{items.length > 0 ? `${items.length}嫄?諛섏쁺` : "諛섏쁺 ?댁뿭 ?놁쓬"}</strong>
+      </div>
+      <p>
+        ?쒗닾 KIS ?щТ쨌諛몃쪟?먯씠?샕룹닔湲??곗씠?곕? 湲곗〈 ?먯닔 怨꾩궛??蹂댁“濡?諛섏쁺??
+        ?댁뿭?낅땲?? 湲곗〈 紐⑤뜽??怨쇰룄?섍쾶 ?붾뱾吏 ?딅룄濡??뚰룺 蹂댁젙?쇰줈 ?쒗븳?⑸땲??
+      </p>
+      <button
+        className="button secondary-button"
+        type="button"
+        onClick={onToggle}
+      >
+        {isOpen ? "KIS 蹂댁“?됯? ?댁뿭 ?リ린" : "KIS 蹂댁“?됯? ?댁뿭 蹂닿린"}
+      </button>
+
+      {isOpen ? (
+        items.length > 0 ? (
+          <div className="target-basis-adjustments" style={{ marginTop: 12 }}>
+            {items.map((item) => (
+              <p key={`${item.group}-${item.reason}`}>
+                <strong>{item.group}</strong> 쨌 {item.reason}
+              </p>
+            ))}
+          </div>
+        ) : (
+          <div className="target-basis-adjustments" style={{ marginTop: 12 }}>
+            <p>
+              ?꾩옱 ?쒖떆??KIS 蹂댁“?됯? ?댁뿭???놁뒿?덈떎. 醫낅ぉ???ㅼ떆 遺꾩꽍?섍굅??KIS
+              ?곗씠?곌? ?뺤긽 議고쉶?섎㈃ 蹂댁“?됯? ?ъ쑀媛 ?쒖떆?⑸땲??
+            </p>
+          </div>
+        )
+      ) : null}
+    </div>
+  );
+}
+
+function getKisAdjustmentItems(score?: CompositeScore) {
+  const supplyReasons = score?.supply?.reasons ?? [];
+  const targetReasons = score?.targetPrice?.reasons ?? [];
+  const signalReasons = score?.signalAgreement?.reasons ?? [];
+
+  return [
+    ...extractKisReasons("?섍툒 蹂댁“", supplyReasons),
+    ...extractKisReasons("異붿젙 二쇨? 蹂댁“", targetReasons),
+    ...extractKisReasons("?좏샇 蹂댁“", signalReasons),
+  ];
+}
+
+function extractKisReasons(group: string, reasons: string[]) {
+  return reasons
+    .filter((reason) => reason.includes("KIS ") || reason.includes("KIS"))
+    .map((reason) => ({
+      group,
+      reason,
+    }));
 }
 
 function ScorePartCard({
