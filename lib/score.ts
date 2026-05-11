@@ -1509,7 +1509,7 @@ function makeScoreComment({
     : " 신호 일치도는 데이터가 충분할 때 반영됩니다.";
 
   const earningsMessage = earningsGrowth.available
-    ? " 실적 성장 점수는 보조 가중치로 반영했습니다."
+    ? ` 실적 성장 점수는 ${earningsGrowth.score}점(${earningsGrowth.label})으로 종합 신뢰도에 10% 보조 가중치로 반영했습니다.`
     : " 실적 성장 데이터가 없으면 해당 가중치는 제외하고 나머지 항목으로 재분배합니다.";
 
   if (strongParts.length > 0 && weakParts.length > 0) {
