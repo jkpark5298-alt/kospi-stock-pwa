@@ -174,39 +174,51 @@ function KisAdjustmentDetailBox({
   onToggle: () => void;
 }) {
   const items = getKisAdjustmentItems(score);
+  const positiveCount = items.filter((item) => item.tone === "positive").length;
+  const negativeCount = items.filter((item) => item.tone === "negative").length;
+  const neutralCount = items.filter((item) => item.tone === "neutral").length;
 
   return (
     <div className="score-weight-box">
       <div>
-        <span className="score-weight-title">KIS 보조평가 반영 내역</span>
-        <strong>{items.length > 0 ? `${items.length}건 반영` : "반영 내역 없음"}</strong>
+        <span className="score-weight-title">KIS 보조평가 반영</span>
+        <strong>
+          {items.length > 0
+            ? `총 ${items.length}건 · 긍정 ${positiveCount} / 주의 ${negativeCount} / 참고 ${neutralCount}`
+            : "반영 내역 없음"}
+        </strong>
       </div>
       <p>
-        한투 KIS 재무·밸류에이션·수급 데이터를 기존 점수 계산에 보조로 반영한
-        내역입니다. 기존 모델을 과도하게 흔들지 않도록 소폭 보정으로 제한합니다.
+        한투 KIS 데이터를 점수에 소폭 반영한 내역입니다. 길게 설명하지 않고
+        핵심 영향만 요약합니다.
       </p>
       <button
         className="button secondary-button"
         type="button"
         onClick={onToggle}
       >
-        {isOpen ? "KIS 보조평가 내역 닫기" : "KIS 보조평가 내역 보기"}
+        {isOpen ? "KIS 요약 닫기" : "KIS 요약 보기"}
       </button>
 
       {isOpen ? (
         items.length > 0 ? (
-          <div className="target-basis-adjustments" style={{ marginTop: 12 }}>
+          <div className="target-grid" style={{ marginTop: 12 }}>
             {items.map((item) => (
-              <p key={`${item.group}-${item.reason}`}>
-                <strong>{item.group}</strong> · {item.reason}
-              </p>
+              <div className="target-metric-card" key={`${item.group}-${item.title}-${item.delta}`}>
+                <span>{item.icon} {item.group}</span>
+                <strong className={item.tone}>{item.title}</strong>
+                <em className={item.tone}>{item.delta}</em>
+                <p className="notice-text" style={{ marginTop: 8 }}>
+                  {item.summary}
+                </p>
+              </div>
             ))}
           </div>
         ) : (
           <div className="target-basis-adjustments" style={{ marginTop: 12 }}>
             <p>
-              현재 표시할 KIS 보조평가 내역이 없습니다. 종목을 다시 분석하거나 KIS
-              데이터가 정상 조회되면 보조평가 사유가 표시됩니다.
+              표시할 KIS 보조평가가 없습니다. 종목을 다시 분석하면 조회된 KIS
+              데이터 기준으로 반영 내역이 표시됩니다.
             </p>
           </div>
         )
@@ -221,19 +233,170 @@ function getKisAdjustmentItems(score?: CompositeScore) {
   const signalReasons = score?.signalAgreement?.reasons ?? [];
 
   return [
-    ...extractKisReasons("수급 보조", supplyReasons),
-    ...extractKisReasons("추정 주가 보조", targetReasons),
-    ...extractKisReasons("신호 보조", signalReasons),
+    ...extractKisReasons("수급", supplyReasons),
+    ...extractKisReasons("추정 주가", targetReasons),
+    ...extractKisReasons("신호", signalReasons),
   ];
 }
 
 function extractKisReasons(group: string, reasons: string[]) {
   return reasons
     .filter((reason) => reason.includes("KIS ") || reason.includes("KIS"))
-    .map((reason) => ({
+    .map((reason) => summarizeKisReason(group, reason));
+}
+
+function summarizeKisReason(group: string, reason: string) {
+  if (reason.includes("수급") && reason.includes("순매수") && reason.includes("가산")) {
+    return {
       group,
-      reason,
-    }));
+      icon: "🟢",
+      title: "수급 개선",
+      delta: "+3점",
+      tone: "positive" as const,
+      summary: "외국인+기관 5일·20일 순매수",
+    };
+  }
+
+  if (reason.includes("수급") && reason.includes("순매도")) {
+    return {
+      group,
+      icon: "🔻",
+      title: "수급 약세",
+      delta: "-3점",
+      tone: "negative" as const,
+      summary: "외국인+기관 5일·20일 순매도",
+    };
+  }
+
+  if (reason.includes("5일 연속 순매수") && reason.includes("모두")) {
+    return {
+      group,
+      icon: "🟢",
+      title: "연속 매수",
+      delta: "+2점",
+      tone: "positive" as const,
+      summary: "외국인·기관 동반 연속 순매수",
+    };
+  }
+
+  if (reason.includes("연속 순매수 조건")) {
+    return {
+      group,
+      icon: "⚪",
+      title: "연속 매수 없음",
+      delta: "참고",
+      tone: "neutral" as const,
+      summary: "외국인·기관 연속 순매수 미충족",
+    };
+  }
+
+  if (reason.includes("EPS") && reason.includes("양수")) {
+    return {
+      group,
+      icon: "🟢",
+      title: "EPS 양호",
+      delta: "+1점",
+      tone: "positive" as const,
+      summary: "EPS 양수",
+    };
+  }
+
+  if (reason.includes("EPS") && reason.includes("0 이하")) {
+    return {
+      group,
+      icon: "🔻",
+      title: "EPS 약세",
+      delta: "-2점",
+      tone: "negative" as const,
+      summary: "EPS 0 이하",
+    };
+  }
+
+  if (reason.includes("PER") && reason.includes("낮은")) {
+    return {
+      group,
+      icon: "🟢",
+      title: "PER 양호",
+      delta: "+2점",
+      tone: "positive" as const,
+      summary: "PER 낮음",
+    };
+  }
+
+  if (reason.includes("PER") && reason.includes("높은")) {
+    return {
+      group,
+      icon: "🔻",
+      title: "PER 부담",
+      delta: "-2점",
+      tone: "negative" as const,
+      summary: "PER 높음",
+    };
+  }
+
+  if (reason.includes("PER") && reason.includes("중립")) {
+    return {
+      group,
+      icon: "⚪",
+      title: "PER 중립",
+      delta: "참고",
+      tone: "neutral" as const,
+      summary: "PER 중립 구간",
+    };
+  }
+
+  if (reason.includes("PBR") && reason.includes("낮은")) {
+    return {
+      group,
+      icon: "🟢",
+      title: "PBR 양호",
+      delta: "+1점",
+      tone: "positive" as const,
+      summary: "PBR 낮음",
+    };
+  }
+
+  if (reason.includes("PBR") && reason.includes("높은")) {
+    return {
+      group,
+      icon: "🔻",
+      title: "PBR 부담",
+      delta: "-2점",
+      tone: "negative" as const,
+      summary: "PBR 높음",
+    };
+  }
+
+  if (reason.includes("PBR") && reason.includes("중립")) {
+    return {
+      group,
+      icon: "⚪",
+      title: "PBR 중립",
+      delta: "참고",
+      tone: "neutral" as const,
+      summary: "PBR 중립 구간",
+    };
+  }
+
+  if (reason.includes("52주")) {
+    return {
+      group,
+      icon: "⚠️",
+      title: "가격 위치",
+      delta: "참고",
+      tone: "neutral" as const,
+      summary: "52주 고가·저가 기준 확인",
+    };
+  }
+
+  return {
+    group,
+    icon: "⚪",
+    title: "KIS 참고",
+    delta: "참고",
+    tone: "neutral" as const,
+    summary: reason.replace(/^KIS\s*/, "").slice(0, 28),
+  };
 }
 
 
