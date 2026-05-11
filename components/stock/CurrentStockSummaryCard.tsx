@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import type { StockResponse } from "../../types/stock";
 import {
   formatNumber,
@@ -13,6 +14,37 @@ type Props = {
 
 export default function CurrentStockSummaryCard({ data }: Props) {
   const range = data?.score?.targetPrice?.technicalTargetRange;
+  const todayKey = useMemo(() => makeTodayKey(), []);
+  const dailyTargetKey = useMemo(
+    () => makeDailyTargetKey(data?.symbol, todayKey),
+    [data?.symbol, todayKey],
+  );
+  const [dailyTarget, setDailyTarget] = useState<DailyTargetSnapshot | null>(null);
+
+  useEffect(() => {
+    if (!range || !data?.symbol || typeof window === "undefined") {
+      setDailyTarget(null);
+      return;
+    }
+
+    const stored = readDailyTargetSnapshot(dailyTargetKey);
+
+    if (stored) {
+      setDailyTarget(stored);
+      return;
+    }
+
+    const next: DailyTargetSnapshot = {
+      date: todayKey,
+      symbol: data.symbol,
+      targetPrice: range.baseTarget,
+      basisPrice: range.currentPrice,
+      savedAt: new Date().toISOString(),
+    };
+
+    writeDailyTargetSnapshot(dailyTargetKey, next);
+    setDailyTarget(next);
+  }, [dailyTargetKey, data?.symbol, range, todayKey]);
 
   const targetProgress =
     range && range.baseTarget > 0
@@ -22,6 +54,23 @@ export default function CurrentStockSummaryCard({ data }: Props) {
   const upsidePrice = range
     ? Number((range.baseTarget - range.currentPrice).toFixed(2))
     : null;
+
+  const dailyTargetProgress =
+    dailyTarget && range && dailyTarget.targetPrice > 0
+      ? Number(((range.currentPrice / dailyTarget.targetPrice) * 100).toFixed(1))
+      : null;
+
+  const dailyUpsidePrice =
+    dailyTarget && range
+      ? Number((dailyTarget.targetPrice - range.currentPrice).toFixed(2))
+      : null;
+
+  const dailyUpsidePercent =
+    dailyTarget && range && range.currentPrice > 0
+      ? Number(
+          (((dailyTarget.targetPrice - range.currentPrice) / range.currentPrice) * 100).toFixed(2),
+        )
+      : null;
 
   const displaySymbol = data?.symbol || "데이터 없음";
   const displayName = data?.name || "종목명 없음";
@@ -77,7 +126,7 @@ export default function CurrentStockSummaryCard({ data }: Props) {
 
         <MetricRow
           label="현재 조회 기준 목표가"
-          value={formatNumber(range?.baseTarget)}
+          value={`${formatNumber(range?.baseTarget)} ${formatDailyTargetSuffix(dailyTarget)}`}
         />
         <MetricRow
           label="현재 조회 기준 목표여력"
@@ -86,7 +135,13 @@ export default function CurrentStockSummaryCard({ data }: Props) {
           )}`}
         />
         <MetricRow
-          label="목표 도달률"
+          label="당일 기준 목표 도달률"
+          value={`${formatTargetProgress(dailyTargetProgress)} · ${formatSignedNumber(
+            dailyUpsidePrice,
+          )} / ${formatUpside(dailyUpsidePercent)}`}
+        />
+        <MetricRow
+          label="현재 조회 기준 목표 도달률"
           value={formatTargetProgress(targetProgress)}
         />
         <MetricRow
@@ -98,12 +153,73 @@ export default function CurrentStockSummaryCard({ data }: Props) {
       </div>
 
       <p className="notice-text">
-        현재 종목 요약의 목표가는 방금 조회한 현재가와 최신 지표를 기준으로
-        계산한 참고 목표가입니다. 하루 평가 기준으로 고정할 목표가는 하단의
-        기준 목표가 평가 영역에서 별도로 관리하는 구조로 확장할 예정입니다.
+        현재 조회 기준 목표가는 조회할 때마다 최신 현재가와 지표로 다시 계산됩니다.
+        괄호 안의 당일 기준 목표가는 해당 종목의 오늘 첫 조회 목표가로 저장되어
+        같은 날짜에는 목표 도달률 평가 기준으로 유지됩니다.
       </p>
     </div>
   );
+}
+
+type DailyTargetSnapshot = {
+  date: string;
+  symbol: string;
+  targetPrice: number;
+  basisPrice: number;
+  savedAt: string;
+};
+
+const DAILY_TARGET_STORAGE_PREFIX = "kospi-daily-target";
+
+function makeTodayKey() {
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+function makeDailyTargetKey(symbol?: string | null, todayKey = makeTodayKey()) {
+  return `${DAILY_TARGET_STORAGE_PREFIX}:${todayKey}:${(symbol || "").trim().toUpperCase()}`;
+}
+
+function readDailyTargetSnapshot(key: string): DailyTargetSnapshot | null {
+  if (!key || typeof window === "undefined") return null;
+
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as DailyTargetSnapshot;
+
+    if (
+      !parsed ||
+      !Number.isFinite(parsed.targetPrice) ||
+      !Number.isFinite(parsed.basisPrice)
+    ) {
+      return null;
+    }
+
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeDailyTargetSnapshot(key: string, snapshot: DailyTargetSnapshot) {
+  if (!key || typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(key, JSON.stringify(snapshot));
+  } catch {
+    // localStorage 저장이 실패해도 화면 조회는 계속 진행합니다.
+  }
+}
+
+function formatDailyTargetSuffix(snapshot?: DailyTargetSnapshot | null) {
+  if (!snapshot) return "(당일 기준 목표가 데이터 없음)";
+  return `(당일 기준 목표가 ${formatNumber(snapshot.targetPrice)})`;
 }
 
 function MetricRow({ label, value }: { label: string; value: string }) {
