@@ -317,8 +317,8 @@ export default function KisFundamentalsSection({ symbol, name }: Props) {
               재무·밸류에이션
             </h4>
             <div className="target-grid">
-              <MetricCard title="시가총액" value={formatNumber(financialData?.marketCap)} subText="규모 참고" />
-              <MetricCard title="상장주식수" value={formatNumber(financialData?.sharesOutstanding)} subText="유통 규모 참고" />
+              <MetricCard title="시가총액" value={formatMarketCap(financialData?.marketCap)} subText="규모 참고" />
+              <MetricCard title="상장주식수" value={formatShares(financialData?.sharesOutstanding)} subText="유통 규모 참고" />
               <MetricCard title="PER" value={formatRatio(financialData?.per)} subText="주가수익비율" />
               <MetricCard title="PBR" value={formatRatio(financialData?.pbr)} subText="주가순자산비율" />
               <MetricCard title="EPS" value={formatNumber(financialData?.eps)} subText="주당순이익" />
@@ -422,7 +422,9 @@ function MetricCard({
   return (
     <div className="target-metric-card">
       <span>{title}</span>
-      <strong className="neutral">{value}</strong>
+      <strong className="neutral" style={{ wordBreak: "keep-all", overflowWrap: "anywhere" }}>
+        {value}
+      </strong>
       <em className="neutral">{subText}</em>
     </div>
   );
@@ -642,6 +644,44 @@ function formatNumber(value?: number | null) {
   if (value == null || Number.isNaN(value)) return "데이터 없음";
 
   return new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 2 }).format(value);
+}
+
+function formatMarketCap(value?: number | null) {
+  if (value == null || Number.isNaN(value)) return "데이터 없음";
+
+  const abs = Math.abs(value);
+
+  if (abs >= 1_0000_0000_0000) {
+    return `${formatCompactNumber(value / 1_0000_0000_0000)}조`;
+  }
+
+  if (abs >= 1_0000_0000) {
+    return `${formatCompactNumber(value / 1_0000_0000)}억`;
+  }
+
+  return formatNumber(value);
+}
+
+function formatShares(value?: number | null) {
+  if (value == null || Number.isNaN(value)) return "데이터 없음";
+
+  const abs = Math.abs(value);
+
+  if (abs >= 1_0000_0000) {
+    return `${formatCompactNumber(value / 1_0000_0000)}억주`;
+  }
+
+  if (abs >= 1_0000) {
+    return `${formatCompactNumber(value / 1_0000)}만주`;
+  }
+
+  return `${formatNumber(value)}주`;
+}
+
+function formatCompactNumber(value: number) {
+  return new Intl.NumberFormat("ko-KR", {
+    maximumFractionDigits: value >= 100 ? 0 : 1,
+  }).format(value);
 }
 
 function formatSignedNumber(value?: number | null) {
