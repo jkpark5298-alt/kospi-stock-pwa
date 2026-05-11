@@ -178,19 +178,19 @@ function KisAdjustmentDetailBox({
   return (
     <div className="score-weight-box">
       <div>
-        <span className="score-weight-title">KIS 蹂댁“?됯? 諛섏쁺 ?댁뿭</span>
-        <strong>{items.length > 0 ? `${items.length}嫄?諛섏쁺` : "諛섏쁺 ?댁뿭 ?놁쓬"}</strong>
+        <span className="score-weight-title">KIS 보조평가 반영 내역</span>
+        <strong>{items.length > 0 ? `${items.length}건 반영` : "반영 내역 없음"}</strong>
       </div>
       <p>
-        ?쒗닾 KIS ?щТ쨌諛몃쪟?먯씠?샕룹닔湲??곗씠?곕? 湲곗〈 ?먯닔 怨꾩궛??蹂댁“濡?諛섏쁺??
-        ?댁뿭?낅땲?? 湲곗〈 紐⑤뜽??怨쇰룄?섍쾶 ?붾뱾吏 ?딅룄濡??뚰룺 蹂댁젙?쇰줈 ?쒗븳?⑸땲??
+        한투 KIS 재무·밸류에이션·수급 데이터를 기존 점수 계산에 보조로 반영한
+        내역입니다. 기존 모델을 과도하게 흔들지 않도록 소폭 보정으로 제한합니다.
       </p>
       <button
         className="button secondary-button"
         type="button"
         onClick={onToggle}
       >
-        {isOpen ? "KIS 蹂댁“?됯? ?댁뿭 ?リ린" : "KIS 蹂댁“?됯? ?댁뿭 蹂닿린"}
+        {isOpen ? "KIS 보조평가 내역 닫기" : "KIS 보조평가 내역 보기"}
       </button>
 
       {isOpen ? (
@@ -198,15 +198,15 @@ function KisAdjustmentDetailBox({
           <div className="target-basis-adjustments" style={{ marginTop: 12 }}>
             {items.map((item) => (
               <p key={`${item.group}-${item.reason}`}>
-                <strong>{item.group}</strong> 쨌 {item.reason}
+                <strong>{item.group}</strong> · {item.reason}
               </p>
             ))}
           </div>
         ) : (
           <div className="target-basis-adjustments" style={{ marginTop: 12 }}>
             <p>
-              ?꾩옱 ?쒖떆??KIS 蹂댁“?됯? ?댁뿭???놁뒿?덈떎. 醫낅ぉ???ㅼ떆 遺꾩꽍?섍굅??KIS
-              ?곗씠?곌? ?뺤긽 議고쉶?섎㈃ 蹂댁“?됯? ?ъ쑀媛 ?쒖떆?⑸땲??
+              현재 표시할 KIS 보조평가 내역이 없습니다. 종목을 다시 분석하거나 KIS
+              데이터가 정상 조회되면 보조평가 사유가 표시됩니다.
             </p>
           </div>
         )
@@ -221,9 +221,9 @@ function getKisAdjustmentItems(score?: CompositeScore) {
   const signalReasons = score?.signalAgreement?.reasons ?? [];
 
   return [
-    ...extractKisReasons("?섍툒 蹂댁“", supplyReasons),
-    ...extractKisReasons("異붿젙 二쇨? 蹂댁“", targetReasons),
-    ...extractKisReasons("?좏샇 蹂댁“", signalReasons),
+    ...extractKisReasons("수급 보조", supplyReasons),
+    ...extractKisReasons("추정 주가 보조", targetReasons),
+    ...extractKisReasons("신호 보조", signalReasons),
   ];
 }
 
@@ -235,6 +235,7 @@ function extractKisReasons(group: string, reasons: string[]) {
       reason,
     }));
 }
+
 
 function ScorePartCard({
   title,
