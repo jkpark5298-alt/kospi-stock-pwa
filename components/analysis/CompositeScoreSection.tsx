@@ -189,8 +189,7 @@ function KisAdjustmentDetailBox({
         </strong>
       </div>
       <p>
-        한투 KIS 데이터를 점수에 소폭 반영한 내역입니다. 길게 설명하지 않고
-        핵심 영향만 요약합니다.
+        한투 KIS 데이터를 점수에 소폭 반영한 핵심 내역입니다.
       </p>
       <button
         className="button secondary-button"
@@ -202,13 +201,70 @@ function KisAdjustmentDetailBox({
 
       {isOpen ? (
         items.length > 0 ? (
-          <div className="target-grid" style={{ marginTop: 12 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
+              gap: 12,
+              marginTop: 12,
+            }}
+          >
             {items.map((item) => (
-              <div className="target-metric-card" key={`${item.group}-${item.title}-${item.delta}`}>
-                <span>{item.icon} {item.group}</span>
-                <strong className={item.tone}>{item.title}</strong>
-                <em className={item.tone}>{item.delta}</em>
-                <p className="notice-text" style={{ marginTop: 8 }}>
+              <div
+                key={`${item.group}-${item.title}-${item.delta}-${item.summary}`}
+                className="target-metric-card"
+                style={{
+                  minHeight: 128,
+                  padding: 18,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 6,
+                  justifyContent: "space-between",
+                }}
+              >
+                <span
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    whiteSpace: "nowrap",
+                    fontSize: 14,
+                  }}
+                >
+                  <span aria-hidden="true">{item.icon}</span>
+                  {item.group}
+                </span>
+                <strong
+                  className={item.tone}
+                  style={{
+                    fontSize: 28,
+                    lineHeight: 1.15,
+                    wordBreak: "keep-all",
+                  }}
+                >
+                  {item.title}
+                </strong>
+                <em
+                  className={item.tone}
+                  style={{
+                    fontSize: 15,
+                    fontStyle: "normal",
+                    fontWeight: 800,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {item.delta}
+                </em>
+                <p
+                  className="notice-text"
+                  style={{
+                    margin: 0,
+                    fontSize: 13,
+                    lineHeight: 1.45,
+                    wordBreak: "keep-all",
+                    overflowWrap: "break-word",
+                  }}
+                >
                   {item.summary}
                 </p>
               </div>
@@ -385,7 +441,7 @@ function summarizeKisReason(group: string, reason: string) {
       title: "가격 위치",
       delta: "참고",
       tone: "neutral" as const,
-      summary: "52주 고가·저가 기준 확인",
+      summary: "52주 고가·저가 확인",
     };
   }
 
@@ -395,7 +451,7 @@ function summarizeKisReason(group: string, reason: string) {
     title: "KIS 참고",
     delta: "참고",
     tone: "neutral" as const,
-    summary: reason.replace(/^KIS\s*/, "").slice(0, 28),
+    summary: reason.replace(/^KIS\s*/, "").slice(0, 24),
   };
 }
 
