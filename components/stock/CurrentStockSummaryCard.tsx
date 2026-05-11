@@ -12,6 +12,17 @@ type Props = {
   data: StockResponse | null;
 };
 
+type DailyTargetSnapshot = {
+  date: string;
+  symbol: string;
+  targetPrice: number;
+  basisPrice: number;
+  source: "first-query" | "current-query" | "manual";
+  savedAt: string;
+};
+
+const DAILY_TARGET_STORAGE_PREFIX = "kospi-daily-target";
+
 export default function CurrentStockSummaryCard({ data }: Props) {
   const range = data?.score?.targetPrice?.technicalTargetRange;
   const todayKey = useMemo(() => makeTodayKey(), []);
@@ -19,11 +30,14 @@ export default function CurrentStockSummaryCard({ data }: Props) {
     () => makeDailyTargetKey(data?.symbol, todayKey),
     [data?.symbol, todayKey],
   );
+
   const [dailyTarget, setDailyTarget] = useState<DailyTargetSnapshot | null>(null);
+  const [manualTargetInput, setManualTargetInput] = useState("");
 
   useEffect(() => {
     if (!range || !data?.symbol || typeof window === "undefined") {
       setDailyTarget(null);
+      setManualTargetInput("");
       return;
     }
 
@@ -31,6 +45,7 @@ export default function CurrentStockSummaryCard({ data }: Props) {
 
     if (stored) {
       setDailyTarget(stored);
+      setManualTargetInput(formatManualTargetInput(String(stored.targetPrice)));
       return;
     }
 
@@ -39,11 +54,13 @@ export default function CurrentStockSummaryCard({ data }: Props) {
       symbol: data.symbol,
       targetPrice: range.baseTarget,
       basisPrice: range.currentPrice,
+      source: "first-query",
       savedAt: new Date().toISOString(),
     };
 
     writeDailyTargetSnapshot(dailyTargetKey, next);
     setDailyTarget(next);
+    setManualTargetInput(formatManualTargetInput(String(next.targetPrice)));
   }, [dailyTargetKey, data?.symbol, range, todayKey]);
 
   const targetProgress =
@@ -68,7 +85,11 @@ export default function CurrentStockSummaryCard({ data }: Props) {
   const dailyUpsidePercent =
     dailyTarget && range && range.currentPrice > 0
       ? Number(
-          (((dailyTarget.targetPrice - range.currentPrice) / range.currentPrice) * 100).toFixed(2),
+          (
+            ((dailyTarget.targetPrice - range.currentPrice) /
+              range.currentPrice) *
+            100
+          ).toFixed(2),
         )
       : null;
 
@@ -77,6 +98,63 @@ export default function CurrentStockSummaryCard({ data }: Props) {
   const displayMeta = [displaySymbol, data?.exchange, data?.currency]
     .filter(Boolean)
     .join(" · ");
+
+  function handleSaveCurrentAsDailyTarget() {
+    if (!range || !data?.symbol) return;
+
+    const next: DailyTargetSnapshot = {
+      date: todayKey,
+      symbol: data.symbol,
+      targetPrice: range.baseTarget,
+      basisPrice: range.currentPrice,
+      source: "current-query",
+      savedAt: new Date().toISOString(),
+    };
+
+    writeDailyTargetSnapshot(dailyTargetKey, next);
+    setDailyTarget(next);
+    setManualTargetInput(formatManualTargetInput(String(next.targetPrice)));
+  }
+
+  function handleSaveManualDailyTarget() {
+    if (!range || !data?.symbol) return;
+
+    const parsed = parseManualTargetInput(manualTargetInput);
+
+    if (parsed == null || parsed <= 0) return;
+
+    const next: DailyTargetSnapshot = {
+      date: todayKey,
+      symbol: data.symbol,
+      targetPrice: parsed,
+      basisPrice: range.currentPrice,
+      source: "manual",
+      savedAt: new Date().toISOString(),
+    };
+
+    writeDailyTargetSnapshot(dailyTargetKey, next);
+    setDailyTarget(next);
+    setManualTargetInput(formatManualTargetInput(String(next.targetPrice)));
+  }
+
+  function handleResetDailyTarget() {
+    if (!range || !data?.symbol || typeof window === "undefined") return;
+
+    window.localStorage.removeItem(dailyTargetKey);
+
+    const next: DailyTargetSnapshot = {
+      date: todayKey,
+      symbol: data.symbol,
+      targetPrice: range.baseTarget,
+      basisPrice: range.currentPrice,
+      source: "first-query",
+      savedAt: new Date().toISOString(),
+    };
+
+    writeDailyTargetSnapshot(dailyTargetKey, next);
+    setDailyTarget(next);
+    setManualTargetInput(formatManualTargetInput(String(next.targetPrice)));
+  }
 
   return (
     <div className="card">
@@ -126,7 +204,9 @@ export default function CurrentStockSummaryCard({ data }: Props) {
 
         <MetricRow
           label="현재 조회 기준 목표가"
-          value={`${formatNumber(range?.baseTarget)} ${formatDailyTargetSuffix(dailyTarget)}`}
+          value={`${formatNumber(range?.baseTarget)} ${formatDailyTargetSuffix(
+            dailyTarget,
+          )}`}
         />
         <MetricRow
           label="현재 조회 기준 목표여력"
@@ -135,14 +215,14 @@ export default function CurrentStockSummaryCard({ data }: Props) {
           )}`}
         />
         <MetricRow
+          label="현재 조회 기준 목표 도달률"
+          value={formatTargetProgress(targetProgress)}
+        />
+        <MetricRow
           label="당일 기준 목표 도달률"
           value={`${formatTargetProgress(dailyTargetProgress)} · ${formatSignedNumber(
             dailyUpsidePrice,
           )} / ${formatUpside(dailyUpsidePercent)}`}
-        />
-        <MetricRow
-          label="현재 조회 기준 목표 도달률"
-          value={formatTargetProgress(targetProgress)}
         />
         <MetricRow
           label="위험 기준선"
@@ -152,24 +232,91 @@ export default function CurrentStockSummaryCard({ data }: Props) {
         />
       </div>
 
+      <div className="target-basis-box" style={{ marginTop: 16 }}>
+        <div className="target-basis-header">
+          <span>당일 기준 목표가 설정</span>
+          <strong>{formatDailyTargetSource(dailyTarget)}</strong>
+        </div>
+
+        <p className="target-basis-summary">
+          당일 기준 목표가: {formatNumber(dailyTarget?.targetPrice)} · 저장 기준가:{" "}
+          {formatNumber(dailyTarget?.basisPrice)} · 저장 시각:{" "}
+          {formatDateTime(dailyTarget?.savedAt)}
+        </p>
+
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            flexWrap: "wrap",
+            alignItems: "center",
+            marginTop: 12,
+          }}
+        >
+          <input
+            className="form-control"
+            value={manualTargetInput}
+            inputMode="decimal"
+            onChange={(event) =>
+              setManualTargetInput(formatManualTargetInput(event.target.value))
+            }
+            placeholder="직접 입력 예: 288,000"
+            style={{ maxWidth: 220 }}
+          />
+          <button
+            className="button secondary-button"
+            type="button"
+            onClick={handleSaveManualDailyTarget}
+            disabled={!range}
+          >
+            직접 입력 저장
+          </button>
+          <button
+            className="button secondary-button"
+            type="button"
+            onClick={handleSaveCurrentAsDailyTarget}
+            disabled={!range}
+          >
+            현재 조회 목표가로 저장
+          </button>
+          <button
+            className="button secondary-button"
+            type="button"
+            onClick={handleResetDailyTarget}
+            disabled={!range}
+          >
+            오늘 기준 초기화
+          </button>
+        </div>
+
+        <div className="target-basis-adjustments">
+          <p>
+            첫 조회 시 당일 기준 목표가가 자동 저장됩니다. 이후에는 직접 입력하거나
+            현재 조회 목표가로 다시 저장할 수 있습니다.
+          </p>
+          <p>
+            현재 조회 기준 목표가는 조회할 때마다 바뀔 수 있고, 당일 기준 목표가는
+            같은 날짜의 목표 도달률 평가 기준으로 유지됩니다.
+          </p>
+        </div>
+      </div>
+
       <p className="notice-text">
-        현재 조회 기준 목표가는 조회할 때마다 최신 현재가와 지표로 다시 계산됩니다.
-        괄호 안의 당일 기준 목표가는 해당 종목의 오늘 첫 조회 목표가로 저장되어
-        같은 날짜에는 목표 도달률 평가 기준으로 유지됩니다.
+        현재 조회 기준 목표가는 최신 현재가와 지표로 다시 계산됩니다. 괄호 안의
+        당일 기준 목표가는 오늘 평가 기준으로 저장된 목표가입니다.
       </p>
     </div>
   );
 }
 
-type DailyTargetSnapshot = {
-  date: string;
-  symbol: string;
-  targetPrice: number;
-  basisPrice: number;
-  savedAt: string;
-};
-
-const DAILY_TARGET_STORAGE_PREFIX = "kospi-daily-target";
+function MetricRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="metric-row">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
 
 function makeTodayKey() {
   return new Intl.DateTimeFormat("sv-SE", {
@@ -181,7 +328,9 @@ function makeTodayKey() {
 }
 
 function makeDailyTargetKey(symbol?: string | null, todayKey = makeTodayKey()) {
-  return `${DAILY_TARGET_STORAGE_PREFIX}:${todayKey}:${(symbol || "").trim().toUpperCase()}`;
+  return `${DAILY_TARGET_STORAGE_PREFIX}:${todayKey}:${(symbol || "")
+    .trim()
+    .toUpperCase()}`;
 }
 
 function readDailyTargetSnapshot(key: string): DailyTargetSnapshot | null {
@@ -189,6 +338,7 @@ function readDailyTargetSnapshot(key: string): DailyTargetSnapshot | null {
 
   try {
     const raw = window.localStorage.getItem(key);
+
     if (!raw) return null;
 
     const parsed = JSON.parse(raw) as DailyTargetSnapshot;
@@ -219,16 +369,47 @@ function writeDailyTargetSnapshot(key: string, snapshot: DailyTargetSnapshot) {
 
 function formatDailyTargetSuffix(snapshot?: DailyTargetSnapshot | null) {
   if (!snapshot) return "(당일 기준 목표가 데이터 없음)";
+
   return `(당일 기준 목표가 ${formatNumber(snapshot.targetPrice)})`;
 }
 
-function MetricRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="metric-row">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  );
+function formatDailyTargetSource(snapshot?: DailyTargetSnapshot | null) {
+  if (!snapshot) return "당일 기준 목표가 대기";
+
+  if (snapshot.source === "manual") return "직접 입력 기준";
+  if (snapshot.source === "current-query") return "현재 조회 목표가 저장 기준";
+  return "오늘 첫 조회 기준";
+}
+
+function formatManualTargetInput(value: string) {
+  const raw = value.replace(/,/g, "").replace(/\s/g, "");
+
+  if (!raw) return "";
+
+  const cleaned = raw.replace(/[^0-9.]/g, "");
+
+  if (!cleaned) return "";
+
+  const dotIndex = cleaned.indexOf(".");
+  const integerPart = dotIndex >= 0 ? cleaned.slice(0, dotIndex) : cleaned;
+  const decimalPart =
+    dotIndex >= 0 ? cleaned.slice(dotIndex + 1).replace(/\./g, "") : "";
+
+  const formattedInteger = integerPart
+    ? Number(integerPart).toLocaleString("en-US")
+    : "0";
+
+  if (dotIndex >= 0) {
+    return `${formattedInteger}.${decimalPart}`;
+  }
+
+  return formattedInteger;
+}
+
+function parseManualTargetInput(value: string) {
+  const parsed = Number(value.replace(/[\s,]/g, ""));
+
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function formatTargetProgress(value?: number | null) {
@@ -239,4 +420,20 @@ function formatTargetProgress(value?: number | null) {
 function formatUpside(value?: number | null) {
   if (value == null || Number.isNaN(value)) return "데이터 없음";
   return `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return "저장 전";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return value;
+
+  return new Intl.DateTimeFormat("ko-KR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
 }
