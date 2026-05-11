@@ -1,4 +1,4 @@
-export type QuantChartRow = {
+﻿export type QuantChartRow = {
   date: string;
   close: number | null;
   sma20?: number | null;
@@ -854,7 +854,7 @@ function calculateTargetPart(
       score: 3,
       maxScore: 8,
       label: "데이터 대기",
-      reasons: ["목표가 데이터가 없어 보수적으로 반영했습니다."],
+      reasons: ["추정 주가 데이터가 없어 보수적으로 반영했습니다."],
     };
   }
 
@@ -868,26 +868,26 @@ function calculateTargetPart(
 
   if (upside >= 12) {
     score += 8;
-    reasons.push("기준 목표가 대비 상승 여력이 큽니다.");
+    reasons.push("기준 추정 주가 대비 추정 상승 여력이 큽니다.");
   } else if (upside >= 8) {
     score += 6;
-    reasons.push("기준 목표가 대비 상승 여력이 양호합니다.");
+    reasons.push("기준 추정 주가 대비 추정 상승 여력이 양호합니다.");
   } else if (upside >= 5) {
     score += 4;
-    reasons.push("기준 목표가 대비 상승 여력이 보통입니다.");
+    reasons.push("기준 추정 주가 대비 추정 상승 여력이 보통입니다.");
   } else if (upside >= 2) {
     score += 2;
-    reasons.push("기준 목표가 대비 상승 여력이 작습니다.");
+    reasons.push("기준 추정 주가 대비 추정 상승 여력이 작습니다.");
   } else if (upside > 0) {
     score += 1;
-    reasons.push("기준 목표가 대비 상승 여력이 매우 작습니다.");
+    reasons.push("기준 추정 주가 대비 추정 상승 여력이 매우 작습니다.");
   } else {
-    reasons.push("현재가가 기준 목표가 이상이어서 목표여력은 낮습니다.");
+    reasons.push("현재가가 기준 추정 주가 이상이어서 추정 괴리율은 낮습니다.");
   }
 
   if (targetProgress != null && targetProgress >= 97) {
     score -= 1;
-    reasons.push("목표 도달률이 높아 추격 주의가 필요합니다.");
+    reasons.push("추정 주가 도달률이 높아 추격 주의가 필요합니다.");
   }
 
   const finalScore = clampPartScore(score, 8);
@@ -991,15 +991,15 @@ function makeQuantSummary({
   if (flags.tradingValuePositive) positives.push("거래대금");
   if (flags.supplyPositive) positives.push("수급");
   if (valuation.score >= 10) positives.push("밸류에이션");
-  if (target.score >= 5) positives.push("목표여력");
+  if (target.score >= 5) positives.push("추정 괴리율");
   if (flags.earningsGrowthPositive) positives.push("실적 성장");
 
   if (flags.nearHigh52w) cautions.push("52주 고가 근접");
   if (flags.valuationBurden) cautions.push("PER/PBR 부담");
-  if (flags.targetAlmostReached) cautions.push("목표가 근접");
+  if (flags.targetAlmostReached) cautions.push("추정 주가 근접");
   if (flags.volatilityHigh) cautions.push("변동성 확대");
   if (risk.score <= 4) cautions.push("리스크");
-  if (target.score <= 2) cautions.push("목표여력 부족");
+  if (target.score <= 2) cautions.push("추정 괴리율 부족");
 
   if (earningsGrowth.maxScore === 0) {
     cautions.push("실적 성장 데이터 대기");

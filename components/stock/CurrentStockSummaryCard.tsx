@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import type { StockResponse } from "../../types/stock";
@@ -194,7 +194,7 @@ export default function CurrentStockSummaryCard({ data }: Props) {
           }
         />
         <MetricRow
-          label="목표여력 점수"
+          label="추정 괴리율 점수"
           value={
             data?.score?.targetPrice?.score != null
               ? `${data.score.targetPrice.score} / 100 · ${data.score.targetPrice.label}`
@@ -203,23 +203,23 @@ export default function CurrentStockSummaryCard({ data }: Props) {
         />
 
         <MetricRow
-          label="현재 조회 기준 목표가"
+          label="현재 조회 기준 추정 주가"
           value={`${formatNumber(range?.baseTarget)} ${formatDailyTargetSuffix(
             dailyTarget,
           )}`}
         />
         <MetricRow
-          label="현재 조회 기준 목표여력"
+          label="현재 조회 기준 추정 괴리율"
           value={`${formatSignedNumber(upsidePrice)} / ${formatUpside(
             range?.baseUpsidePercent,
           )}`}
         />
         <MetricRow
-          label="현재 조회 기준 목표 도달률"
+          label="현재 조회 기준 추정 주가 도달률"
           value={formatTargetProgress(targetProgress)}
         />
         <MetricRow
-          label="당일 기준 목표 도달률"
+          label="당일 기준 추정 주가 도달률"
           value={`${formatTargetProgress(dailyTargetProgress)} · ${formatSignedNumber(
             dailyUpsidePrice,
           )} / ${formatUpside(dailyUpsidePercent)}`}
@@ -234,12 +234,12 @@ export default function CurrentStockSummaryCard({ data }: Props) {
 
       <div className="target-basis-box" style={{ marginTop: 16 }}>
         <div className="target-basis-header">
-          <span>당일 기준 목표가 설정</span>
+          <span>당일 기준 추정 주가 설정</span>
           <strong>{formatDailyTargetSource(dailyTarget)}</strong>
         </div>
 
         <p className="target-basis-summary">
-          당일 기준 목표가: {formatNumber(dailyTarget?.targetPrice)} · 저장 기준가:{" "}
+          당일 기준 추정 주가: {formatNumber(dailyTarget?.targetPrice)} · 저장 기준가:{" "}
           {formatNumber(dailyTarget?.basisPrice)} · 저장 시각:{" "}
           {formatDateTime(dailyTarget?.savedAt)}
         </p>
@@ -291,19 +291,19 @@ export default function CurrentStockSummaryCard({ data }: Props) {
 
         <div className="target-basis-adjustments">
           <p>
-            첫 조회 시 당일 기준 목표가가 자동 저장됩니다. 이후에는 직접 입력하거나
+            첫 조회 시 당일 기준 추정 주가가 자동 저장됩니다. 이후에는 직접 입력하거나
             현재 조회 목표가로 다시 저장할 수 있습니다.
           </p>
           <p>
-            현재 조회 기준 목표가는 조회할 때마다 바뀔 수 있고, 당일 기준 목표가는
-            같은 날짜의 목표 도달률 평가 기준으로 유지됩니다.
+            현재 조회 기준 추정 주가는 조회할 때마다 바뀔 수 있고, 당일 기준 추정 주가는
+            같은 날짜의 추정 주가 도달률 평가 기준으로 유지됩니다.
           </p>
         </div>
       </div>
 
       <p className="notice-text">
-        현재 조회 기준 목표가는 최신 현재가와 지표로 다시 계산됩니다. 괄호 안의
-        당일 기준 목표가는 오늘 평가 기준으로 저장된 목표가입니다.
+        현재 조회 기준 추정 주가는 최신 현재가와 지표로 다시 계산됩니다. 괄호 안의
+        당일 기준 추정 주가는 오늘 평가 기준으로 저장된 목표가입니다.
       </p>
     </div>
   );
@@ -368,13 +368,13 @@ function writeDailyTargetSnapshot(key: string, snapshot: DailyTargetSnapshot) {
 }
 
 function formatDailyTargetSuffix(snapshot?: DailyTargetSnapshot | null) {
-  if (!snapshot) return "(당일 기준 목표가 데이터 없음)";
+  if (!snapshot) return "(당일 기준 추정 주가 데이터 없음)";
 
-  return `(당일 기준 목표가 ${formatNumber(snapshot.targetPrice)})`;
+  return `(당일 기준 추정 주가 ${formatNumber(snapshot.targetPrice)})`;
 }
 
 function formatDailyTargetSource(snapshot?: DailyTargetSnapshot | null) {
-  if (!snapshot) return "당일 기준 목표가 대기";
+  if (!snapshot) return "당일 기준 추정 주가 대기";
 
   if (snapshot.source === "manual") return "직접 입력 기준";
   if (snapshot.source === "current-query") return "현재 조회 목표가 저장 기준";

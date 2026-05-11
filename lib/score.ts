@@ -1,4 +1,4 @@
-export type ScoreChartRow = {
+﻿export type ScoreChartRow = {
   date: string;
   close: number | null;
   sma20?: number | null;
@@ -281,14 +281,14 @@ export function calculateCompositeScore({
     weightAdjustments,
     targetPricePlan: {
       status: targetPrice.available
-        ? "기술 목표가, 밸류에이션 목표가, 퀀트 보정, 신호 일치도를 반영한 최종 기준목표가를 계산했습니다."
-        : "목표가 자동 산정은 데이터가 충분할 때 표시됩니다.",
+        ? "기술 추정 주가, 밸류에이션 추정 주가, 퀀트 보정, 신호 일치도를 반영한 최종 추정 주가를 계산했습니다."
+        : "추정 주가 자동 산정은 데이터가 충분할 때 표시됩니다.",
       nextSteps: [
-        "보수적·기본·공격적 목표가 모드 화면 선택 연결",
+        "보수적·기본·공격적 추정 주가 모드 화면 선택 연결",
         "업종 평균 PER/PBR 확보 시 밸류에이션 보정 고도화",
         "예상 순이익·영업이익·EPS 성장률 데이터 연결",
-        "컨센서스 목표가 데이터 확보 시 반영",
-        "분석 기록 저장 후 목표가 적중률 평가",
+        "컨센서스 추정 주가 데이터 확보 시 반영",
+        "분석 기록 저장 후 추정 주가 적중률 평가",
         "시장 상황 지표를 연결해 자동 모드 추천",
       ],
     },
@@ -597,7 +597,7 @@ export function calculateTargetPriceScore(
       score: null,
       label: "데이터 대기",
       reasons: [
-        "목표가 참고 범위를 계산할 차트 데이터가 부족합니다.",
+        "추정 주가 참고 범위를 계산할 차트 데이터가 부족합니다.",
         "현재가, 최근 고점, 볼린저 밴드, 변동성 데이터가 필요합니다.",
       ],
       technicalTargetRange: null,
@@ -648,23 +648,23 @@ export function calculateTargetPriceScore(
   let score = scoreTargetUpside(finalTargetRange.baseUpsidePercent);
   const reasons: string[] = [];
 
-  reasons.push(`최종 기준목표가 상승 여력은 약 ${finalTargetRange.baseUpsidePercent.toFixed(1)}%입니다.`);
-  reasons.push(`현재 목표가 모드는 ${getTargetModeLabel(targetMode)}입니다.`);
+  reasons.push(`최종 추정 주가 추정 상승 여력은 약 ${finalTargetRange.baseUpsidePercent.toFixed(1)}%입니다.`);
+  reasons.push(`현재 추정 주가 모드는 ${getTargetModeLabel(targetMode)}입니다.`);
 
   if ((supply.score ?? 0) >= 80) {
     score += 5;
-    reasons.push("수급 점수가 강해 목표가 신뢰도에 소폭 가산했습니다.");
+    reasons.push("수급 점수가 강해 추정 주가 신뢰도에 소폭 가산했습니다.");
   } else if (supply.available && (supply.score ?? 0) < 50) {
     score -= 10;
-    reasons.push("수급 점수가 낮아 목표가 신뢰도에 감점을 적용했습니다.");
+    reasons.push("수급 점수가 낮아 추정 주가 신뢰도에 감점을 적용했습니다.");
   }
 
   if ((volume.score ?? 0) >= 65) {
     score += 5;
-    reasons.push("거래량·거래대금 점수가 긍정적이어서 목표가 신뢰도에 소폭 가산했습니다.");
+    reasons.push("거래량·거래대금 점수가 긍정적이어서 추정 주가 신뢰도에 소폭 가산했습니다.");
   } else if (volume.available && (volume.score ?? 0) < 50) {
     score -= 10;
-    reasons.push("거래량·거래대금 점수가 낮아 목표가 신뢰도에 감점을 적용했습니다.");
+    reasons.push("거래량·거래대금 점수가 낮아 추정 주가 신뢰도에 감점을 적용했습니다.");
   }
 
   if (finalTargetRange.riskDownsidePercent > -3) {
@@ -673,14 +673,14 @@ export function calculateTargetPriceScore(
   }
 
   if (valuationTargetRange?.valuationTarget != null) {
-    reasons.push("EPS/BPS 기반 밸류에이션 목표가를 함께 반영했습니다.");
+    reasons.push("EPS/BPS 기반 밸류에이션 추정 주가를 함께 반영했습니다.");
   } else {
-    reasons.push("밸류에이션 목표가 데이터가 부족해 기술 목표가 중심으로 계산했습니다.");
+    reasons.push("밸류에이션 추정 주가 데이터가 부족해 기술 추정 주가 중심으로 계산했습니다.");
   }
 
   if (selectedModeResult?.quantAdjustment.totalAdjustmentPercent) {
     reasons.push(
-      `퀀트 보정 ${selectedModeResult.quantAdjustment.totalAdjustmentPercent.toFixed(1)}%가 최종 기준목표가에 반영되었습니다.`,
+      `퀀트 보정 ${selectedModeResult.quantAdjustment.totalAdjustmentPercent.toFixed(1)}%가 최종 추정 주가에 반영되었습니다.`,
     );
   }
 
@@ -736,8 +736,8 @@ function calculateSignalAgreementScore({
   }
 
   if (targetPrice.available) {
-    if ((targetPrice.score ?? 0) >= 65) positiveSignals.push("목표여력");
-    if ((targetPrice.score ?? 0) < 50) weakSignals.push("목표여력");
+    if ((targetPrice.score ?? 0) >= 65) positiveSignals.push("추정 괴리율");
+    if ((targetPrice.score ?? 0) < 50) weakSignals.push("추정 괴리율");
   }
 
   if (quant?.available && quant.total != null) {
@@ -789,7 +789,7 @@ function calculateSignalAgreementScore({
 
   if (quant?.flags?.nearHigh52w || quant?.flags?.targetAlmostReached) {
     score -= 5;
-    reasons.push("52주 고가 근접 또는 목표가 근접 신호가 있어 추격 주의가 필요합니다.");
+    reasons.push("52주 고가 근접 또는 추정 주가 근접 신호가 있어 추격 주의가 필요합니다.");
   }
 
   if (quant?.flags?.tradingValuePositive) {
@@ -1117,12 +1117,12 @@ function calculateWeightedBaseTarget({
       weight: 0.3,
     },
     {
-      label: "보수적 기술 목표가",
+      label: "보수적 기술 추정 주가",
       value: roundPrice(conservativeTarget),
       weight: 0.25,
     },
     {
-      label: "변동성 상단 목표가",
+      label: "변동성 상단 추정 주가",
       value: roundPrice(volatilityUpper),
       weight: 0.25,
     },
@@ -1136,7 +1136,7 @@ function calculateWeightedBaseTarget({
     });
   } else {
     candidates.push({
-      label: "볼린저밴드 대체 목표가",
+      label: "볼린저밴드 대체 추정 주가",
       value: roundPrice(currentPrice * 1.03),
       weight: 0.2,
     });
@@ -1148,27 +1148,27 @@ function calculateWeightedBaseTarget({
     totalWeight;
 
   const adjustments: string[] = [
-    "기술 목표가는 최근 고점, 볼린저밴드, 변동성 상단을 가중 평균해 계산했습니다.",
+    "기술 추정 주가는 최근 고점, 볼린저밴드, 변동성 상단을 가중 평균해 계산했습니다.",
   ];
 
   if ((technicalScore ?? 0) >= 70) {
-    adjustments.push("기술 점수가 강해 기준 목표가 신뢰도를 높게 봅니다.");
+    adjustments.push("기술 점수가 강해 기준 추정 주가 신뢰도를 높게 봅니다.");
   }
 
   if ((volumeScore ?? 0) >= 65) {
-    adjustments.push("거래량·거래대금이 양호해 목표가 신뢰도에 긍정적입니다.");
+    adjustments.push("거래량·거래대금이 양호해 추정 주가 신뢰도에 긍정적입니다.");
   }
 
   if ((supplyScore ?? 0) >= 70) {
-    adjustments.push("수급이 양호해 목표가 신뢰도에 긍정적입니다.");
+    adjustments.push("수급이 양호해 추정 주가 신뢰도에 긍정적입니다.");
   }
 
   return {
     target: roundPrice(weightedTarget),
     basis: {
-      method: "기술 목표가 가중 평균",
+      method: "기술 추정 주가 가중 평균",
       summary:
-        "기술 목표가는 최근 고점, 볼린저밴드, 변동성 상단, 보수적 목표가를 가중 평균해 계산했습니다.",
+        "기술 추정 주가는 최근 고점, 볼린저밴드, 변동성 상단, 보수적 목표가를 가중 평균해 계산했습니다.",
       candidates,
       adjustments,
     },
@@ -1199,14 +1199,14 @@ function calculateValuationTargetRange(
     epsTarget = roundPrice(eps * per * perAdjustment);
     reasons.push(`EPS × 현재 PER × PER 보정계수 ${perAdjustment.toFixed(2)}를 반영했습니다.`);
   } else {
-    reasons.push("EPS 또는 PER 데이터가 부족해 EPS 기준 목표가는 제외했습니다.");
+    reasons.push("EPS 또는 PER 데이터가 부족해 EPS 기준 추정 주가는 제외했습니다.");
   }
 
   if (bps != null && bps > 0 && pbr != null && pbr > 0 && pbrAdjustment != null) {
     bpsTarget = roundPrice(bps * pbr * pbrAdjustment);
     reasons.push(`BPS × 현재 PBR × PBR 보정계수 ${pbrAdjustment.toFixed(2)}를 반영했습니다.`);
   } else {
-    reasons.push("BPS 또는 PBR 데이터가 부족해 BPS 기준 목표가는 제외했습니다.");
+    reasons.push("BPS 또는 PBR 데이터가 부족해 BPS 기준 추정 주가는 제외했습니다.");
   }
 
   const targets = [epsTarget, bpsTarget].filter(
@@ -1220,7 +1220,7 @@ function calculateValuationTargetRange(
       valuationTarget: null,
       perAdjustment,
       pbrAdjustment,
-      method: "밸류에이션 목표가 계산 대기",
+      method: "밸류에이션 추정 주가 계산 대기",
       reasons,
     };
   }
@@ -1232,7 +1232,7 @@ function calculateValuationTargetRange(
   const cappedValuationTarget = clampValuationTarget(valuationTarget, currentPrice);
 
   if (cappedValuationTarget !== valuationTarget) {
-    reasons.push("밸류에이션 목표가가 현재가 대비 과도하게 벌어지지 않도록 안정화했습니다.");
+    reasons.push("밸류에이션 추정 주가가 현재가 대비 과도하게 벌어지지 않도록 안정화했습니다.");
   }
 
   return {
@@ -1405,7 +1405,7 @@ function calculateQuantTargetAdjustment({
 
   if (targetAlmostReached) {
     riskAdjustmentPercent -= mode === "conservative" ? 3 : 2;
-    reasons.push("기술 목표가에 이미 근접해 목표가 근접 보정을 적용했습니다.");
+    reasons.push("기술 추정 주가에 이미 근접해 추정 주가 근접 보정을 적용했습니다.");
   }
 
   if (valuationBurden) {
@@ -1420,7 +1420,7 @@ function calculateQuantTargetAdjustment({
 
   if (valuationTargetRange?.valuationTarget != null && valuationTargetRange.valuationTarget < currentPrice) {
     riskAdjustmentPercent -= mode === "conservative" ? 2 : 1;
-    reasons.push("밸류에이션 목표가가 현재가보다 낮아 보수 보정을 적용했습니다.");
+    reasons.push("밸류에이션 추정 주가가 현재가보다 낮아 보수 보정을 적용했습니다.");
   }
 
   if ((supply.score ?? 0) >= 80 || flags.supplyPositive) {
@@ -1509,21 +1509,21 @@ function makeFinalTargetBasis({
 
   if (selected) {
     candidates.push({
-      label: `기술 목표가 반영 (${getTargetModeLabel(selected.mode)})`,
+      label: `기술 추정 주가 반영 (${getTargetModeLabel(selected.mode)})`,
       value: roundPrice(selected.preAdjustmentTarget),
       weight: selected.technicalWeight,
     });
 
     if (valuationTargetRange?.valuationTarget != null) {
       candidates.push({
-        label: "밸류에이션 목표가",
+        label: "밸류에이션 추정 주가",
         value: roundPrice(valuationTargetRange.valuationTarget),
         weight: selected.valuationWeight,
       });
     }
 
     candidates.push({
-      label: "최종 기준목표가",
+      label: "최종 추정 주가",
       value: roundPrice(selected.finalTarget),
       weight: 1,
     });
@@ -1535,14 +1535,14 @@ function makeFinalTargetBasis({
     ...technicalBasis.adjustments,
     ...(valuationTargetRange?.reasons ?? []),
     ...(selected?.quantAdjustment.reasons ?? []),
-    `선택된 목표가 모드는 ${selected ? getTargetModeLabel(selected.mode) : "기술 기준"}입니다.`,
-    `제공 가능한 목표가 모드는 ${targetModes.map((mode) => getTargetModeLabel(mode.mode)).join(", ")}입니다.`,
+    `선택된 추정 주가 모드는 ${selected ? getTargetModeLabel(selected.mode) : "기술 기준"}입니다.`,
+    `제공 가능한 추정 주가 모드는 ${targetModes.map((mode) => getTargetModeLabel(mode.mode)).join(", ")}입니다.`,
   ];
 
   return {
     method: "기술·밸류에이션·퀀트 보정 목표가",
     summary:
-      "최종 기준목표가는 기술 목표가와 밸류에이션 목표가를 모드별 비중으로 결합한 뒤 퀀트 리스크 보정을 적용해 계산했습니다.",
+      "최종 추정 주가는 기술 추정 주가와 밸류에이션 추정 주가를 모드별 비중으로 결합한 뒤 퀀트 리스크 보정을 적용해 계산했습니다.",
     candidates,
     adjustments,
   };
@@ -1598,20 +1598,20 @@ function makeScoreComment({
   if ((technical.score ?? 0) >= 70) strongParts.push("기술");
   if ((volume.score ?? 0) >= 70) strongParts.push("거래량·거래대금");
   if ((supply.score ?? 0) >= 70) strongParts.push("수급");
-  if ((targetPrice.score ?? 0) >= 70) strongParts.push("목표여력");
+  if ((targetPrice.score ?? 0) >= 70) strongParts.push("추정 괴리율");
   if ((signalAgreement.score ?? 0) >= 70) strongParts.push("신호 일치도");
   if ((earningsGrowth.score ?? 0) >= 70) strongParts.push("실적 성장");
 
   if (technical.available && (technical.score ?? 0) < 50) weakParts.push("기술");
   if (volume.available && (volume.score ?? 0) < 50) weakParts.push("거래량·거래대금");
   if (supply.available && (supply.score ?? 0) < 50) weakParts.push("수급");
-  if (targetPrice.available && (targetPrice.score ?? 0) < 50) weakParts.push("목표여력");
+  if (targetPrice.available && (targetPrice.score ?? 0) < 50) weakParts.push("추정 괴리율");
   if (signalAgreement.available && (signalAgreement.score ?? 0) < 50) weakParts.push("신호 일치도");
   if (earningsGrowth.available && (earningsGrowth.score ?? 0) < 50) weakParts.push("실적 성장");
 
   const targetMessage = targetPrice.available
-    ? " 목표가 참고 범위는 기술·밸류에이션·퀀트 보정 기준입니다."
-    : " 목표가 데이터는 아직 제외하고 계산했습니다.";
+    ? " 추정 주가 참고 범위는 기술·밸류에이션·퀀트 보정 기준입니다."
+    : " 추정 주가 데이터는 아직 제외하고 계산했습니다.";
 
   const agreementMessage = signalAgreement.available
     ? " 신호 일치도는 기술·거래·수급·퀀트 방향이 얼마나 맞는지 반영합니다."

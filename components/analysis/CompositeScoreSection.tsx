@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, type ReactNode } from "react";
 import type { CompositeScore, ScorePart, ScoreWeights } from "../../types/stock";
@@ -24,7 +24,7 @@ export default function CompositeScoreSection({ score }: Props) {
           <div>
             <SectionTitleSmall>종합 신뢰도 점수</SectionTitleSmall>
             <p className="score-subtitle">
-              기술·거래량·거래대금·수급·목표여력·신호 일치도·실적 성장을
+              기술·거래량·거래대금·수급·추정 괴리율·신호 일치도·실적 성장을
               합산해 현재 심리 구간과 분석 신뢰도를 판단합니다. 실적 성장
               데이터가 없으면 해당 가중치는 제외하고 나머지 항목에 재분배합니다.
             </p>
@@ -32,8 +32,8 @@ export default function CompositeScoreSection({ score }: Props) {
 
           <div className="score-mode-badge">
             {score?.targetPrice?.available
-              ? "목표여력 반영"
-              : "목표여력 대기"}
+              ? "추정 괴리율 반영"
+              : "추정 괴리율 대기"}
           </div>
         </div>
 
@@ -53,7 +53,7 @@ export default function CompositeScoreSection({ score }: Props) {
             <ScorePartCard title="기술 점수" part={score?.technical} />
             <ScorePartCard title="거래량·거래대금 점수" part={score?.volume} />
             <ScorePartCard title="수급 점수" part={score?.supply} />
-            <ScorePartCard title="목표여력 점수" part={score?.targetPrice} />
+            <ScorePartCard title="추정 괴리율 점수" part={score?.targetPrice} />
             <ScorePartCard title="신호 일치도" part={signalAgreement} />
             <ScorePartCard
               title="실적 성장"
@@ -95,10 +95,10 @@ export default function CompositeScoreSection({ score }: Props) {
         </div>
 
         <div className="target-plan-box">
-          <span>향후 목표가 자동 산정 구조</span>
+          <span>향후 추정 주가 자동 산정 구조</span>
           <p>
             {score?.targetPricePlan?.status ||
-              "목표가 참고 범위는 분석 실행 후 표시됩니다."}
+              "추정 주가 참고 범위는 분석 실행 후 표시됩니다."}
           </p>
         </div>
       </Card>
@@ -220,7 +220,7 @@ function formatAppliedWeights(weights?: Partial<ScoreWeights>) {
     ["technical", "기술"],
     ["volume", "거래량"],
     ["supply", "수급"],
-    ["targetPrice", "목표여력"],
+    ["targetPrice", "추정 괴리율"],
     ["signalAgreement", "신호일치도"],
     ["earningsGrowth", "실적성장"],
   ];

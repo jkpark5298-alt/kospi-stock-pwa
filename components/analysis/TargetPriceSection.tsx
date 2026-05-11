@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import type { ReactNode } from "react";
 import type { CompositeScore, TargetBasis } from "../../types/stock";
@@ -26,7 +26,7 @@ export default function TargetPriceSection({ score, lastFetchedAt }: Props) {
       <Card>
         <div className="target-header">
           <div>
-            <SectionTitleSmall>목표가 참고 범위</SectionTitleSmall>
+            <SectionTitleSmall>추정 주가 참고 범위</SectionTitleSmall>
             <p className="target-subtitle">
               현재 조회 시점의 가격을 기준으로 보수·기준·공격 목표가와
               위험선을 계산합니다. 이 값은 증권사 목표주가가 아니라
@@ -34,7 +34,7 @@ export default function TargetPriceSection({ score, lastFetchedAt }: Props) {
             </p>
           </div>
           <div className={`target-badge ${range ? "available" : "unavailable"}`}>
-            {range ? "현재 조회 기준 목표가" : "목표가 대기"}
+            {range ? "현재 조회 기준 추정 주가" : "추정 주가 대기"}
           </div>
         </div>
 
@@ -48,19 +48,19 @@ export default function TargetPriceSection({ score, lastFetchedAt }: Props) {
           <TargetMetricCard
             title="기준 현재가"
             value={formatNumber(range?.currentPrice)}
-            subText="목표가 산정에 사용한 조회 시점 가격"
+            subText="추정 주가 산정에 사용한 조회 시점 가격"
             tone="neutral"
           />
           <TargetMetricCard
-            title="기준 목표가"
+            title="기준 추정 주가"
             value={formatNumber(range?.baseTarget)}
-            subText={`현재가 대비 목표여력 ${formatUpside(range?.baseUpsidePercent)}`}
+            subText={`현재가 대비 추정 괴리율 ${formatUpside(range?.baseUpsidePercent)}`}
             tone={getTargetTone(range?.baseUpsidePercent)}
           />
           <TargetMetricCard
-            title="목표 도달률"
+            title="추정 주가 도달률"
             value={formatTargetProgress(targetProgress)}
-            subText="기준 현재가 / 기준 목표가"
+            subText="기준 현재가 / 기준 추정 주가"
             tone={getTargetProgressTone(targetProgress)}
           />
           <TargetMetricCard
@@ -85,7 +85,7 @@ export default function TargetPriceSection({ score, lastFetchedAt }: Props) {
         <TargetBasisBox basis={basis} />
 
         <p className="notice-text">
-          기준 목표가는 현재 조회 시점의 가격과 최근 지표를 바탕으로 다시
+          기준 추정 주가는 현재 조회 시점의 가격과 최근 지표를 바탕으로 다시
           계산됩니다. 실제 투자 판단에는 시장 상황, 실적 발표, 공시, 수급 변화,
           손절 기준을 함께 확인해야 합니다.
         </p>
@@ -107,16 +107,16 @@ function TargetBasisMeta({
     <div className="target-basis-box" style={{ marginBottom: 16 }}>
       <div className="target-basis-header">
         <span>산정 기준</span>
-        <strong>{hasRange ? "현재 조회 시점 기준" : "목표가 산정 대기"}</strong>
+        <strong>{hasRange ? "현재 조회 시점 기준" : "추정 주가 산정 대기"}</strong>
       </div>
       <p className="target-basis-summary">
         조회 시각: {formatDateTime(lastFetchedAt)} · 기준 현재가:{" "}
         {formatNumber(currentPrice)}
       </p>
       <div className="target-basis-adjustments">
-        <p>목표가 성격: 기술·밸류에이션·퀀트 보정 기반 참고 목표가</p>
+        <p>추정 주가 성격: 기술·밸류에이션·퀀트 보정 기반 참고 목표가</p>
         <p>
-          다시 조회하면 최신 현재가와 지표를 기준으로 목표가 참고 범위가
+          다시 조회하면 최신 현재가와 지표를 기준으로 추정 주가 참고 범위가
           갱신됩니다.
         </p>
       </div>
@@ -200,7 +200,7 @@ function makeTargetComment(score?: CompositeScore) {
   const range = score?.targetPrice?.technicalTargetRange;
 
   if (!range) {
-    return "분석 실행 후 현재 조회 시점 기준 목표가 참고 범위가 표시됩니다.";
+    return "분석 실행 후 현재 조회 시점 기준 추정 주가 참고 범위가 표시됩니다.";
   }
 
   const targetScore = score?.targetPrice?.score ?? 0;
@@ -211,26 +211,26 @@ function makeTargetComment(score?: CompositeScore) {
   const upsidePrice = range.baseTarget - range.currentPrice;
 
   if (targetProgress != null && targetProgress >= 97) {
-    return `기준 현재가가 기준 목표가의 ${targetProgress.toFixed(
+    return `기준 현재가가 기준 추정 주가의 ${targetProgress.toFixed(
       1,
     )}% 수준입니다. 남은 상승여력은 ${formatSignedNumber(
       upsidePrice,
-    )}로 제한적일 수 있어 목표 도달 여부와 위험 기준선을 우선 확인해야 합니다.`;
+    )}로 제한적일 수 있어 추정 주가 도달 여부와 위험 기준선을 우선 확인해야 합니다.`;
   }
 
   if (targetScore >= 70 && supplyScore >= 70 && volumeScore >= 65) {
-    return "수급과 거래 흐름이 함께 받쳐주고 있어 기준 목표가까지는 관심 구간으로 볼 수 있습니다.";
+    return "수급과 거래 흐름이 함께 받쳐주고 있어 기준 추정 주가까지는 관심 구간으로 볼 수 있습니다.";
   }
 
   if (targetScore >= 65 && supplyScore >= 70) {
-    return "수급은 긍정적이지만 거래 확인이 필요합니다. 기준 목표가를 참고하되 보수 목표가를 먼저 확인하는 것이 좋습니다.";
+    return "수급은 긍정적이지만 거래 확인이 필요합니다. 기준 추정 주가를 참고하되 보수 목표가를 먼저 확인하는 것이 좋습니다.";
   }
 
   if (targetScore < 50) {
     return "상승여력이 작거나 위험 기준선이 가까운 구간입니다. 무리한 목표가 추정보다는 위험 관리가 필요합니다.";
   }
 
-  return "기술·밸류에이션·퀀트 보정 기반 목표가 참고 범위가 계산됐습니다. 위험 기준선 이탈 여부를 함께 확인해야 합니다.";
+  return "기술·밸류에이션·퀀트 보정 기반 추정 주가 참고 범위가 계산됐습니다. 위험 기준선 이탈 여부를 함께 확인해야 합니다.";
 }
 
 function formatNumber(value?: number | null) {

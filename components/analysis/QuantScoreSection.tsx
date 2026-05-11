@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import type { ReactNode } from "react";
 import type { QuantModelResult, QuantScorePart } from "../../types/stock";
@@ -15,7 +15,7 @@ export default function QuantScoreSection({ quant }: Props) {
           <div>
             <SectionTitleSmall>퀀트 모델 점수</SectionTitleSmall>
             <p className="score-subtitle">
-              모멘텀·추세 지속성·거래대금·밸류에이션·수급·변동성·리스크·목표여력·실적
+              모멘텀·추세 지속성·거래대금·밸류에이션·수급·변동성·리스크·추정 괴리율·실적
               성장 가능성을 종합해 현재 구간의 숫자 조건을 판단합니다.
             </p>
           </div>
@@ -45,7 +45,7 @@ export default function QuantScoreSection({ quant }: Props) {
             <QuantPartCard title="수급" part={quant?.supply} />
             <QuantPartCard title="변동성" part={getQuantPart(quant, "volatility")} />
             <QuantPartCard title="리스크" part={quant?.risk} />
-            <QuantPartCard title="목표여력" part={quant?.target} />
+            <QuantPartCard title="추정 괴리율" part={quant?.target} />
             <QuantPartCard title="실적 성장" part={getQuantPart(quant, "earningsGrowth")} />
           </div>
         </div>
@@ -59,7 +59,7 @@ export default function QuantScoreSection({ quant }: Props) {
 
         <p className="notice-text">
           퀀트 점수는 매수·매도 신호가 아니라 현재 가격 위치, 거래 흐름,
-          수급, 변동성, 목표여력, 실적 성장 가능성을 함께 보기 위한 참고
+          수급, 변동성, 추정 괴리율, 실적 성장 가능성을 함께 보기 위한 참고
           지표입니다.
         </p>
       </Card>
