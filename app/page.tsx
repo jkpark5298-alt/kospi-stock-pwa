@@ -152,6 +152,16 @@ type ScoreWeights = {
   earningsGrowth: number;
 };
 
+type ScoreWeightAdjustment = {
+  key: keyof ScoreWeights;
+  label: string;
+  baseWeight: number;
+  appliedWeight: number | null;
+  adjustmentPercent: number | null;
+  status: "applied" | "excluded";
+  reason: string;
+};
+
 type TargetPriceRange = {
   currentPrice: number;
   conservativeTarget: number;
@@ -231,6 +241,7 @@ type CompositeScore = {
   earningsGrowth: ScorePart;
   baseWeights: ScoreWeights;
   appliedWeights: Partial<ScoreWeights>;
+  weightAdjustments: ScoreWeightAdjustment[];
   targetPricePlan: {
     status: string;
     nextSteps: string[];
