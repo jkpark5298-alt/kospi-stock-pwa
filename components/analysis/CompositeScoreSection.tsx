@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { CompositeScore, ScorePart, ScoreWeights } from "../../types/stock";
 
 type Props = {
@@ -13,6 +13,7 @@ type ExtendedScoreKey =
   | "earningsGrowth";
 
 export default function CompositeScoreSection({ score }: Props) {
+  const [isWeightDetailOpen, setIsWeightDetailOpen] = useState(false);
   const signalAgreement = getScorePart(score, "signalAgreement");
   const earningsGrowth = getScorePart(score, "earningsGrowth");
 
@@ -69,10 +70,21 @@ export default function CompositeScoreSection({ score }: Props) {
             <strong>{formatAppliedWeights(score?.appliedWeights)}</strong>
           </div>
           <p>
-            종합 신뢰도는 기술·거래 흐름·수급·목표여력에 더해 신호 일치도와
-            실적 성장을 반영합니다. 실적 성장 데이터가 없으면 해당 가중치는
-            계산에서 제외하고, 나머지 사용 가능한 항목에 자동 재분배합니다.
+            종합 신뢰도는 기술·거래 흐름·수급·추정 주가 여력에 더해 신호
+            일치도와 실적 성장을 반영합니다. 데이터가 없는 항목은 제외하고,
+            남은 지표에 가중치를 자동 재분배합니다.
           </p>
+          <button
+            className="button secondary-button"
+            type="button"
+            onClick={() => setIsWeightDetailOpen((value) => !value)}
+          >
+            {isWeightDetailOpen ? "가중치 조정 내역 닫기" : "가중치 조정 내역 보기"}
+          </button>
+
+          {isWeightDetailOpen ? (
+            <WeightAdjustmentTable adjustments={score?.weightAdjustments} />
+          ) : null}
         </div>
 
         <div className="score-comment-box">
@@ -91,6 +103,58 @@ export default function CompositeScoreSection({ score }: Props) {
         </div>
       </Card>
     </section>
+  );
+}
+
+function WeightAdjustmentTable({
+  adjustments,
+}: {
+  adjustments?: Array<{
+    label: string;
+    baseWeight: number;
+    appliedWeight: number | null;
+    adjustmentPercent: number | null;
+    status: "applied" | "excluded";
+    reason: string;
+  }>;
+}) {
+  if (!adjustments || adjustments.length === 0) {
+    return (
+      <div className="target-basis-box" style={{ marginTop: 12 }}>
+        <p className="target-basis-summary">가중치 조정 내역 데이터가 없습니다.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="target-basis-table-wrap" style={{ marginTop: 12 }}>
+      <table className="target-basis-table">
+        <thead>
+          <tr>
+            <th>지표</th>
+            <th>기본 비중</th>
+            <th>적용 비중</th>
+            <th>조정폭</th>
+            <th>사유</th>
+          </tr>
+        </thead>
+        <tbody>
+          {adjustments.map((item) => (
+            <tr key={item.label}>
+              <td>{item.label}</td>
+              <td>{formatWeight(item.baseWeight)}</td>
+              <td>
+                {item.appliedWeight == null
+                  ? "제외"
+                  : formatWeight(item.appliedWeight)}
+              </td>
+              <td>{formatAdjustmentPercent(item.adjustmentPercent)}</td>
+              <td>{item.reason}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -165,4 +229,17 @@ function formatAppliedWeights(weights?: Partial<ScoreWeights>) {
     .filter(([key]) => weightMap[key] != null)
     .map(([key, label]) => `${label} ${((weightMap[key] ?? 0) * 100).toFixed(1)}%`)
     .join(" / ");
+}
+
+
+function formatWeight(value?: number | null) {
+  if (value == null || Number.isNaN(value)) return "-";
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+function formatAdjustmentPercent(value?: number | null) {
+  if (value == null || Number.isNaN(value)) return "제외";
+  if (value > 0) return `+${value.toFixed(1)}%p`;
+  if (value < 0) return `${value.toFixed(1)}%p`;
+  return "0.0%p";
 }

@@ -80,6 +80,16 @@ export type ScoreWeights = {
   earningsGrowth: number;
 };
 
+export type ScoreWeightAdjustment = {
+  key: keyof ScoreWeights;
+  label: string;
+  baseWeight: number;
+  appliedWeight: number | null;
+  adjustmentPercent: number | null;
+  status: "applied" | "excluded";
+  reason: string;
+};
+
 export type ScorePart = {
   available: boolean;
   score: number | null;
@@ -167,6 +177,7 @@ export type CompositeScore = {
   earningsGrowth: ScorePart;
   baseWeights: ScoreWeights;
   appliedWeights: Partial<ScoreWeights>;
+  weightAdjustments: ScoreWeightAdjustment[];
   targetPricePlan: {
     status: string;
     nextSteps: string[];
@@ -241,6 +252,7 @@ export function calculateCompositeScore({
   };
 
   const appliedWeights = normalizeAvailableWeights(weights, parts);
+  const weightAdjustments = makeScoreWeightAdjustments(weights, appliedWeights, parts);
   const total = calculateWeightedTotal(parts, appliedWeights);
   const grade = getScoreGrade(total);
 
@@ -266,6 +278,7 @@ export function calculateCompositeScore({
     earningsGrowth: earningsGrowthScore,
     baseWeights: weights,
     appliedWeights,
+    weightAdjustments,
     targetPricePlan: {
       status: targetPrice.available
         ? "기술 목표가, 밸류에이션 목표가, 퀀트 보정, 신호 일치도를 반영한 최종 기준목표가를 계산했습니다."
@@ -844,6 +857,102 @@ export function calculateEarningsGrowthScore(
         ? earningsGrowth.reasons
         : ["실적 성장 점수를 종합 신뢰도에 보조 반영했습니다."],
   };
+}
+
+const SCORE_WEIGHT_LABELS: Record<keyof ScoreWeights, string> = {
+  technical: "기술",
+  volume: "거래량·거래대금",
+  supply: "수급",
+  targetPrice: "추정 주가 여력",
+  signalAgreement: "신호 일치도",
+  earningsGrowth: "실적 성장",
+};
+
+function makeScoreWeightAdjustments(
+  baseWeights: ScoreWeights,
+  appliedWeights: Partial<ScoreWeights>,
+  parts: {
+    technical: ScorePart;
+    volume: ScorePart;
+    supply: ScorePart;
+    targetPrice: ScorePart;
+    signalAgreement: ScorePart;
+    earningsGrowth: ScorePart;
+  },
+): ScoreWeightAdjustment[] {
+  return (Object.keys(baseWeights) as Array<keyof ScoreWeights>).map((key) => {
+    const part = parts[key];
+    const baseWeight = baseWeights[key];
+    const appliedWeight = appliedWeights[key] ?? null;
+    const adjustmentPercent =
+      appliedWeight == null
+        ? null
+        : Number(((appliedWeight - baseWeight) * 100).toFixed(1));
+
+    return {
+      key,
+      label: SCORE_WEIGHT_LABELS[key],
+      baseWeight,
+      appliedWeight,
+      adjustmentPercent,
+      status: appliedWeight == null ? "excluded" : "applied",
+      reason: makeWeightAdjustmentReason({
+        key,
+        part,
+        baseWeight,
+        appliedWeight,
+        adjustmentPercent,
+      }),
+    };
+  });
+}
+
+function makeWeightAdjustmentReason({
+  key,
+  part,
+  baseWeight,
+  appliedWeight,
+  adjustmentPercent,
+}: {
+  key: keyof ScoreWeights;
+  part: ScorePart;
+  baseWeight: number;
+  appliedWeight: number | null;
+  adjustmentPercent: number | null;
+}) {
+  if (!part.available || part.score == null || appliedWeight == null) {
+    if (key === "earningsGrowth") {
+      return "실적 성장 데이터가 없어 해당 비중을 제외하고 나머지 지표에 재분배했습니다.";
+    }
+
+    if (key === "supply") {
+      return "수급 데이터가 없어 해당 비중을 제외하고 나머지 지표에 재분배했습니다.";
+    }
+
+    if (key === "targetPrice") {
+      return "추정 주가 산정 데이터가 부족해 해당 비중을 제외하고 계산했습니다.";
+    }
+
+    return "데이터가 부족해 해당 지표 비중을 제외했습니다.";
+  }
+
+  if (adjustmentPercent == null || Math.abs(adjustmentPercent) < 0.05) {
+    return "기본 비중 그대로 반영했습니다.";
+  }
+
+  if (adjustmentPercent > 0) {
+    return `다른 지표의 데이터 부족 또는 제외로 기본 ${formatWeightPercent(
+      baseWeight,
+    )}에서 ${formatWeightPercent(appliedWeight)}로 재분배 반영했습니다.`;
+  }
+
+  return `전체 사용 가능 지표 재분배 과정에서 기본 ${formatWeightPercent(
+    baseWeight,
+  )}에서 ${formatWeightPercent(appliedWeight)}로 낮아졌습니다.`;
+}
+
+function formatWeightPercent(value: number) {
+  return `${(value * 100).toFixed(1)}%`;
 }
 
 function normalizeAvailableWeights(
