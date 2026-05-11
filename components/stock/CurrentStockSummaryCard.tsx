@@ -99,6 +99,8 @@ export default function CurrentStockSummaryCard({ data }: Props) {
     .filter(Boolean)
     .join(" · ");
 
+  const quickSummary = makeCurrentSummaryInterpretation(data, range);
+
   function handleSaveCurrentAsDailyTarget() {
     if (!range || !data?.symbol) return;
 
@@ -232,6 +234,47 @@ export default function CurrentStockSummaryCard({ data }: Props) {
         />
       </div>
 
+
+      <div className="target-basis-box" style={{ marginTop: 16 }}>
+        <div className="target-basis-header">
+          <span>핵심 해석</span>
+          <strong>{quickSummary.overall}</strong>
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+            gap: 10,
+            marginTop: 12,
+          }}
+        >
+          {quickSummary.cards.map((card) => (
+            <div className="target-metric-card" key={card.title}>
+              <span>{card.icon} {card.title}</span>
+              <strong className={card.tone}>{card.label}</strong>
+              <em className={card.tone}>{card.detail}</em>
+            </div>
+          ))}
+        </div>
+
+        <p className="target-basis-summary" style={{ marginTop: 12 }}>
+          {quickSummary.summary}
+        </p>
+      </div>
+
+      <div className="target-basis-box" style={{ marginTop: 16 }}>
+        <div className="target-basis-header">
+          <span>분석 신호란?</span>
+          <strong>{data?.signalSummary || "데이터 없음"}</strong>
+        </div>
+        <p className="target-basis-summary">
+          분석 신호는 이동평균, RSI, MACD 등 기술 흐름을 짧게 요약한 참고
+          문구입니다. 매수·매도 지시가 아니라 현재 주가 흐름을 빠르게 이해하기
+          위한 보조 신호입니다.
+        </p>
+      </div>
+
       <div className="target-basis-box" style={{ marginTop: 16 }}>
         <div className="target-basis-header">
           <span>당일 기준 추정 주가 설정</span>
@@ -308,6 +351,238 @@ export default function CurrentStockSummaryCard({ data }: Props) {
     </div>
   );
 }
+
+function makeCurrentSummaryInterpretation(
+  data: StockResponse | null,
+  range?: NonNullable<StockResponse["score"]>["targetPrice"]["technicalTargetRange"],
+) {
+  const latest = getLatestChartRow(data?.chartData);
+  const current = data?.currentPrice ?? latest?.close ?? range?.currentPrice ?? null;
+  const chart = makeChartSummary(current, latest);
+  const prediction = makePredictionSummary(current, range);
+  const overall = makeOverallSummary(chart.label, prediction.label);
+
+  return {
+    overall: overall.title,
+    summary: overall.detail,
+    cards: [
+      {
+        title: "차트",
+        icon: chart.icon,
+        label: chart.label,
+        detail: chart.detail,
+        tone: chart.tone,
+      },
+      {
+        title: "예측",
+        icon: prediction.icon,
+        label: prediction.label,
+        detail: prediction.detail,
+        tone: prediction.tone,
+      },
+      {
+        title: "종합",
+        icon: overall.icon,
+        label: overall.title,
+        detail: overall.shortDetail,
+        tone: overall.tone,
+      },
+    ],
+  };
+}
+
+function getLatestChartRow(chartData?: StockResponse["chartData"]) {
+  if (!chartData?.length) return null;
+
+  for (let index = chartData.length - 1; index >= 0; index -= 1) {
+    const row = chartData[index];
+
+    if (row?.close != null && Number.isFinite(row.close)) {
+      return row;
+    }
+  }
+
+  return null;
+}
+
+function makeChartSummary(
+  current: number | null,
+  latest: ReturnType<typeof getLatestChartRow>,
+) {
+  if (!latest || current == null) {
+    return {
+      icon: "⚪",
+      label: "차트 확인 필요",
+      detail: "데이터 대기",
+      tone: "neutral" as const,
+    };
+  }
+
+  const sma20 = latest.sma20 ?? null;
+  const sma60 = latest.sma60 ?? null;
+  const bbUpper = latest.bbUpper ?? null;
+  const bbLower = latest.bbLower ?? null;
+  const rsi14 = latest.rsi14 ?? null;
+
+  const isUpTrend =
+    sma20 != null && sma60 != null && current > sma20 && sma20 > sma60;
+  const isAboveAvg =
+    sma20 != null && sma60 != null && current > sma20 && current > sma60;
+  const isWeak =
+    sma20 != null && sma60 != null && current < sma20 && current < sma60;
+
+  const bandPosition =
+    bbUpper != null && bbLower != null && bbUpper > bbLower
+      ? (current - bbLower) / (bbUpper - bbLower)
+      : null;
+
+  const isOverheated =
+    (bandPosition != null && bandPosition >= 0.85) ||
+    (rsi14 != null && rsi14 >= 70);
+
+  if (isUpTrend && isOverheated) {
+    return {
+      icon: "⚠️",
+      label: "단기 과열 주의",
+      detail: "상승 추세 강함",
+      tone: "negative" as const,
+    };
+  }
+
+  if (isUpTrend || isAboveAvg) {
+    return {
+      icon: "🟢",
+      label: "상승 추세 유지",
+      detail: "이동평균선 위",
+      tone: "positive" as const,
+    };
+  }
+
+  if (isWeak) {
+    return {
+      icon: "🔻",
+      label: "추세 약세",
+      detail: "이동평균선 아래",
+      tone: "negative" as const,
+    };
+  }
+
+  return {
+    icon: "⚪",
+    label: "방향성 확인",
+    detail: "혼조 구간",
+    tone: "neutral" as const,
+  };
+}
+
+function makePredictionSummary(
+  current: number | null,
+  range?: NonNullable<StockResponse["score"]>["targetPrice"]["technicalTargetRange"],
+) {
+  const baseTarget = range?.baseTarget ?? null;
+
+  if (current == null || baseTarget == null || baseTarget <= 0) {
+    return {
+      icon: "⚪",
+      label: "예측 확인 필요",
+      detail: "추정가 대기",
+      tone: "neutral" as const,
+    };
+  }
+
+  const upsideRate = ((baseTarget - current) / current) * 100;
+  const progress = (current / baseTarget) * 100;
+
+  if (upsideRate >= 3) {
+    return {
+      icon: "🟢",
+      label: "상승 여력 있음",
+      detail: `추정가까지 ${upsideRate.toFixed(1)}%`,
+      tone: "positive" as const,
+    };
+  }
+
+  if (progress >= 97 && progress <= 103) {
+    return {
+      icon: "⚠️",
+      label: "추정가 근접",
+      detail: `도달률 ${progress.toFixed(1)}%`,
+      tone: "neutral" as const,
+    };
+  }
+
+  if (upsideRate < -3) {
+    return {
+      icon: "🔻",
+      label: "추정가 초과",
+      detail: `초과 ${Math.abs(upsideRate).toFixed(1)}%`,
+      tone: "negative" as const,
+    };
+  }
+
+  return {
+    icon: "⚪",
+    label: "예측 중립",
+    detail: `괴리 ${upsideRate.toFixed(1)}%`,
+    tone: "neutral" as const,
+  };
+}
+
+function makeOverallSummary(chartLabel: string, predictionLabel: string) {
+  if (chartLabel.includes("과열") && predictionLabel.includes("상승 여력")) {
+    return {
+      icon: "⚠️",
+      title: "상승 여력 있음 · 단기 과열 주의",
+      shortDetail: "추격 매수 신중",
+      detail:
+        "예측상 여력은 남아 있지만 차트는 단기 과열 신호를 함께 보여줍니다. 상승 흐름은 유지하되 추격 매수는 신중히 확인하는 구간입니다.",
+      tone: "neutral" as const,
+    };
+  }
+
+  if (chartLabel.includes("과열") && predictionLabel.includes("근접")) {
+    return {
+      icon: "⚠️",
+      title: "추정가 근접 · 단기 과열 주의",
+      shortDetail: "변동성 확인",
+      detail:
+        "현재가는 추정 주가에 가까우며 차트상 단기 과열 신호가 있습니다. 추가 상승보다 변동성 확대 여부를 먼저 확인해야 합니다.",
+      tone: "negative" as const,
+    };
+  }
+
+  if (chartLabel.includes("상승") && predictionLabel.includes("상승 여력")) {
+    return {
+      icon: "🟢",
+      title: "상승 추세 · 상승 여력",
+      shortDetail: "흐름 양호",
+      detail:
+        "차트 흐름과 추정 주가 기준이 모두 우호적입니다. 다만 실제 판단은 수급과 위험 기준선을 함께 확인해야 합니다.",
+      tone: "positive" as const,
+    };
+  }
+
+  if (chartLabel.includes("약세")) {
+    return {
+      icon: "🔻",
+      title: "추세 약세 확인",
+      shortDetail: "반등 확인 필요",
+      detail:
+        "현재 차트 흐름이 약해 단기 반등 여부와 수급 개선 여부를 함께 확인해야 합니다.",
+      tone: "negative" as const,
+    };
+  }
+
+  return {
+    icon: "⚪",
+    title: "방향성 확인 필요",
+    shortDetail: "혼조 구간",
+    detail:
+      "차트와 추정 주가 기준이 뚜렷하게 한 방향으로 일치하지 않아 추가 확인이 필요한 구간입니다.",
+    tone: "neutral" as const,
+  };
+}
+
 
 function MetricRow({ label, value }: { label: string; value: string }) {
   return (
