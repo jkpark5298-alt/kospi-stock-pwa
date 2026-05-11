@@ -42,7 +42,9 @@ export default function CurrentStockSummaryCard({ data }: Props) {
         <MetricRow label="현재가" value={formatNumber(data?.currentPrice)} />
         <MetricRow
           label="전일 대비"
-          value={`${formatSignedNumber(data?.changePrice)} / ${formatPercent(data?.change)}`}
+          value={`${formatSignedNumber(data?.changePrice)} / ${formatPercent(
+            data?.change,
+          )}`}
         />
         <MetricRow
           label="분석 신호"
@@ -72,27 +74,33 @@ export default function CurrentStockSummaryCard({ data }: Props) {
               : "데이터 없음"
           }
         />
+
         <MetricRow
-          label="기준 목표가"
+          label="현재 조회 기준 목표가"
           value={formatNumber(range?.baseTarget)}
+        />
+        <MetricRow
+          label="현재 조회 기준 목표여력"
+          value={`${formatSignedNumber(upsidePrice)} / ${formatUpside(
+            range?.baseUpsidePercent,
+          )}`}
         />
         <MetricRow
           label="목표 도달률"
           value={formatTargetProgress(targetProgress)}
         />
         <MetricRow
-          label="상승 여력"
-          value={`${formatSignedNumber(upsidePrice)} / ${formatUpside(range?.baseUpsidePercent)}`}
-        />
-        <MetricRow
           label="위험 기준선"
-          value={`${formatNumber(range?.riskLine)} / ${formatUpside(range?.riskDownsidePercent)}`}
+          value={`${formatNumber(range?.riskLine)} / ${formatUpside(
+            range?.riskDownsidePercent,
+          )}`}
         />
       </div>
 
       <p className="notice-text">
-        이 요약은 현재 화면의 기술·수급·목표여력 데이터를 한 번에 확인하기 위한
-        참고 정보입니다.
+        현재 종목 요약의 목표가는 방금 조회한 현재가와 최신 지표를 기준으로
+        계산한 참고 목표가입니다. 하루 평가 기준으로 고정할 목표가는 하단의
+        기준 목표가 평가 영역에서 별도로 관리하는 구조로 확장할 예정입니다.
       </p>
     </div>
   );
