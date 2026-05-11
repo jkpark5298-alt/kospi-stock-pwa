@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState, type ReactNode } from "react";
 import ChartAnalysisSections from "../components/chart/ChartAnalysisSections";
@@ -7,6 +7,7 @@ import CompositeScoreSection from "../components/analysis/CompositeScoreSection"
 import QuantScoreSection from "../components/analysis/QuantScoreSection";
 import EarningsGrowthSection from "../components/analysis/EarningsGrowthSection";
 import TargetPriceSection from "../components/analysis/TargetPriceSection";
+import DisclosureSection from "../components/analysis/DisclosureSection";
 import BasicInfoSection from "../components/stock/BasicInfoSection";
 import CurrentStockSummaryCard from "../components/stock/CurrentStockSummaryCard";
 import PredictionDashboard from "../components/prediction/PredictionDashboard";
@@ -864,6 +865,8 @@ export default function HomePage() {
         />
 
         <TargetPriceSection score={data?.score} lastFetchedAt={lastFetchedAt} />
+
+        <DisclosureSection symbol={data?.symbol} name={data?.name} />
 
         <PredictionDashboard
           data={data}
