@@ -221,7 +221,7 @@ export function calculateCompositeScore({
 
   const technical = calculateTechnicalScore(sortedRows);
   const volume = calculateVolumeScore(sortedRows);
-  const supplyScore = calculateSupplyScore(supply);
+  const supplyScore = applyKisSupplyAdjustment(calculateSupplyScore(supply), supply);
   const targetPrice = calculateTargetPriceScore(
     sortedRows,
     technical,
@@ -650,6 +650,11 @@ export function calculateTargetPriceScore(
 
   reasons.push(`최종 추정 주가 추정 상승 여력은 약 ${finalTargetRange.baseUpsidePercent.toFixed(1)}%입니다.`);
   reasons.push(`현재 추정 주가 모드는 ${getTargetModeLabel(targetMode)}입니다.`);
+
+  const kisFundamentalsAdjustment = calculateKisFundamentalsAdjustment(fundamentals);
+
+  score += kisFundamentalsAdjustment.scoreAdjustment;
+  reasons.push(...kisFundamentalsAdjustment.reasons);
 
   if ((supply.score ?? 0) >= 80) {
     score += 5;
@@ -1634,6 +1639,127 @@ function makeScoreComment({
   }
 
   return `전반적으로 중립 구간입니다.${targetMessage}${agreementMessage}${earningsMessage}`;
+}
+
+function applyKisSupplyAdjustment(
+  part: ScorePart,
+  supply?: ScoreSupplyData,
+): ScorePart {
+  if (!part.available || part.score == null || !supply?.available) {
+    return part;
+  }
+
+  let score = part.score;
+  const reasons = [...part.reasons];
+  const recent5Smart = supply.recent5?.smartMoneyNetBuy ?? null;
+  const recent20Smart = supply.recent20?.smartMoneyNetBuy ?? null;
+
+  if (recent5Smart != null && recent20Smart != null) {
+    if (recent5Smart > 0 && recent20Smart > 0) {
+      score += 3;
+      reasons.push("KIS 수급 보조평가: 최근 5일·20일 외국인+기관 수급이 모두 순매수라 수급 점수에 소폭 가산했습니다.");
+    } else if (recent5Smart < 0 && recent20Smart < 0) {
+      score -= 3;
+      reasons.push("KIS 수급 보조평가: 최근 5일·20일 외국인+기관 수급이 모두 순매도라 수급 점수에 소폭 감점했습니다.");
+    }
+  }
+
+  if (supply.foreignPositiveStreak5 && supply.institutionPositiveStreak5) {
+    score += 2;
+    reasons.push("KIS 수급 보조평가: 외국인과 기관이 모두 5일 연속 순매수 흐름입니다.");
+  } else if (!supply.foreignPositiveStreak5 && !supply.institutionPositiveStreak5) {
+    reasons.push("KIS 수급 보조평가: 외국인·기관 5일 연속 순매수 조건은 충족하지 못했습니다.");
+  }
+
+  const finalScore = clampScore(score);
+
+  return {
+    ...part,
+    score: finalScore,
+    label: getPartLabel(finalScore),
+    reasons,
+  };
+}
+
+function calculateKisFundamentalsAdjustment(
+  fundamentals?: ScoreFundamentalsData,
+): {
+  scoreAdjustment: number;
+  reasons: string[];
+} {
+  if (!fundamentals) {
+    return {
+      scoreAdjustment: 0,
+      reasons: ["KIS 재무·밸류에이션 데이터가 없어 추정 주가 신뢰도 보조 보정은 적용하지 않았습니다."],
+    };
+  }
+
+  let scoreAdjustment = 0;
+  const reasons: string[] = [];
+  const per = fundamentals.per;
+  const pbr = fundamentals.pbr;
+  const eps = fundamentals.eps;
+  const high52w = fundamentals.high52w;
+  const low52w = fundamentals.low52w;
+
+  if (eps != null && Number.isFinite(eps)) {
+    if (eps > 0) {
+      scoreAdjustment += 1;
+      reasons.push("KIS 재무 보조평가: EPS가 양수라 이익 기반 추정 주가 신뢰도에 +1점 보정했습니다.");
+    } else {
+      scoreAdjustment -= 2;
+      reasons.push("KIS 재무 보조평가: EPS가 0 이하라 추정 주가 신뢰도에 -2점 보정했습니다.");
+    }
+  }
+
+  if (per != null && Number.isFinite(per) && per > 0) {
+    if (per <= 15) {
+      scoreAdjustment += 2;
+      reasons.push("KIS 밸류에이션 보조평가: PER이 낮은 편이라 추정 주가 신뢰도에 +2점 보정했습니다.");
+    } else if (per >= 35) {
+      scoreAdjustment -= 2;
+      reasons.push("KIS 밸류에이션 보조평가: PER이 높은 편이라 추정 주가 신뢰도에 -2점 보정했습니다.");
+    } else {
+      reasons.push("KIS 밸류에이션 보조평가: PER은 중립 구간으로 보정 없이 참고합니다.");
+    }
+  }
+
+  if (pbr != null && Number.isFinite(pbr) && pbr > 0) {
+    if (pbr <= 1.5) {
+      scoreAdjustment += 1;
+      reasons.push("KIS 밸류에이션 보조평가: PBR이 낮은 편이라 추정 주가 신뢰도에 +1점 보정했습니다.");
+    } else if (pbr >= 4) {
+      scoreAdjustment -= 2;
+      reasons.push("KIS 밸류에이션 보조평가: PBR이 높은 편이라 추정 주가 신뢰도에 -2점 보정했습니다.");
+    } else {
+      reasons.push("KIS 밸류에이션 보조평가: PBR은 중립 구간으로 보정 없이 참고합니다.");
+    }
+  }
+
+  if (
+    high52w != null &&
+    low52w != null &&
+    Number.isFinite(high52w) &&
+    Number.isFinite(low52w) &&
+    high52w > low52w
+  ) {
+    reasons.push("KIS 가격범위 보조평가: 52주 고가·저가는 위험 보정과 가격 위치 판단에 참고합니다.");
+  }
+
+  const limitedAdjustment = Math.max(-5, Math.min(5, scoreAdjustment));
+
+  if (limitedAdjustment !== scoreAdjustment) {
+    reasons.push("KIS 보조 보정은 기존 모델을 과도하게 흔들지 않도록 ±5점 범위로 제한했습니다.");
+  }
+
+  if (reasons.length === 0) {
+    reasons.push("KIS 재무·밸류에이션 데이터는 확인됐지만 보조 보정에 사용할 핵심 항목이 부족합니다.");
+  }
+
+  return {
+    scoreAdjustment: limitedAdjustment,
+    reasons,
+  };
 }
 
 function getScoreGrade(score: number | null) {
