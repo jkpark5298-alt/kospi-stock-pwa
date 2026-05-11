@@ -8,6 +8,7 @@ import QuantScoreSection from "../components/analysis/QuantScoreSection";
 import EarningsGrowthSection from "../components/analysis/EarningsGrowthSection";
 import TargetPriceSection from "../components/analysis/TargetPriceSection";
 import DisclosureSection from "../components/analysis/DisclosureSection";
+import KisFundamentalsSection from "../components/analysis/KisFundamentalsSection";
 import BasicInfoSection from "../components/stock/BasicInfoSection";
 import CurrentStockSummaryCard from "../components/stock/CurrentStockSummaryCard";
 import PredictionDashboard from "../components/prediction/PredictionDashboard";
@@ -867,6 +868,8 @@ export default function HomePage() {
         <TargetPriceSection score={data?.score} lastFetchedAt={lastFetchedAt} />
 
         <DisclosureSection symbol={data?.symbol} name={data?.name} />
+
+        <KisFundamentalsSection symbol={data?.symbol} name={data?.name} />
 
         <PredictionDashboard
           data={data}
