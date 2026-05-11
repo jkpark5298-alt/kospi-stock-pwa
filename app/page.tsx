@@ -852,7 +852,7 @@ export default function HomePage() {
           onClearManualInput={handleClearManualEarningsGrowth}
         />
 
-        <TargetPriceSection score={data?.score} />
+        <TargetPriceSection score={data?.score} lastFetchedAt={lastFetchedAt} />
 
         <PredictionDashboard
           data={data}
