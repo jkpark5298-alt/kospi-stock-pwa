@@ -53,6 +53,15 @@ type CachedValue<T> = {
   data: T;
 };
 
+type EvaluationTone = "positive" | "negative" | "neutral";
+
+type EvaluationResult = {
+  label: string;
+  scoreText: string;
+  tone: EvaluationTone;
+  reasons: string[];
+};
+
 type Props = {
   symbol?: string | null;
   name?: string | null;
@@ -196,8 +205,10 @@ export default function KisFundamentalsSection({ symbol, name }: Props) {
     setSupplyCachedAt(null);
   }
 
-  const data = fundamentals?.data;
+  const financialData = fundamentals?.data;
   const supplyData = supply?.supply;
+  const financialEvaluation = evaluateFinancials(financialData);
+  const supplyEvaluation = evaluateSupply(supplyData);
   const isLoading = isFundamentalsLoading || isSupplyLoading;
   const statusLabel =
     fundamentals?.ok || supply?.ok
@@ -251,6 +262,14 @@ export default function KisFundamentalsSection({ symbol, name }: Props) {
           </div>
         </div>
 
+        <div className="target-grid" style={{ marginTop: 16 }}>
+          <EvaluationCard
+            title="재무·밸류에이션 평가"
+            evaluation={financialEvaluation}
+          />
+          <EvaluationCard title="수급·거래 평가" evaluation={supplyEvaluation} />
+        </div>
+
         <div
           style={{
             display: "flex",
@@ -298,16 +317,16 @@ export default function KisFundamentalsSection({ symbol, name }: Props) {
               재무·밸류에이션
             </h4>
             <div className="target-grid">
-              <MetricCard title="시가총액" value={formatNumber(data?.marketCap)} subText="규모 참고" />
-              <MetricCard title="상장주식수" value={formatNumber(data?.sharesOutstanding)} subText="유통 규모 참고" />
-              <MetricCard title="PER" value={formatRatio(data?.per)} subText="주가수익비율" />
-              <MetricCard title="PBR" value={formatRatio(data?.pbr)} subText="주가순자산비율" />
-              <MetricCard title="EPS" value={formatNumber(data?.eps)} subText="주당순이익" />
-              <MetricCard title="BPS" value={formatNumber(data?.bps)} subText="주당순자산" />
-              <MetricCard title="배당수익률" value={formatPercent(data?.dividendYield)} subText="배당 참고" />
-              <MetricCard title="외국인보유율" value={formatPercent(data?.foreignOwnershipRate)} subText="수급 참고" />
-              <MetricCard title="52주 고가" value={formatNumber(data?.high52w)} subText="상단 위험 참고" />
-              <MetricCard title="52주 저가" value={formatNumber(data?.low52w)} subText="하단 위험 참고" />
+              <MetricCard title="시가총액" value={formatNumber(financialData?.marketCap)} subText="규모 참고" />
+              <MetricCard title="상장주식수" value={formatNumber(financialData?.sharesOutstanding)} subText="유통 규모 참고" />
+              <MetricCard title="PER" value={formatRatio(financialData?.per)} subText="주가수익비율" />
+              <MetricCard title="PBR" value={formatRatio(financialData?.pbr)} subText="주가순자산비율" />
+              <MetricCard title="EPS" value={formatNumber(financialData?.eps)} subText="주당순이익" />
+              <MetricCard title="BPS" value={formatNumber(financialData?.bps)} subText="주당순자산" />
+              <MetricCard title="배당수익률" value={formatPercent(financialData?.dividendYield)} subText="배당 참고" />
+              <MetricCard title="외국인보유율" value={formatPercent(financialData?.foreignOwnershipRate)} subText="수급 참고" />
+              <MetricCard title="52주 고가" value={formatNumber(financialData?.high52w)} subText="상단 위험 참고" />
+              <MetricCard title="52주 저가" value={formatNumber(financialData?.low52w)} subText="하단 위험 참고" />
             </div>
           </>
         ) : null}
@@ -368,6 +387,29 @@ export default function KisFundamentalsSection({ symbol, name }: Props) {
   );
 }
 
+function EvaluationCard({
+  title,
+  evaluation,
+}: {
+  title: string;
+  evaluation: EvaluationResult;
+}) {
+  return (
+    <div className="target-metric-card">
+      <span>{title}</span>
+      <strong className={evaluation.tone}>{evaluation.scoreText}</strong>
+      <em className={evaluation.tone}>{evaluation.label}</em>
+      <div style={{ marginTop: 10 }}>
+        {evaluation.reasons.map((reason) => (
+          <p key={reason} className="notice-text" style={{ margin: "4px 0" }}>
+            {reason}
+          </p>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function MetricCard({
   title,
   value,
@@ -384,6 +426,160 @@ function MetricCard({
       <em className="neutral">{subText}</em>
     </div>
   );
+}
+
+function evaluateFinancials(
+  data?: FundamentalsResponse["data"],
+): EvaluationResult {
+  if (!data) {
+    return {
+      label: "데이터 확인 필요",
+      scoreText: "대기",
+      tone: "neutral",
+      reasons: ["KIS 다시 조회 후 재무·밸류에이션 평가를 표시합니다."],
+    };
+  }
+
+  let score = 50;
+  const reasons: string[] = [];
+
+  if (data.eps != null && data.eps > 0) {
+    score += 15;
+    reasons.push("EPS가 양수라 이익 기반 밸류에이션 평가가 가능합니다.");
+  } else if (data.eps != null && data.eps <= 0) {
+    score -= 15;
+    reasons.push("EPS가 0 이하라 이익 기반 평가는 보수적으로 봅니다.");
+  } else {
+    reasons.push("EPS 데이터가 없어 이익 기반 평가는 제한됩니다.");
+  }
+
+  if (data.per != null) {
+    if (data.per > 0 && data.per <= 15) {
+      score += 12;
+      reasons.push("PER이 낮은 편이라 밸류에이션 부담은 제한적으로 봅니다.");
+    } else if (data.per <= 30) {
+      score += 3;
+      reasons.push("PER은 중립 구간으로 판단합니다.");
+    } else {
+      score -= 8;
+      reasons.push("PER이 높은 편이라 밸류에이션 부담을 확인해야 합니다.");
+    }
+  }
+
+  if (data.pbr != null) {
+    if (data.pbr > 0 && data.pbr <= 1.5) {
+      score += 10;
+      reasons.push("PBR이 낮은 편이라 자산가치 대비 부담은 제한적으로 봅니다.");
+    } else if (data.pbr <= 4) {
+      score += 2;
+      reasons.push("PBR은 중립 구간으로 판단합니다.");
+    } else {
+      score -= 8;
+      reasons.push("PBR이 높은 편이라 주가순자산 부담을 확인해야 합니다.");
+    }
+  }
+
+  if (data.foreignOwnershipRate != null) {
+    if (data.foreignOwnershipRate >= 40) {
+      score += 6;
+      reasons.push("외국인보유율이 높은 편이라 수급 참고값은 긍정적으로 봅니다.");
+    } else if (data.foreignOwnershipRate < 10) {
+      score -= 3;
+      reasons.push("외국인보유율이 낮아 외국인 수급 확인이 필요합니다.");
+    }
+  }
+
+  if (data.high52w != null && data.low52w != null && data.high52w > data.low52w) {
+    reasons.push("52주 고가·저가는 위험 기준선과 가격 위치 판단에 활용합니다.");
+  }
+
+  const normalizedScore = clamp(score, 0, 100);
+
+  return {
+    label: getEvaluationLabel(normalizedScore),
+    scoreText: `${normalizedScore} / 100`,
+    tone: getEvaluationTone(normalizedScore),
+    reasons: reasons.length > 0 ? reasons : ["재무 데이터는 확인됐지만 평가 근거가 부족합니다."],
+  };
+}
+
+function evaluateSupply(data?: SupplyResponse["supply"]): EvaluationResult {
+  if (!data) {
+    return {
+      label: "데이터 확인 필요",
+      scoreText: "대기",
+      tone: "neutral",
+      reasons: ["KIS 다시 조회 후 수급·거래 평가를 표시합니다."],
+    };
+  }
+
+  let score = 50;
+  const reasons: string[] = [];
+  const recent5SmartMoney = data.recent5?.smartMoneyNetBuy;
+  const recent20SmartMoney = data.recent20?.smartMoneyNetBuy;
+
+  if (recent5SmartMoney != null) {
+    if (recent5SmartMoney > 0) {
+      score += 15;
+      reasons.push("최근 5거래일 외국인+기관 합산 수급이 순매수입니다.");
+    } else if (recent5SmartMoney < 0) {
+      score -= 15;
+      reasons.push("최근 5거래일 외국인+기관 합산 수급이 순매도입니다.");
+    }
+  }
+
+  if (recent20SmartMoney != null) {
+    if (recent20SmartMoney > 0) {
+      score += 10;
+      reasons.push("최근 20거래일 중기 수급이 순매수 방향입니다.");
+    } else if (recent20SmartMoney < 0) {
+      score -= 10;
+      reasons.push("최근 20거래일 중기 수급이 순매도 방향입니다.");
+    }
+  }
+
+  if (data.foreignPositiveStreak5) {
+    score += 8;
+    reasons.push("외국인이 5일 연속 순매수 흐름입니다.");
+  }
+
+  if (data.institutionPositiveStreak5) {
+    score += 8;
+    reasons.push("기관이 5일 연속 순매수 흐름입니다.");
+  }
+
+  if (data.smartMoneyPositiveStreak5) {
+    score += 6;
+    reasons.push("외국인+기관 동반 수급 흐름이 긍정적입니다.");
+  }
+
+  if (data.rowCount != null && data.rowCount < 5) {
+    score -= 8;
+    reasons.push("수급 표본이 적어 판정 신뢰도는 낮게 봅니다.");
+  }
+
+  const normalizedScore = clamp(score, 0, 100);
+
+  return {
+    label: getEvaluationLabel(normalizedScore),
+    scoreText: `${normalizedScore} / 100`,
+    tone: getEvaluationTone(normalizedScore),
+    reasons: reasons.length > 0 ? reasons : ["수급 데이터는 확인됐지만 방향성 판단 근거가 부족합니다."],
+  };
+}
+
+function getEvaluationLabel(score: number) {
+  if (score >= 75) return "긍정";
+  if (score >= 60) return "보통 이상";
+  if (score >= 45) return "중립";
+  if (score >= 30) return "주의";
+  return "약함";
+}
+
+function getEvaluationTone(score: number): EvaluationTone {
+  if (score >= 60) return "positive";
+  if (score < 45) return "negative";
+  return "neutral";
 }
 
 function makeCacheKey(prefix: string, symbol?: string | null) {
@@ -493,4 +689,8 @@ function formatDateTime(value?: string | null) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(Math.round(value), min), max);
 }
