@@ -2,14 +2,12 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import ChartAnalysisSections from "../components/chart/ChartAnalysisSections";
-import SupplySection from "../components/analysis/SupplySection";
 import CompositeScoreSection from "../components/analysis/CompositeScoreSection";
 import QuantScoreSection from "../components/analysis/QuantScoreSection";
 import EarningsGrowthSection from "../components/analysis/EarningsGrowthSection";
 import TargetPriceSection from "../components/analysis/TargetPriceSection";
 import DisclosureSection from "../components/analysis/DisclosureSection";
 import KisFundamentalsSection from "../components/analysis/KisFundamentalsSection";
-import BasicInfoSection from "../components/stock/BasicInfoSection";
 import CurrentStockSummaryCard from "../components/stock/CurrentStockSummaryCard";
 import PredictionDashboard from "../components/prediction/PredictionDashboard";
 import { useKisUsage } from "../hooks/useKisUsage";
@@ -889,10 +887,6 @@ export default function HomePage() {
           onClearCurrentSymbol={handleClearCurrentSymbolPredictions}
           onClearAll={handleClearAllPredictions}
         />
-
-        <BasicInfoSection fundamentals={data?.fundamentals} />
-
-        <SupplySection data={data} rows={chartData} />
 
         <ChartAnalysisSections data={data} rows={chartData} />
       </div>
