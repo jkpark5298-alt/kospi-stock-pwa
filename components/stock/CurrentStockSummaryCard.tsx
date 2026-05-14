@@ -21,6 +21,8 @@ type DailyTargetSnapshot = {
   savedAt: string;
 };
 
+type SummaryTone = "positive" | "negative" | "neutral";
+
 const DAILY_TARGET_STORAGE_PREFIX = "kospi-daily-target";
 
 export default function CurrentStockSummaryCard({ data }: Props) {
@@ -31,7 +33,9 @@ export default function CurrentStockSummaryCard({ data }: Props) {
     [data?.symbol, todayKey],
   );
 
-  const [dailyTarget, setDailyTarget] = useState<DailyTargetSnapshot | null>(null);
+  const [dailyTarget, setDailyTarget] = useState<DailyTargetSnapshot | null>(
+    null,
+  );
   const [manualTargetInput, setManualTargetInput] = useState("");
 
   useEffect(() => {
@@ -98,7 +102,6 @@ export default function CurrentStockSummaryCard({ data }: Props) {
   const displayMeta = [displaySymbol, data?.exchange, data?.currency]
     .filter(Boolean)
     .join(" · ");
-
   const quickSummary = makeCurrentSummaryInterpretation(data, range);
 
   function handleSaveCurrentAsDailyTarget() {
@@ -176,7 +179,19 @@ export default function CurrentStockSummaryCard({ data }: Props) {
           )}`}
         />
         <MetricRow
-          label="분석 신호"
+          label="추정 주가(현재 조회 기준)"
+          value={`${formatNumber(range?.baseTarget)} ${formatDailyTargetSuffix(
+            dailyTarget,
+          )}`}
+        />
+        <MetricRow
+          label="추정 괴리율"
+          value={`${formatSignedNumber(upsidePrice)} / ${formatUpside(
+            range?.baseUpsidePercent,
+          )}`}
+        />
+        <MetricRow
+          label="기술적 분석"
           value={data?.signalSummary || "데이터 없음"}
         />
         <MetricRow
@@ -196,25 +211,12 @@ export default function CurrentStockSummaryCard({ data }: Props) {
           }
         />
         <MetricRow
-          label="추정 괴리율 점수"
+          label="추정 주가 도달 가능성"
           value={
             data?.score?.targetPrice?.score != null
               ? `${data.score.targetPrice.score} / 100 · ${data.score.targetPrice.label}`
               : "데이터 없음"
           }
-        />
-
-        <MetricRow
-          label="현재 조회 기준 추정 주가"
-          value={`${formatNumber(range?.baseTarget)} ${formatDailyTargetSuffix(
-            dailyTarget,
-          )}`}
-        />
-        <MetricRow
-          label="현재 조회 기준 추정 괴리율"
-          value={`${formatSignedNumber(upsidePrice)} / ${formatUpside(
-            range?.baseUpsidePercent,
-          )}`}
         />
         <MetricRow
           label="현재 조회 기준 추정 주가 도달률"
@@ -234,7 +236,6 @@ export default function CurrentStockSummaryCard({ data }: Props) {
         />
       </div>
 
-
       <div className="target-basis-box" style={{ marginTop: 16 }}>
         <div className="target-basis-header">
           <span>핵심 해석</span>
@@ -251,7 +252,9 @@ export default function CurrentStockSummaryCard({ data }: Props) {
         >
           {quickSummary.cards.map((card) => (
             <div className="target-metric-card" key={card.title}>
-              <span>{card.icon} {card.title}</span>
+              <span>
+                {card.icon} {card.title}
+              </span>
               <strong className={card.tone}>{card.label}</strong>
               <em className={card.tone}>{card.detail}</em>
             </div>
@@ -265,14 +268,32 @@ export default function CurrentStockSummaryCard({ data }: Props) {
 
       <div className="target-basis-box" style={{ marginTop: 16 }}>
         <div className="target-basis-header">
-          <span>분석 신호란?</span>
+          <span>기술적 분석이란?</span>
           <strong>{data?.signalSummary || "데이터 없음"}</strong>
         </div>
         <p className="target-basis-summary">
-          분석 신호는 이동평균, RSI, MACD 등 기술 흐름을 짧게 요약한 참고
-          문구입니다. 매수·매도 지시가 아니라 현재 주가 흐름을 빠르게 이해하기
-          위한 보조 신호입니다.
+          기술적 분석은 이동평균, RSI, MACD, 볼린저밴드 등 차트 지표를
+          바탕으로 현재 주가 흐름과 매수·매도 참고 구간을 요약한 신호입니다.
+          실제 판단은 수급, 실적, 공시, 시장 상황과 함께 확인해야 합니다.
         </p>
+
+        <div className="target-basis-adjustments" style={{ marginTop: 12 }}>
+          <p>
+            <strong>상대적 강세</strong> → 상승 흐름 우위, 단기 과열 여부 확인
+          </p>
+          <p>
+            <strong>중립</strong> → 방향성 확인 필요, 관망 구간
+          </p>
+          <p>
+            <strong>약세</strong> → 하락 압력 우위, 반등 확인 필요
+          </p>
+          <p>
+            <strong>단기 과열</strong> → 추격 매수 신중, 변동성 확인
+          </p>
+          <p>
+            <strong>조정 후 반등</strong> → 매수 관심 구간 가능성
+          </p>
+        </div>
       </div>
 
       <div className="target-basis-box" style={{ marginTop: 16 }}>
@@ -282,8 +303,8 @@ export default function CurrentStockSummaryCard({ data }: Props) {
         </div>
 
         <p className="target-basis-summary">
-          당일 기준 추정 주가: {formatNumber(dailyTarget?.targetPrice)} · 저장 기준가:{" "}
-          {formatNumber(dailyTarget?.basisPrice)} · 저장 시각:{" "}
+          당일 기준 추정 주가: {formatNumber(dailyTarget?.targetPrice)} · 저장
+          기준가: {formatNumber(dailyTarget?.basisPrice)} · 저장 시각:{" "}
           {formatDateTime(dailyTarget?.savedAt)}
         </p>
 
@@ -320,7 +341,7 @@ export default function CurrentStockSummaryCard({ data }: Props) {
             onClick={handleSaveCurrentAsDailyTarget}
             disabled={!range}
           >
-            현재 조회 목표가로 저장
+            현재 조회 추정 주가로 저장
           </button>
           <button
             className="button secondary-button"
@@ -334,20 +355,29 @@ export default function CurrentStockSummaryCard({ data }: Props) {
 
         <div className="target-basis-adjustments">
           <p>
-            첫 조회 시 당일 기준 추정 주가가 자동 저장됩니다. 이후에는 직접 입력하거나
-            현재 조회 목표가로 다시 저장할 수 있습니다.
+            첫 조회 시 당일 기준 추정 주가가 자동 저장됩니다. 이후에는 직접
+            입력하거나 현재 조회 추정 주가로 다시 저장할 수 있습니다.
           </p>
           <p>
-            현재 조회 기준 추정 주가는 조회할 때마다 바뀔 수 있고, 당일 기준 추정 주가는
-            같은 날짜의 추정 주가 도달률 평가 기준으로 유지됩니다.
+            추정 주가(현재 조회 기준)는 조회할 때마다 바뀔 수 있고, 당일 기준
+            추정 주가는 같은 날짜의 추정 주가 도달률 평가 기준으로 유지됩니다.
           </p>
         </div>
       </div>
 
       <p className="notice-text">
-        현재 조회 기준 추정 주가는 최신 현재가와 지표로 다시 계산됩니다. 괄호 안의
-        당일 기준 추정 주가는 오늘 평가 기준으로 저장된 목표가입니다.
+        추정 주가(현재 조회 기준)는 최신 현재가와 지표로 다시 계산됩니다. 괄호
+        안의 당일 기준 추정 주가는 오늘 평가 기준으로 저장된 추정 주가입니다.
       </p>
+    </div>
+  );
+}
+
+function MetricRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="metric-row">
+      <span>{label}</span>
+      <strong>{value}</strong>
     </div>
   );
 }
@@ -414,7 +444,7 @@ function makeChartSummary(
       icon: "⚪",
       label: "차트 확인 필요",
       detail: "데이터 대기",
-      tone: "neutral" as const,
+      tone: "neutral" as SummaryTone,
     };
   }
 
@@ -445,7 +475,7 @@ function makeChartSummary(
       icon: "⚠️",
       label: "단기 과열 주의",
       detail: "상승 추세 강함",
-      tone: "negative" as const,
+      tone: "negative" as SummaryTone,
     };
   }
 
@@ -454,7 +484,7 @@ function makeChartSummary(
       icon: "🟢",
       label: "상승 추세 유지",
       detail: "이동평균선 위",
-      tone: "positive" as const,
+      tone: "positive" as SummaryTone,
     };
   }
 
@@ -463,7 +493,7 @@ function makeChartSummary(
       icon: "🔻",
       label: "추세 약세",
       detail: "이동평균선 아래",
-      tone: "negative" as const,
+      tone: "negative" as SummaryTone,
     };
   }
 
@@ -471,7 +501,7 @@ function makeChartSummary(
     icon: "⚪",
     label: "방향성 확인",
     detail: "혼조 구간",
-    tone: "neutral" as const,
+    tone: "neutral" as SummaryTone,
   };
 }
 
@@ -486,7 +516,7 @@ function makePredictionSummary(
       icon: "⚪",
       label: "예측 확인 필요",
       detail: "추정가 대기",
-      tone: "neutral" as const,
+      tone: "neutral" as SummaryTone,
     };
   }
 
@@ -498,7 +528,7 @@ function makePredictionSummary(
       icon: "🟢",
       label: "상승 여력 있음",
       detail: `추정가까지 ${upsideRate.toFixed(1)}%`,
-      tone: "positive" as const,
+      tone: "positive" as SummaryTone,
     };
   }
 
@@ -507,7 +537,7 @@ function makePredictionSummary(
       icon: "⚠️",
       label: "추정가 근접",
       detail: `도달률 ${progress.toFixed(1)}%`,
-      tone: "neutral" as const,
+      tone: "neutral" as SummaryTone,
     };
   }
 
@@ -516,7 +546,7 @@ function makePredictionSummary(
       icon: "🔻",
       label: "추정가 초과",
       detail: `초과 ${Math.abs(upsideRate).toFixed(1)}%`,
-      tone: "negative" as const,
+      tone: "negative" as SummaryTone,
     };
   }
 
@@ -524,7 +554,7 @@ function makePredictionSummary(
     icon: "⚪",
     label: "예측 중립",
     detail: `괴리 ${upsideRate.toFixed(1)}%`,
-    tone: "neutral" as const,
+    tone: "neutral" as SummaryTone,
   };
 }
 
@@ -536,7 +566,7 @@ function makeOverallSummary(chartLabel: string, predictionLabel: string) {
       shortDetail: "추격 매수 신중",
       detail:
         "예측상 여력은 남아 있지만 차트는 단기 과열 신호를 함께 보여줍니다. 상승 흐름은 유지하되 추격 매수는 신중히 확인하는 구간입니다.",
-      tone: "neutral" as const,
+      tone: "neutral" as SummaryTone,
     };
   }
 
@@ -547,7 +577,7 @@ function makeOverallSummary(chartLabel: string, predictionLabel: string) {
       shortDetail: "변동성 확인",
       detail:
         "현재가는 추정 주가에 가까우며 차트상 단기 과열 신호가 있습니다. 추가 상승보다 변동성 확대 여부를 먼저 확인해야 합니다.",
-      tone: "negative" as const,
+      tone: "negative" as SummaryTone,
     };
   }
 
@@ -558,7 +588,7 @@ function makeOverallSummary(chartLabel: string, predictionLabel: string) {
       shortDetail: "흐름 양호",
       detail:
         "차트 흐름과 추정 주가 기준이 모두 우호적입니다. 다만 실제 판단은 수급과 위험 기준선을 함께 확인해야 합니다.",
-      tone: "positive" as const,
+      tone: "positive" as SummaryTone,
     };
   }
 
@@ -569,7 +599,7 @@ function makeOverallSummary(chartLabel: string, predictionLabel: string) {
       shortDetail: "반등 확인 필요",
       detail:
         "현재 차트 흐름이 약해 단기 반등 여부와 수급 개선 여부를 함께 확인해야 합니다.",
-      tone: "negative" as const,
+      tone: "negative" as SummaryTone,
     };
   }
 
@@ -579,18 +609,8 @@ function makeOverallSummary(chartLabel: string, predictionLabel: string) {
     shortDetail: "혼조 구간",
     detail:
       "차트와 추정 주가 기준이 뚜렷하게 한 방향으로 일치하지 않아 추가 확인이 필요한 구간입니다.",
-    tone: "neutral" as const,
+    tone: "neutral" as SummaryTone,
   };
-}
-
-
-function MetricRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="metric-row">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  );
 }
 
 function makeTodayKey() {
@@ -652,7 +672,7 @@ function formatDailyTargetSource(snapshot?: DailyTargetSnapshot | null) {
   if (!snapshot) return "당일 기준 추정 주가 대기";
 
   if (snapshot.source === "manual") return "직접 입력 기준";
-  if (snapshot.source === "current-query") return "현재 조회 목표가 저장 기준";
+  if (snapshot.source === "current-query") return "현재 조회 추정 주가 저장 기준";
   return "오늘 첫 조회 기준";
 }
 
