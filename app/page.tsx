@@ -858,11 +858,11 @@ export default function HomePage() {
           title="A. 기술적 기준가 내용 및 분석"
           description="현재가, 이동평균, RSI, MACD, 볼린저밴드, 거래량, 변동성, 퀀트 모델 일부를 묶어 기술적 기준가를 확인합니다."
         >
-          <TargetPriceSection score={data?.score} lastFetchedAt={lastFetchedAt} />
+          <ChartAnalysisSections data={data} rows={chartData} />
 
           <QuantScoreSection quant={data?.quant} />
 
-          <ChartAnalysisSections data={data} rows={chartData} />
+          <TargetPriceSection score={data?.score} lastFetchedAt={lastFetchedAt} />
         </SectionGroup>
 
         <SectionGroup
