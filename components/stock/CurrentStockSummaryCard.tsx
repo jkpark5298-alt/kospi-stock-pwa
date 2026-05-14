@@ -23,6 +23,14 @@ type DailyTargetSnapshot = {
 
 type SummaryTone = "positive" | "negative" | "neutral";
 
+type AbcEstimate = {
+  value: number | null;
+  technicalWeight: number | null;
+  valuationWeight: number | null;
+  consensusWeight: number | null;
+  description: string;
+};
+
 const DAILY_TARGET_STORAGE_PREFIX = "kospi-daily-target";
 
 export default function CurrentStockSummaryCard({ data }: Props) {
@@ -103,6 +111,7 @@ export default function CurrentStockSummaryCard({ data }: Props) {
     .filter(Boolean)
     .join(" · ");
   const quickSummary = makeCurrentSummaryInterpretation(data, range);
+  const abcEstimate = makeAbcEstimate(data);
 
   function handleSaveCurrentAsDailyTarget() {
     if (!range || !data?.symbol) return;
@@ -266,6 +275,8 @@ export default function CurrentStockSummaryCard({ data }: Props) {
         </p>
       </div>
 
+      <ReferenceAbcEstimateBox data={data} estimate={abcEstimate} />
+
       <div className="target-basis-box" style={{ marginTop: 16 }}>
         <div className="target-basis-header">
           <span>기술적 분석이란?</span>
@@ -369,6 +380,90 @@ export default function CurrentStockSummaryCard({ data }: Props) {
         추정 주가(현재 조회 기준)는 최신 현재가와 지표로 다시 계산됩니다. 괄호
         안의 당일 기준 추정 주가는 오늘 평가 기준으로 저장된 추정 주가입니다.
       </p>
+    </div>
+  );
+}
+
+function ReferenceAbcEstimateBox({
+  data,
+  estimate,
+}: {
+  data: StockResponse | null;
+  estimate: AbcEstimate;
+}) {
+  const range = data?.score?.targetPrice?.technicalTargetRange;
+  const basis = data?.score?.targetPrice?.targetBasis;
+  const valuationRange = data?.score?.targetPrice?.valuationTargetRange ?? null;
+  const technicalTarget = getTechnicalBasisPrice(basis, range?.baseTarget);
+  const valuationTarget = valuationRange?.valuationTarget ?? null;
+  const consensusTarget = data?.score?.targetPrice?.consensusTarget ?? null;
+  const modelTarget = range?.baseTarget ?? null;
+  const modelGap =
+    estimate.value != null && modelTarget != null
+      ? percentChange(modelTarget, estimate.value)
+      : null;
+
+  return (
+    <div className="target-basis-box" style={{ marginTop: 16 }}>
+      <div className="target-basis-header">
+        <span>참고 A/B/C 추정가</span>
+        <strong>{estimate.value != null ? "요약 기준가 비교" : "데이터 대기"}</strong>
+      </div>
+
+      <p className="target-basis-summary">
+        현재 종목 요약에서는 A 기술적 기준가, B 실적·밸류 기준가, C 컨센서스
+        기준가를 참고값으로 함께 보여줍니다. 현재 모델 추정가와 A/B/C 기준
+        1차 추정가는 아직 다를 수 있습니다.
+      </p>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+          gap: 10,
+          marginTop: 12,
+        }}
+      >
+        <div className="target-metric-card">
+          <span>A. 기술적 기준가</span>
+          <strong>{formatNumber(technicalTarget)}</strong>
+          <em>{makeTechnicalBasisText(basis)}</em>
+        </div>
+
+        <div className="target-metric-card">
+          <span>B. 실적·밸류 기준가</span>
+          <strong>{formatNumber(valuationTarget)}</strong>
+          <em>{makeValuationText(valuationRange)}</em>
+        </div>
+
+        <div className="target-metric-card">
+          <span>C. 컨센서스 기준가</span>
+          <strong>{formatNumber(consensusTarget)}</strong>
+          <em>컨센서스 입력 후 표시</em>
+        </div>
+
+        <div className="target-metric-card">
+          <span>A/B/C 기준 1차 추정가</span>
+          <strong>{formatNumber(estimate.value)}</strong>
+          <em>{formatAbcWeights(estimate)}</em>
+        </div>
+
+        <div className="target-metric-card">
+          <span>현재 모델 추정가</span>
+          <strong>{formatNumber(modelTarget)}</strong>
+          <em>A/B/C 1차 대비 {formatUpside(modelGap)}</em>
+        </div>
+      </div>
+
+      <div className="target-basis-adjustments">
+        <p>
+          현재 표시 기준: 컨센서스가 없으면 A 60%, B 40%로 1차 추정가를
+          계산합니다.
+        </p>
+        <p>
+          컨센서스가 입력되면 A 40%, B 35%, C 25% 구조로 비교할 예정입니다.
+        </p>
+      </div>
     </div>
   );
 }
@@ -613,6 +708,190 @@ function makeOverallSummary(chartLabel: string, predictionLabel: string) {
   };
 }
 
+function makeAbcEstimate(data: StockResponse | null): AbcEstimate {
+  const range = data?.score?.targetPrice?.technicalTargetRange;
+  const basis = data?.score?.targetPrice?.targetBasis;
+  const valuationRange = data?.score?.targetPrice?.valuationTargetRange ?? null;
+  const technicalTarget = getTechnicalBasisPrice(basis, range?.baseTarget);
+  const valuationTarget = valuationRange?.valuationTarget ?? null;
+  const consensusTarget = data?.score?.targetPrice?.consensusTarget ?? null;
+
+  return calculateAbcEstimate({
+    technicalTarget,
+    valuationTarget,
+    consensusTarget,
+  });
+}
+
+function calculateAbcEstimate({
+  technicalTarget,
+  valuationTarget,
+  consensusTarget,
+}: {
+  technicalTarget?: number | null;
+  valuationTarget?: number | null;
+  consensusTarget?: number | null;
+}): AbcEstimate {
+  const hasTechnical =
+    technicalTarget != null && Number.isFinite(technicalTarget);
+  const hasValuation =
+    valuationTarget != null && Number.isFinite(valuationTarget);
+  const hasConsensus =
+    consensusTarget != null && Number.isFinite(consensusTarget);
+
+  if (!hasTechnical && !hasValuation && !hasConsensus) {
+    return {
+      value: null,
+      technicalWeight: null,
+      valuationWeight: null,
+      consensusWeight: null,
+      description: "A/B/C 기준가 대기",
+    };
+  }
+
+  if (hasConsensus) {
+    const weights = normalizeWeights({
+      technicalWeight: hasTechnical ? 0.4 : 0,
+      valuationWeight: hasValuation ? 0.35 : 0,
+      consensusWeight: 0.25,
+    });
+
+    const value =
+      (technicalTarget ?? 0) * weights.technicalWeight +
+      (valuationTarget ?? 0) * weights.valuationWeight +
+      (consensusTarget ?? 0) * weights.consensusWeight;
+
+    return {
+      value: roundPrice(value),
+      ...weights,
+      description: "A 40% · B 35% · C 25% 기준",
+    };
+  }
+
+  const weights = normalizeWeights({
+    technicalWeight: hasTechnical ? 0.6 : 0,
+    valuationWeight: hasValuation ? 0.4 : 0,
+    consensusWeight: 0,
+  });
+
+  const value =
+    (technicalTarget ?? 0) * weights.technicalWeight +
+    (valuationTarget ?? 0) * weights.valuationWeight;
+
+  return {
+    value: roundPrice(value),
+    ...weights,
+    description: "A 60% · B 40% 기준",
+  };
+}
+
+function normalizeWeights({
+  technicalWeight,
+  valuationWeight,
+  consensusWeight,
+}: {
+  technicalWeight: number;
+  valuationWeight: number;
+  consensusWeight: number;
+}) {
+  const total = technicalWeight + valuationWeight + consensusWeight;
+
+  if (total <= 0) {
+    return {
+      technicalWeight: 0,
+      valuationWeight: 0,
+      consensusWeight: 0,
+    };
+  }
+
+  return {
+    technicalWeight: technicalWeight / total,
+    valuationWeight: valuationWeight / total,
+    consensusWeight: consensusWeight / total,
+  };
+}
+
+function getTechnicalBasisPrice(
+  basis?: NonNullable<StockResponse["score"]>["targetPrice"]["targetBasis"],
+  fallback?: number | null,
+) {
+  const technicalCandidate = basis?.candidates.find((candidate) =>
+    candidate.label.includes("기술"),
+  );
+
+  return technicalCandidate?.value ?? fallback ?? null;
+}
+
+function makeTechnicalBasisText(
+  basis?: NonNullable<StockResponse["score"]>["targetPrice"]["targetBasis"],
+) {
+  if (!basis) return "차트 기반 기준가 대기";
+
+  const technicalCandidate = basis.candidates.find((candidate) =>
+    candidate.label.includes("기술"),
+  );
+
+  if (technicalCandidate) {
+    return `기술 후보 반영 비중 ${formatWeight(technicalCandidate.weight)}`;
+  }
+
+  return "최근 고점·볼린저밴드·변동성 기반";
+}
+
+function makeValuationText(
+  valuationRange?: NonNullable<StockResponse["score"]>["targetPrice"]["valuationTargetRange"] | null,
+) {
+  if (!valuationRange?.valuationTarget) {
+    return "EPS/BPS 또는 PER/PBR 데이터 부족";
+  }
+
+  const parts = [];
+
+  if (valuationRange.epsTarget != null) {
+    parts.push("EPS 기준 포함");
+  }
+
+  if (valuationRange.bpsTarget != null) {
+    parts.push("BPS 기준 포함");
+  }
+
+  return parts.length > 0 ? parts.join(" · ") : "실적·밸류 기준";
+}
+
+function formatAbcWeights(estimate: AbcEstimate) {
+  const parts = [];
+
+  if (estimate.technicalWeight != null && estimate.technicalWeight > 0) {
+    parts.push(`A ${formatWeight(estimate.technicalWeight)}`);
+  }
+
+  if (estimate.valuationWeight != null && estimate.valuationWeight > 0) {
+    parts.push(`B ${formatWeight(estimate.valuationWeight)}`);
+  }
+
+  if (estimate.consensusWeight != null && estimate.consensusWeight > 0) {
+    parts.push(`C ${formatWeight(estimate.consensusWeight)}`);
+  }
+
+  return parts.length > 0 ? parts.join(" · ") : "가중치 대기";
+}
+
+function percentChange(target: number, current: number) {
+  if (!Number.isFinite(target) || !Number.isFinite(current) || current === 0) {
+    return null;
+  }
+
+  return ((target - current) / current) * 100;
+}
+
+function roundPrice(value: number) {
+  if (!Number.isFinite(value)) return null;
+
+  if (value >= 100_000) return Math.round(value / 10) * 10;
+  if (value >= 10_000) return Math.round(value / 5) * 5;
+  return Math.round(value);
+}
+
 function makeTodayKey() {
   return new Intl.DateTimeFormat("sv-SE", {
     timeZone: "Asia/Seoul",
@@ -715,6 +994,11 @@ function formatTargetProgress(value?: number | null) {
 function formatUpside(value?: number | null) {
   if (value == null || Number.isNaN(value)) return "데이터 없음";
   return `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
+
+function formatWeight(value?: number | null) {
+  if (value == null || Number.isNaN(value)) return "데이터 없음";
+  return `${(value * 100).toFixed(1)}%`;
 }
 
 function formatDateTime(value?: string | null) {
