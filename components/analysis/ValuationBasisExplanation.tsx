@@ -1,5 +1,14 @@
 "use client";
 
+type EarningsGrowthData = {
+  available?: boolean;
+  operatingProfitGrowthRate?: number | null;
+  netIncomeGrowthRate?: number | null;
+  epsGrowthRate?: number | null;
+  score?: number | null;
+  label?: string | null;
+} | null | undefined;
+
 type Props = {
   data?: {
     fundamentals?: {
@@ -10,14 +19,7 @@ type Props = {
       bps?: number | null;
       dividendYield?: number | null;
     } | null;
-    earningsGrowth?: {
-      available?: boolean;
-      operatingProfitGrowthRate?: number | null;
-      netIncomeGrowthRate?: number | null;
-      epsGrowthRate?: number | null;
-      score?: number | null;
-      label?: string | null;
-    } | null;
+    earningsGrowth?: EarningsGrowthData;
     score?: {
       targetPrice?: {
         valuationTargetRange?: {
@@ -74,8 +76,14 @@ export default function ValuationBasisExplanation({ data }: Props) {
 
           <div className="target-basis-adjustments">
             <p>시가총액: {formatMarketCap(fundamentals?.marketCap)}</p>
-            <p>EPS: {formatNumber(fundamentals?.eps)} · BPS: {formatNumber(fundamentals?.bps)}</p>
-            <p>PER: {formatRatio(fundamentals?.per)} · PBR: {formatRatio(fundamentals?.pbr)}</p>
+            <p>
+              EPS: {formatNumber(fundamentals?.eps)} · BPS:{" "}
+              {formatNumber(fundamentals?.bps)}
+            </p>
+            <p>
+              PER: {formatRatio(fundamentals?.per)} · PBR:{" "}
+              {formatRatio(fundamentals?.pbr)}
+            </p>
             <p>배당수익률: {formatPercent(fundamentals?.dividendYield)}</p>
             <p>영업이익 성장률: {formatPercent(earnings?.operatingProfitGrowthRate)}</p>
             <p>순이익 성장률: {formatPercent(earnings?.netIncomeGrowthRate)}</p>
@@ -218,7 +226,7 @@ function makePbrAnalysis(pbr?: number | null) {
   };
 }
 
-function makeGrowthAnalysis(earnings?: Props["data"]["earningsGrowth"]) {
+function makeGrowthAnalysis(earnings?: EarningsGrowthData) {
   if (!earnings?.available) {
     return {
       title: "실적 성장 데이터 대기",
