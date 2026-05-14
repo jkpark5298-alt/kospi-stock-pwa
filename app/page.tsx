@@ -8,6 +8,8 @@ import TargetPriceSection from "../components/analysis/TargetPriceSection";
 import DisclosureSection from "../components/analysis/DisclosureSection";
 import KisFundamentalsSection from "../components/analysis/KisFundamentalsSection";
 import ConsensusInputSection from "../components/analysis/ConsensusInputSection";
+import TechnicalBasisExplanation from "../components/analysis/TechnicalBasisExplanation";
+import ValuationBasisExplanation from "../components/analysis/ValuationBasisExplanation";
 import CurrentStockSummaryCard from "../components/stock/CurrentStockSummaryCard";
 import PredictionDashboard from "../components/prediction/PredictionDashboard";
 import { useKisUsage } from "../hooks/useKisUsage";
@@ -849,6 +851,8 @@ export default function HomePage() {
             <CurrentStockSummaryCard data={data} />
           </section>
 
+          <TargetPriceSection score={data?.score} lastFetchedAt={lastFetchedAt} />
+
           <CompositeScoreSection score={data?.score} />
         </SectionGroup>
 
@@ -857,9 +861,10 @@ export default function HomePage() {
           title="A. 기술적 기준가 내용 및 분석"
           description="현재가, 이동평균, RSI, MACD, 볼린저밴드, 거래량, 변동성, 퀀트 모델 일부를 묶어 기술적 기준가를 확인합니다."
         >
+          <TechnicalBasisExplanation data={data} />
+
           <ChartAnalysisSections data={data} rows={chartData} />
 
-          <TargetPriceSection score={data?.score} lastFetchedAt={lastFetchedAt} />
         </SectionGroup>
 
         <SectionGroup
@@ -867,6 +872,8 @@ export default function HomePage() {
           title="B. 실적·밸류 기준가 내용 및 분석"
           description="한투 재무 데이터, EPS, BPS, PER, PBR, 시가총액, 실적성장분석, 영업이익·순이익·EPS 성장률, KIS 재무·밸류 보조평가를 묶어 실적·밸류 기준가를 확인합니다."
         >
+          <ValuationBasisExplanation data={data} />
+
           <KisFundamentalsSection symbol={data?.symbol} name={data?.name} />
 
           <EarningsGrowthSection
