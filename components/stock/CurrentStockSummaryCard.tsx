@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import type { StockResponse } from "../../types/stock";
@@ -208,14 +208,6 @@ export default function CurrentStockSummaryCard({ data }: Props) {
           value={
             data?.score?.total != null
               ? `${data.score.total} / 100 · ${data.score.grade}`
-              : "데이터 없음"
-          }
-        />
-        <MetricRow
-          label="퀀트 점수"
-          value={
-            data?.quant?.total != null
-              ? `${data.quant.total} / 100 · ${data.quant.grade}`
               : "데이터 없음"
           }
         />

@@ -1,9 +1,8 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState, type ReactNode } from "react";
 import ChartAnalysisSections from "../components/chart/ChartAnalysisSections";
 import CompositeScoreSection from "../components/analysis/CompositeScoreSection";
-import QuantScoreSection from "../components/analysis/QuantScoreSection";
 import EarningsGrowthSection from "../components/analysis/EarningsGrowthSection";
 import TargetPriceSection from "../components/analysis/TargetPriceSection";
 import DisclosureSection from "../components/analysis/DisclosureSection";
@@ -860,16 +859,16 @@ export default function HomePage() {
         >
           <ChartAnalysisSections data={data} rows={chartData} />
 
-          <QuantScoreSection quant={data?.quant} />
-
           <TargetPriceSection score={data?.score} lastFetchedAt={lastFetchedAt} />
         </SectionGroup>
 
         <SectionGroup
           eyebrow="DETAIL 2"
           title="B. 실적·밸류 기준가 내용 및 분석"
-          description="한투 재무 데이터, EPS, BPS, PER, PBR, 시가총액, 실적성장분석, 영업이익·순이익·EPS 성장률을 묶어 실적·밸류 기준가를 확인합니다."
+          description="한투 재무 데이터, EPS, BPS, PER, PBR, 시가총액, 실적성장분석, 영업이익·순이익·EPS 성장률, KIS 재무·밸류 보조평가를 묶어 실적·밸류 기준가를 확인합니다."
         >
+          <KisFundamentalsSection symbol={data?.symbol} name={data?.name} />
+
           <EarningsGrowthSection
             earningsGrowth={data?.earningsGrowth}
             earningsGrowthMode={earningsGrowthMode}
@@ -881,8 +880,6 @@ export default function HomePage() {
             onApplyManualInput={handleApplyManualEarningsGrowth}
             onClearManualInput={handleClearManualEarningsGrowth}
           />
-
-          <KisFundamentalsSection symbol={data?.symbol} name={data?.name} />
         </SectionGroup>
 
         <SectionGroup
