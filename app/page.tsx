@@ -817,82 +817,126 @@ export default function HomePage() {
           </Card>
         </section>
 
-        <section className="summary-grid summary-grid-four">
-          <InfoCard title="현재가">
-            <BigValue>{formatNumber(data?.currentPrice)}</BigValue>
-          </InfoCard>
+        <SectionGroup
+          eyebrow="SUMMARY"
+          title="요약"
+          description="현재 종목의 핵심 상태를 먼저 확인합니다. 세부 근거는 아래 Detail 영역에서 A/B/C 기준가와 수급·위험으로 나누어 확인합니다."
+        >
+          <section className="summary-grid summary-grid-four">
+            <InfoCard title="현재가">
+              <BigValue>{formatNumber(data?.currentPrice)}</BigValue>
+            </InfoCard>
 
-          <InfoCard title="전일 대비 %">
-            <BigValue tone={getChangeTone(data?.change)}>
-              {formatPercent(data?.change)}
-            </BigValue>
-          </InfoCard>
+            <InfoCard title="전일 대비 %">
+              <BigValue tone={getChangeTone(data?.change)}>
+                {formatPercent(data?.change)}
+              </BigValue>
+            </InfoCard>
 
-          <InfoCard title="전일 대비 가격">
-            <BigValue tone={getChangeTone(data?.changePrice)}>
-              {formatSignedNumber(data?.changePrice)}
-            </BigValue>
-          </InfoCard>
+            <InfoCard title="전일 대비 가격">
+              <BigValue tone={getChangeTone(data?.changePrice)}>
+                {formatSignedNumber(data?.changePrice)}
+              </BigValue>
+            </InfoCard>
 
-          <InfoCard title="기술적 분석">
-            <div className="signal-text">
-              {data?.signalSummary || "데이터 없음"}
-            </div>
-          </InfoCard>
-        </section>
+            <InfoCard title="기술적 분석">
+              <div className="signal-text">
+                {data?.signalSummary || "데이터 없음"}
+              </div>
+            </InfoCard>
+          </section>
 
-        <section className="score-section">
-          <CurrentStockSummaryCard data={data} />
-        </section>
+          <section className="score-section">
+            <CurrentStockSummaryCard data={data} />
+          </section>
 
-        <CompositeScoreSection score={data?.score} />
+          <CompositeScoreSection score={data?.score} />
+        </SectionGroup>
 
-        <QuantScoreSection quant={data?.quant} />
+        <SectionGroup
+          eyebrow="DETAIL 1"
+          title="A. 기술적 기준가 내용 및 분석"
+          description="현재가, 이동평균, RSI, MACD, 볼린저밴드, 거래량, 변동성, 퀀트 모델 일부를 묶어 기술적 기준가를 확인합니다."
+        >
+          <TargetPriceSection score={data?.score} lastFetchedAt={lastFetchedAt} />
 
-        <EarningsGrowthSection
-          earningsGrowth={data?.earningsGrowth}
-          earningsGrowthMode={earningsGrowthMode}
-          manualInput={manualEarningsGrowth}
-          manualInputSavedAt={manualEarningsSavedAt}
-          onModeChange={handleEarningsGrowthModeChange}
-          onManualInputChange={setManualEarningsGrowth}
-          onSaveManualInput={handleSaveManualEarningsGrowth}
-          onApplyManualInput={handleApplyManualEarningsGrowth}
-          onClearManualInput={handleClearManualEarningsGrowth}
-        />
+          <QuantScoreSection quant={data?.quant} />
 
-        <TargetPriceSection score={data?.score} lastFetchedAt={lastFetchedAt} />
+          <ChartAnalysisSections data={data} rows={chartData} />
+        </SectionGroup>
 
-        <DisclosureSection symbol={data?.symbol} name={data?.name} />
+        <SectionGroup
+          eyebrow="DETAIL 2"
+          title="B. 실적·밸류 기준가 내용 및 분석"
+          description="한투 재무 데이터, EPS, BPS, PER, PBR, 시가총액, 실적성장분석, 영업이익·순이익·EPS 성장률을 묶어 실적·밸류 기준가를 확인합니다."
+        >
+          <EarningsGrowthSection
+            earningsGrowth={data?.earningsGrowth}
+            earningsGrowthMode={earningsGrowthMode}
+            manualInput={manualEarningsGrowth}
+            manualInputSavedAt={manualEarningsSavedAt}
+            onModeChange={handleEarningsGrowthModeChange}
+            onManualInputChange={setManualEarningsGrowth}
+            onSaveManualInput={handleSaveManualEarningsGrowth}
+            onApplyManualInput={handleApplyManualEarningsGrowth}
+            onClearManualInput={handleClearManualEarningsGrowth}
+          />
 
-        <KisFundamentalsSection symbol={data?.symbol} name={data?.name} />
+          <KisFundamentalsSection symbol={data?.symbol} name={data?.name} />
+        </SectionGroup>
 
-        <ConsensusInputSection
-          symbol={data?.symbol}
-          name={data?.name}
-          appTargetPrice={data?.score?.targetPrice?.technicalTargetRange?.baseTarget}
-        />
+        <SectionGroup
+          eyebrow="DETAIL 3"
+          title="C. 컨센서스 기준가 내용 및 분석"
+          description="네이버증권, FnGuide, 리포트 목표가, 평균·최고·최저 목표가, 투자의견, 참여 증권사 수를 묶어 컨센서스 기준가를 확인합니다."
+        >
+          <ConsensusInputSection
+            symbol={data?.symbol}
+            name={data?.name}
+            appTargetPrice={data?.score?.targetPrice?.technicalTargetRange?.baseTarget}
+          />
+        </SectionGroup>
 
-        <PredictionDashboard
-          data={data}
-          records={predictionRecords}
-          predictionLoading={predictionLoading}
-          predictionError={predictionError}
-          lastFetchedAt={lastFetchedAt}
-          kisRemainingCalls={kisRemainingCalls}
-          kisSyncCode={kisSyncCode}
-          kisSyncInput={kisSyncInput}
-          kisUsageLoading={kisUsageLoading}
-          kisUsageError={kisUsageError}
-          onKisSyncInputChange={setKisSyncInput}
-          onSaveKisSyncCode={saveKisSyncCode}
-          onSavePrediction={handleSavePrediction}
-          onVerifyPredictions={handleVerifyPredictions}
-          onClearCurrentSymbol={handleClearCurrentSymbolPredictions}
-          onClearAll={handleClearAllPredictions}
-        />
+        <SectionGroup
+          eyebrow="DETAIL 4"
+          title="수급 및 분석"
+          description="외국인 순매수, 기관 순매수, 외국인+기관 5일·20일 흐름, 연속 순매수 여부, 외국인 보유율을 수급 관점에서 확인합니다."
+        >
+          <div className="card">
+            <h3 className="section-title small">수급 분석 위치 안내</h3>
+            <p className="notice-text">
+              현재 수급 데이터는 종합신뢰도 점수와 한투 재무·밸류 데이터 안에 함께 표시됩니다.
+              다음 단계에서 수급 전용 컴포넌트로 분리해 이 영역에 배치합니다.
+            </p>
+          </div>
+        </SectionGroup>
 
-        <ChartAnalysisSections data={data} rows={chartData} />
+        <SectionGroup
+          eyebrow="DETAIL 5"
+          title="위험 및 검증 분석"
+          description="위험 기준선, 단기 과열, 52주 고가 근접, 공시 리스크, 예측 저장·검증 결과를 묶어 확인합니다."
+        >
+          <DisclosureSection symbol={data?.symbol} name={data?.name} />
+
+          <PredictionDashboard
+            data={data}
+            records={predictionRecords}
+            predictionLoading={predictionLoading}
+            predictionError={predictionError}
+            lastFetchedAt={lastFetchedAt}
+            kisRemainingCalls={kisRemainingCalls}
+            kisSyncCode={kisSyncCode}
+            kisSyncInput={kisSyncInput}
+            kisUsageLoading={kisUsageLoading}
+            kisUsageError={kisUsageError}
+            onKisSyncInputChange={setKisSyncInput}
+            onSaveKisSyncCode={saveKisSyncCode}
+            onSavePrediction={handleSavePrediction}
+            onVerifyPredictions={handleVerifyPredictions}
+            onClearCurrentSymbol={handleClearCurrentSymbolPredictions}
+            onClearAll={handleClearAllPredictions}
+          />
+        </SectionGroup>
       </div>
     </main>
   );
@@ -1011,6 +1055,58 @@ function SectionTitle({ children }: { children: ReactNode }) {
 
 function SectionTitleSmall({ children }: { children: ReactNode }) {
   return <h3 className="section-title small">{children}</h3>;
+}
+
+function SectionGroup({
+  eyebrow,
+  title,
+  description,
+  children,
+}: {
+  eyebrow: string;
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
+  return (
+    <section
+      style={{
+        display: "grid",
+        gap: 16,
+        marginTop: 28,
+      }}
+    >
+      <div
+        className="card"
+        style={{
+          padding: 20,
+          border: "1px solid #dbe7ff",
+          background:
+            "linear-gradient(135deg, rgba(239,246,255,0.9), rgba(255,255,255,0.95))",
+        }}
+      >
+        <p
+          className="eyebrow"
+          style={{
+            marginBottom: 6,
+          }}
+        >
+          {eyebrow}
+        </p>
+        <h2
+          className="section-title"
+          style={{
+            marginBottom: 8,
+          }}
+        >
+          {title}
+        </h2>
+        <p className="notice-text">{description}</p>
+      </div>
+
+      {children}
+    </section>
+  );
 }
 
 function formatNumber(value?: number | null) {
