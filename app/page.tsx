@@ -8,6 +8,7 @@ import EarningsGrowthSection from "../components/analysis/EarningsGrowthSection"
 import TargetPriceSection from "../components/analysis/TargetPriceSection";
 import DisclosureSection from "../components/analysis/DisclosureSection";
 import KisFundamentalsSection from "../components/analysis/KisFundamentalsSection";
+import ConsensusInputSection from "../components/analysis/ConsensusInputSection";
 import CurrentStockSummaryCard from "../components/stock/CurrentStockSummaryCard";
 import PredictionDashboard from "../components/prediction/PredictionDashboard";
 import { useKisUsage } from "../hooks/useKisUsage";
@@ -315,7 +316,6 @@ const DEFAULT_RANGE = "6mo";
 const WATCHLIST_KEY = "kospi-watchlist";
 const MANUAL_EARNINGS_STORAGE_KEY = "kospi-manual-earnings-growth";
 
-
 function normalizeManualEarningsKey(value?: string | null) {
   return (value || "").trim().toUpperCase();
 }
@@ -419,7 +419,6 @@ function hasManualEarningsValue(input: ManualEarningsGrowthInput) {
   return Object.values(input).some((value) => value.trim() !== "");
 }
 
-
 export default function HomePage() {
   const [symbol, setSymbol] = useState(DEFAULT_SYMBOL);
   const [range, setRange] = useState(DEFAULT_RANGE);
@@ -429,14 +428,13 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [uiError, setUiError] = useState("");
   const [lastFetchedAt, setLastFetchedAt] = useState<string | null>(null);
-  const [manualEarningsGrowth, setManualEarningsGrowth] = useState<ManualEarningsGrowthInput>(
-    EMPTY_MANUAL_EARNINGS_GROWTH,
-  );
+  const [manualEarningsGrowth, setManualEarningsGrowth] =
+    useState<ManualEarningsGrowthInput>(EMPTY_MANUAL_EARNINGS_GROWTH);
   const [earningsGrowthMode, setEarningsGrowthMode] =
     useState<EarningsGrowthMode>("auto");
-  const [manualEarningsSavedAt, setManualEarningsSavedAt] = useState<string | null>(
-    null,
-  );
+  const [manualEarningsSavedAt, setManualEarningsSavedAt] = useState<
+    string | null
+  >(null);
   const {
     kisRemainingCalls,
     kisSyncCode,
@@ -836,7 +834,7 @@ export default function HomePage() {
             </BigValue>
           </InfoCard>
 
-          <InfoCard title="분석 신호">
+          <InfoCard title="기술적 분석">
             <div className="signal-text">
               {data?.signalSummary || "데이터 없음"}
             </div>
@@ -869,6 +867,12 @@ export default function HomePage() {
 
         <KisFundamentalsSection symbol={data?.symbol} name={data?.name} />
 
+        <ConsensusInputSection
+          symbol={data?.symbol}
+          name={data?.name}
+          appTargetPrice={data?.score?.targetPrice?.technicalTargetRange?.baseTarget}
+        />
+
         <PredictionDashboard
           data={data}
           records={predictionRecords}
@@ -893,7 +897,6 @@ export default function HomePage() {
     </main>
   );
 }
-
 
 function appendManualEarningsParams(
   params: URLSearchParams,
