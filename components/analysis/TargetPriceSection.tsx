@@ -10,10 +10,23 @@ type Props = {
 
 type TargetTone = "positive" | "negative" | "neutral";
 
+type AbcEstimate = {
+  value: number | null;
+  technicalWeight: number | null;
+  valuationWeight: number | null;
+  consensusWeight: number | null;
+  description: string;
+};
+
 export default function TargetPriceSection({ score, lastFetchedAt }: Props) {
   const range = score?.targetPrice?.technicalTargetRange;
   const basis = score?.targetPrice?.targetBasis;
   const valuationRange = score?.targetPrice?.valuationTargetRange ?? null;
+  const abcEstimate = calculateAbcEstimate({
+    technicalTarget: getTechnicalBasisPrice(basis, range?.baseTarget),
+    valuationTarget: valuationRange?.valuationTarget ?? null,
+    consensusTarget: score?.targetPrice?.consensusTarget ?? null,
+  });
 
   const targetProgress =
     range && range.baseTarget > 0
@@ -31,13 +44,13 @@ export default function TargetPriceSection({ score, lastFetchedAt }: Props) {
           <div>
             <SectionTitleSmall>추정 주가 참고 범위</SectionTitleSmall>
             <p className="target-subtitle">
-              현재 조회 시점의 가격을 기준으로 A 기술적 기준가, B 실적·밸류
-              기준가, C 컨센서스 기준가를 구분하고 수급·위험 보정을 함께
-              확인합니다.
+              현재 화면은 A 기술적 기준가, B 실적·밸류 기준가, C 컨센서스
+              기준가를 분리해 보여줍니다. 아직 최종 산식에는 기존 모델
+              추정가가 함께 표시됩니다.
             </p>
           </div>
           <div className={`target-badge ${range ? "available" : "unavailable"}`}>
-            {range ? "추정 주가 산정 구조" : "추정 주가 대기"}
+            {range ? "A/B/C 구조 확인" : "추정 주가 대기"}
           </div>
         </div>
 
@@ -55,19 +68,29 @@ export default function TargetPriceSection({ score, lastFetchedAt }: Props) {
             tone="neutral"
           />
           <TargetMetricCard
-            title="최종 추정 주가"
+            title="현재 모델 추정가"
             value={formatNumber(range?.baseTarget)}
-            subText={`현재가 대비 추정 괴리율 ${formatUpside(range?.baseUpsidePercent)}`}
+            subText={`기존 로직 기준 추정 괴리율 ${formatUpside(range?.baseUpsidePercent)}`}
             tone={getTargetTone(range?.baseUpsidePercent)}
           />
           <TargetMetricCard
-            title="추정 주가 도달률"
+            title="A/B/C 기준 1차 추정가"
+            value={formatNumber(abcEstimate.value)}
+            subText={abcEstimate.description}
+            tone={getTargetTone(
+              range?.currentPrice && abcEstimate.value
+                ? percentChange(abcEstimate.value, range.currentPrice)
+                : null,
+            )}
+          />
+          <TargetMetricCard
+            title="현재 모델 도달률"
             value={formatTargetProgress(targetProgress)}
-            subText="기준 현재가 / 최종 추정 주가"
+            subText="기준 현재가 / 현재 모델 추정가"
             tone={getTargetProgressTone(targetProgress)}
           />
           <TargetMetricCard
-            title="상승여력 가격"
+            title="현재 모델 상승여력"
             value={formatSignedNumber(upsidePrice)}
             subText={`현재가 대비 차이 ${formatUpside(range?.baseUpsidePercent)}`}
             tone={getTargetTone(upsidePrice)}
@@ -80,19 +103,23 @@ export default function TargetPriceSection({ score, lastFetchedAt }: Props) {
           />
         </div>
 
-        <TargetStructureBox score={score} basis={basis} />
+        <TargetStructureBox
+          score={score}
+          basis={basis}
+          abcEstimate={abcEstimate}
+        />
 
         <div className="target-comment-box">
           <span>해석</span>
-          <strong>{makeTargetComment(score)}</strong>
+          <strong>{makeTargetComment(score, abcEstimate)}</strong>
         </div>
 
         <TargetBasisBox basis={basis} valuationRange={valuationRange} />
 
         <p className="notice-text">
-          최종 추정 주가는 A 기술적 기준가와 B 실적·밸류 기준가를 우선
-          반영하고, C 컨센서스 데이터가 입력되면 별도 기준가로 비교합니다.
-          이후 수급과 위험 요인을 보정해 해석합니다.
+          A/B/C 기준 1차 추정가는 산정 구조를 이해하기 위한 비교값입니다. 현재
+          모델 추정가는 기존 로직으로 계산된 값이며, 다음 단계에서 A/B/C
+          가중산식과 수급·위험 보정을 실제 최종 추정 주가 산식에 반영합니다.
         </p>
       </Card>
     </section>
@@ -102,9 +129,11 @@ export default function TargetPriceSection({ score, lastFetchedAt }: Props) {
 function TargetStructureBox({
   score,
   basis,
+  abcEstimate,
 }: {
   score?: CompositeScore;
   basis?: TargetBasis | null;
+  abcEstimate: AbcEstimate;
 }) {
   const range = score?.targetPrice?.technicalTargetRange;
   const valuationRange = score?.targetPrice?.valuationTargetRange ?? null;
@@ -113,18 +142,22 @@ function TargetStructureBox({
   const consensusTarget = score?.targetPrice?.consensusTarget ?? null;
   const supplyScore = score?.supply?.score ?? null;
   const riskLine = range?.riskLine ?? null;
+  const modelGap =
+    abcEstimate.value != null && range?.baseTarget != null
+      ? percentChange(range.baseTarget, abcEstimate.value)
+      : null;
 
   return (
     <div className="target-basis-box" style={{ marginTop: 16 }}>
       <div className="target-basis-header">
         <span>추정 주가 산정 구조</span>
-        <strong>A/B/C 기준가 + 수급·위험 보정</strong>
+        <strong>A/B/C 기준가와 현재 모델 추정가 비교</strong>
       </div>
 
       <p className="target-basis-summary">
-        1차 기준가는 A 기술적 기준가, B 실적·밸류 기준가, C 컨센서스
-        기준가를 구분해 확인합니다. 최종 추정 주가는 여기에 수급 보정과 위험
-        보정을 함께 고려합니다.
+        A/B/C 기준가는 추정 주가를 이해하기 위한 분해값입니다. 현재 모델
+        추정가가 A/B/C 기준 1차 추정가와 크게 다르면, 아직 기존 산식의 보정값이
+        크게 작동하고 있다는 뜻입니다.
       </p>
 
       <div className="target-grid" style={{ marginTop: 12 }}>
@@ -132,7 +165,11 @@ function TargetStructureBox({
           title="A. 기술적 기준가"
           value={formatNumber(technicalBasisPrice)}
           subText={makeTechnicalBasisText(basis)}
-          tone={getTargetTone(range?.baseUpsidePercent)}
+          tone={getTargetTone(
+            range?.currentPrice && technicalBasisPrice
+              ? percentChange(technicalBasisPrice, range.currentPrice)
+              : null,
+          )}
         />
         <TargetMetricCard
           title="B. 실적·밸류 기준가"
@@ -143,40 +180,51 @@ function TargetStructureBox({
         <TargetMetricCard
           title="C. 컨센서스 기준가"
           value={formatNumber(consensusTarget)}
-          subText="컨센서스 입력 후 산정 반영 예정"
+          subText="컨센서스 입력 후 별도 기준가로 표시"
           tone="neutral"
         />
         <TargetMetricCard
-          title="수급 보정"
+          title="A/B/C 기준 1차 추정가"
+          value={formatNumber(abcEstimate.value)}
+          subText={formatAbcWeights(abcEstimate)}
+          tone={getTargetTone(
+            range?.currentPrice && abcEstimate.value
+              ? percentChange(abcEstimate.value, range.currentPrice)
+              : null,
+          )}
+        />
+        <TargetMetricCard
+          title="현재 모델 추정가"
+          value={formatNumber(range?.baseTarget)}
+          subText={`A/B/C 1차 대비 ${formatUpside(modelGap)}`}
+          tone={getTargetTone(modelGap)}
+        />
+        <TargetMetricCard
+          title="수급 참고"
           value={formatScore(supplyScore)}
           subText={makeSupplyText(score)}
           tone={getScoreTone(supplyScore)}
         />
         <TargetMetricCard
-          title="위험 보정"
+          title="위험 기준선"
           value={formatNumber(riskLine)}
           subText={makeRiskText(range)}
           tone="negative"
-        />
-        <TargetMetricCard
-          title="최종 추정 주가"
-          value={formatNumber(range?.baseTarget)}
-          subText={`추정 괴리율 ${formatUpside(range?.baseUpsidePercent)}`}
-          tone={getTargetTone(range?.baseUpsidePercent)}
         />
       </div>
 
       <div className="target-basis-adjustments">
         <p>
-          산식 방향: 1차 기준가 = A 기술적 기준가 × 기술 비중 + B 실적·밸류
-          기준가 × 실적 비중 + C 컨센서스 기준가 × 컨센서스 비중
+          현재 표시 기준: 컨센서스가 없으면 A 기술적 기준가 60%, B 실적·밸류
+          기준가 40%로 A/B 기준 1차 추정가를 계산합니다.
         </p>
         <p>
-          최종 추정 주가 = 1차 기준가 × 수급 보정 × 위험 보정
+          컨센서스가 있으면 A 40%, B 35%, C 25%로 1차 추정가를 계산하는
+          구조를 적용할 예정입니다.
         </p>
         <p>
-          현재 단계에서는 C 컨센서스 기준가는 입력·저장 후 별도 기준가로
-          표시하고, 다음 단계에서 실제 산식에 반영합니다.
+          현재 모델 추정가는 아직 기존 lib/score.ts 로직의 산출값입니다. 따라서
+          A/B/C 기준 1차 추정가와 다를 수 있습니다.
         </p>
       </div>
     </div>
@@ -204,8 +252,8 @@ function TargetBasisMeta({
       </p>
       <div className="target-basis-adjustments">
         <p>
-          추정 주가 성격: 기술적 기준가, 실적·밸류 기준가, 컨센서스 기준가를
-          구분해 최종 추정 주가를 해석하는 참고 지표
+          추정 주가 성격: A 기술적 기준가, B 실적·밸류 기준가, C 컨센서스
+          기준가를 구분해 현재 모델 추정가와 비교하는 참고 지표
         </p>
         <p>
           다시 조회하면 최신 현재가와 지표를 기준으로 추정 주가 참고 범위가
@@ -307,41 +355,122 @@ function SectionTitleSmall({ children }: { children: ReactNode }) {
   return <h3 className="section-title small">{children}</h3>;
 }
 
-function makeTargetComment(score?: CompositeScore) {
+function calculateAbcEstimate({
+  technicalTarget,
+  valuationTarget,
+  consensusTarget,
+}: {
+  technicalTarget?: number | null;
+  valuationTarget?: number | null;
+  consensusTarget?: number | null;
+}): AbcEstimate {
+  const hasTechnical =
+    technicalTarget != null && Number.isFinite(technicalTarget);
+  const hasValuation =
+    valuationTarget != null && Number.isFinite(valuationTarget);
+  const hasConsensus =
+    consensusTarget != null && Number.isFinite(consensusTarget);
+
+  if (!hasTechnical && !hasValuation && !hasConsensus) {
+    return {
+      value: null,
+      technicalWeight: null,
+      valuationWeight: null,
+      consensusWeight: null,
+      description: "A/B/C 기준가 대기",
+    };
+  }
+
+  if (hasConsensus) {
+    const weights = normalizeWeights({
+      technicalWeight: hasTechnical ? 0.4 : 0,
+      valuationWeight: hasValuation ? 0.35 : 0,
+      consensusWeight: 0.25,
+    });
+
+    const value =
+      (technicalTarget ?? 0) * weights.technicalWeight +
+      (valuationTarget ?? 0) * weights.valuationWeight +
+      (consensusTarget ?? 0) * weights.consensusWeight;
+
+    return {
+      value: roundPrice(value),
+      ...weights,
+      description: "A 40% · B 35% · C 25% 기준",
+    };
+  }
+
+  const weights = normalizeWeights({
+    technicalWeight: hasTechnical ? 0.6 : 0,
+    valuationWeight: hasValuation ? 0.4 : 0,
+    consensusWeight: 0,
+  });
+
+  const value =
+    (technicalTarget ?? 0) * weights.technicalWeight +
+    (valuationTarget ?? 0) * weights.valuationWeight;
+
+  return {
+    value: roundPrice(value),
+    ...weights,
+    description: "A 60% · B 40% 기준",
+  };
+}
+
+function normalizeWeights({
+  technicalWeight,
+  valuationWeight,
+  consensusWeight,
+}: {
+  technicalWeight: number;
+  valuationWeight: number;
+  consensusWeight: number;
+}) {
+  const total = technicalWeight + valuationWeight + consensusWeight;
+
+  if (total <= 0) {
+    return {
+      technicalWeight: 0,
+      valuationWeight: 0,
+      consensusWeight: 0,
+    };
+  }
+
+  return {
+    technicalWeight: technicalWeight / total,
+    valuationWeight: valuationWeight / total,
+    consensusWeight: consensusWeight / total,
+  };
+}
+
+function makeTargetComment(score: CompositeScore | undefined, abcEstimate: AbcEstimate) {
   const range = score?.targetPrice?.technicalTargetRange;
 
   if (!range) {
     return "분석 실행 후 현재 조회 시점 기준 추정 주가 참고 범위가 표시됩니다.";
   }
 
-  const targetScore = score?.targetPrice?.score ?? 0;
-  const supplyScore = score?.supply?.score ?? 0;
-  const volumeScore = score?.volume?.score ?? 0;
+  const modelGap =
+    abcEstimate.value != null ? percentChange(range.baseTarget, abcEstimate.value) : null;
   const targetProgress =
     range.baseTarget > 0 ? (range.currentPrice / range.baseTarget) * 100 : null;
   const upsidePrice = range.baseTarget - range.currentPrice;
 
+  if (modelGap != null && Math.abs(modelGap) >= 10) {
+    return `현재 모델 추정가는 A/B/C 기준 1차 추정가와 ${formatUpside(
+      modelGap,
+    )} 차이가 있습니다. 아직 기존 모델 보정값이 크게 반영된 상태이므로, 다음 단계에서 A/B/C 산식을 실제 최종 산식에 맞춰 정리해야 합니다.`;
+  }
+
   if (targetProgress != null && targetProgress >= 97) {
-    return `기준 현재가가 최종 추정 주가의 ${targetProgress.toFixed(
+    return `기준 현재가가 현재 모델 추정가의 ${targetProgress.toFixed(
       1,
     )}% 수준입니다. 남은 상승여력은 ${formatSignedNumber(
       upsidePrice,
-    )}로 제한적일 수 있어 수급 보정과 위험 보정을 우선 확인해야 합니다.`;
+    )}로 제한적일 수 있어 수급과 위험 기준선을 함께 확인해야 합니다.`;
   }
 
-  if (targetScore >= 70 && supplyScore >= 70 && volumeScore >= 65) {
-    return "기술적 기준가와 수급·거래 흐름이 함께 받쳐주고 있어 최종 추정 주가까지는 관심 구간으로 볼 수 있습니다.";
-  }
-
-  if (targetScore >= 65 && supplyScore >= 70) {
-    return "수급은 긍정적이지만 거래 확인이 필요합니다. 최종 추정 주가를 참고하되 보수 기준가와 위험 기준선을 함께 확인하는 것이 좋습니다.";
-  }
-
-  if (targetScore < 50) {
-    return "상승여력이 작거나 위험 기준선이 가까운 구간입니다. 무리한 추정 주가 해석보다는 위험 관리가 필요합니다.";
-  }
-
-  return "A 기술적 기준가, B 실적·밸류 기준가, 수급·위험 보정을 함께 확인해 최종 추정 주가를 해석해야 합니다.";
+  return "A/B/C 기준 1차 추정가와 현재 모델 추정가를 비교해, 기존 모델이 어느 정도 공격적 또는 보수적으로 계산됐는지 확인하는 구간입니다.";
 }
 
 function getTechnicalBasisPrice(
@@ -394,14 +523,48 @@ function makeSupplyText(score?: CompositeScore) {
 
   if (supplyScore == null) return "수급 데이터 대기";
   if (supplyScore >= 70) return "외국인·기관 흐름 우호";
-  if (supplyScore < 50) return "수급 보정 보수 적용";
-  return "수급 중립 확인";
+  if (supplyScore < 50) return "수급 보수적";
+  return "수급 중립";
 }
 
 function makeRiskText(range?: CompositeScore["targetPrice"]["technicalTargetRange"]) {
   if (!range) return "위험 기준선 대기";
 
   return `현재가 대비 ${formatUpside(range.riskDownsidePercent)}`;
+}
+
+function percentChange(target: number, current: number) {
+  if (!Number.isFinite(target) || !Number.isFinite(current) || current === 0) {
+    return null;
+  }
+
+  return ((target - current) / current) * 100;
+}
+
+function roundPrice(value: number) {
+  if (!Number.isFinite(value)) return null;
+
+  if (value >= 100_000) return Math.round(value / 10) * 10;
+  if (value >= 10_000) return Math.round(value / 5) * 5;
+  return Math.round(value);
+}
+
+function formatAbcWeights(estimate: AbcEstimate) {
+  const parts = [];
+
+  if (estimate.technicalWeight != null && estimate.technicalWeight > 0) {
+    parts.push(`A ${formatWeight(estimate.technicalWeight)}`);
+  }
+
+  if (estimate.valuationWeight != null && estimate.valuationWeight > 0) {
+    parts.push(`B ${formatWeight(estimate.valuationWeight)}`);
+  }
+
+  if (estimate.consensusWeight != null && estimate.consensusWeight > 0) {
+    parts.push(`C ${formatWeight(estimate.consensusWeight)}`);
+  }
+
+  return parts.length > 0 ? parts.join(" · ") : "가중치 대기";
 }
 
 function formatScore(value?: number | null) {
