@@ -13,6 +13,7 @@ import ValuationBasisExplanation from "../components/analysis/ValuationBasisExpl
 import SupplyAnalysisSection from "../components/analysis/SupplyAnalysisSection";
 import RiskAnalysisSection from "../components/analysis/RiskAnalysisSection";
 import CurrentStockSummaryCard from "../components/stock/CurrentStockSummaryCard";
+import SummaryAbcOverviewSection from "../components/stock/SummaryAbcOverviewSection";
 import PredictionDashboard from "../components/prediction/PredictionDashboard";
 import { useKisUsage } from "../hooks/useKisUsage";
 import { usePredictionHistory } from "../hooks/usePredictionHistory";
@@ -853,6 +854,7 @@ export default function HomePage() {
             <CurrentStockSummaryCard data={data} />
           </section>
 
+          <SummaryAbcOverviewSection data={data} />
           <TargetPriceSection score={data?.score} lastFetchedAt={lastFetchedAt} />
 
           <CompositeScoreSection score={data?.score} />
@@ -1210,4 +1212,5 @@ function getChangeTone(
   if (value < 0) return "negative";
   return "neutral";
 }
+
 
