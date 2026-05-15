@@ -75,6 +75,13 @@ export default function ConsensusInputSection({
     consensus.lowTargetPrice,
   );
 
+  const hasConsensus =
+    consensus.averageTargetPrice != null ||
+    consensus.highTargetPrice != null ||
+    consensus.lowTargetPrice != null ||
+    consensus.analystCount != null ||
+    Boolean(consensus.investmentOpinion);
+
   function handleParse() {
     const parsed = parseConsensusText(rawText);
 
@@ -113,74 +120,16 @@ export default function ConsensusInputSection({
     <section className="score-section">
       <div className="card">
         <div className="target-basis-header">
-          <span>컨센서스 참고 데이터</span>
-          <strong>{name || symbol || "종목 선택 전"}</strong>
+          <span>컨센서스 기준가 산정 방식</span>
+          <strong>{hasConsensus ? "컨센서스 반영 가능" : "컨센서스 대기"}</strong>
         </div>
 
         <p className="target-basis-summary">
-          네이버증권, FnGuide, 리포트 화면에서 컨센서스 관련 텍스트를 복사해
-          붙여넣으면 평균 목표가, 최고·최저 목표가, 투자의견, 참여 증권사 수를
-          최대한 읽어 저장합니다.
+          네이버증권, FnGuide, 리포트 목표가의 평균·최고·최저 목표가를
+          참고해 외부 시장 기대치를 확인합니다. 컨센서스 기준가는 앱 모델
+          추정가가 시장 기대치보다 보수적인지, 과도하게 높은지 비교하는 보조
+          기준입니다.
         </p>
-
-        <div
-          style={{
-            display: "grid",
-            gap: 12,
-            marginTop: 14,
-          }}
-        >
-          <textarea
-            className="form-control"
-            value={rawText}
-            onChange={(event) => setRawText(event.target.value)}
-            placeholder={`예시)
-평균 목표가 296,000
-최고 목표가 330,000
-최저 목표가 250,000
-투자의견 BUY
-참여 18개 증권사`}
-            rows={8}
-            style={{
-              width: "100%",
-              resize: "vertical",
-              minHeight: 160,
-              lineHeight: 1.5,
-            }}
-          />
-
-          <div
-            style={{
-              display: "flex",
-              gap: 8,
-              flexWrap: "wrap",
-            }}
-          >
-            <button
-              className="button primary-button"
-              type="button"
-              onClick={handleParse}
-            >
-              컨센서스 읽기
-            </button>
-            <button
-              className="button secondary-button"
-              type="button"
-              onClick={handleSave}
-              disabled={!storageKey}
-            >
-              저장
-            </button>
-            <button
-              className="button secondary-button"
-              type="button"
-              onClick={handleClear}
-              disabled={!storageKey && !rawText}
-            >
-              삭제
-            </button>
-          </div>
-        </div>
 
         <div className="summary-grid summary-grid-four" style={{ marginTop: 16 }}>
           <ConsensusMetricCard
@@ -210,6 +159,7 @@ export default function ConsensusInputSection({
             <span>앱 추정가 vs 컨센서스</span>
             <strong>{comparison.title}</strong>
           </div>
+
           <p className="target-basis-summary">{comparison.description}</p>
 
           <div className="target-basis-adjustments">
@@ -217,6 +167,78 @@ export default function ConsensusInputSection({
             <p>컨센서스 평균: {formatPrice(consensus.averageTargetPrice)}</p>
             <p>차이: {comparison.gapText}</p>
             <p>저장 시각: {formatDateTime(savedAt)}</p>
+          </div>
+        </div>
+
+        <div className="target-basis-box" style={{ marginTop: 16 }}>
+          <div className="target-basis-header">
+            <span>컨센서스 원문 입력/저장</span>
+            <strong>{name || symbol || "종목 선택 전"}</strong>
+          </div>
+
+          <p className="target-basis-summary">
+            네이버증권, FnGuide, 리포트 화면에서 컨센서스 관련 텍스트를
+            복사해 붙여넣으면 평균 목표가, 최고·최저 목표가, 투자의견, 참여
+            증권사 수를 최대한 읽어 저장합니다.
+          </p>
+
+          <div
+            style={{
+              display: "grid",
+              gap: 12,
+              marginTop: 14,
+            }}
+          >
+            <textarea
+              className="form-control"
+              value={rawText}
+              onChange={(event) => setRawText(event.target.value)}
+              placeholder={`예시)
+평균 목표가 296,000
+최고 목표가 330,000
+최저 목표가 250,000
+투자의견 BUY
+참여 18개 증권사`}
+              rows={7}
+              style={{
+                width: "100%",
+                resize: "vertical",
+                minHeight: 140,
+                lineHeight: 1.5,
+              }}
+            />
+
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              <button
+                className="button primary-button"
+                type="button"
+                onClick={handleParse}
+              >
+                컨센서스 읽기
+              </button>
+              <button
+                className="button secondary-button"
+                type="button"
+                onClick={handleSave}
+                disabled={!storageKey}
+              >
+                저장
+              </button>
+              <button
+                className="button secondary-button"
+                type="button"
+                onClick={handleClear}
+                disabled={!storageKey && !rawText}
+              >
+                삭제
+              </button>
+            </div>
           </div>
         </div>
 
@@ -280,8 +302,8 @@ export default function ConsensusInputSection({
 
         <p className="notice-text" style={{ marginTop: 14 }}>
           이 데이터는 자동 크롤링이 아니라 사용자가 복사해 붙여넣은 텍스트를
-          파싱해 저장하는 방식입니다. 다음 단계에서 추정 주가 산정에 보조
-          반영합니다.
+          파싱해 저장하는 방식입니다. 다음 단계에서 추정 주가 산정의 보조
+          기준으로 반영할 수 있습니다.
         </p>
       </div>
     </section>
@@ -313,6 +335,7 @@ function parseConsensusText(text: string): Partial<ConsensusData> {
       "평균목표가",
       "목표주가 평균",
       "컨센서스 평균",
+      "평균",
       "consensus",
       "average",
     ]) ?? findFirstPrice(text);
@@ -321,6 +344,7 @@ function parseConsensusText(text: string): Partial<ConsensusData> {
     "최고 목표가",
     "최고목표가",
     "상단",
+    "최고",
     "highest",
     "high",
   ]);
@@ -329,6 +353,7 @@ function parseConsensusText(text: string): Partial<ConsensusData> {
     "최저 목표가",
     "최저목표가",
     "하단",
+    "최저",
     "lowest",
     "low",
   ]);
@@ -372,6 +397,7 @@ function findAnalystCount(text: string) {
     /([0-9]{1,2})\s*개\s*증권사/,
     /([0-9]{1,2})\s*명/,
     /참여[^0-9]{0,10}([0-9]{1,2})/,
+    /증권사[^0-9]{0,10}([0-9]{1,2})/,
     /analyst[^0-9]{0,10}([0-9]{1,2})/i,
   ];
 
@@ -451,7 +477,7 @@ function makeConsensusComparison(
 
   if (gapRate >= 3) {
     return {
-      title: "앱 추정가는 보수적",
+      title: "앱 추정가가 보수적",
       description:
         "컨센서스 평균 목표가가 앱 추정가보다 높습니다. 시장 기대치는 앱 추정가보다 우호적으로 볼 수 있습니다.",
       gapText: `+${gapRate.toFixed(2)}%`,
