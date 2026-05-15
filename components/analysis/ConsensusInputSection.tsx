@@ -41,13 +41,13 @@ export default function ConsensusInputSection({
   name,
   appTargetPrice,
 }: Props) {
-  const storageKey = useMemo(() => makeStorageKey(symbol), [symbol]);
+  const storageKey = useMemo(() => makeStorageKey(symbol, name), [symbol, name]);
   const [rawText, setRawText] = useState("");
   const [consensus, setConsensus] = useState<ConsensusData>(EMPTY_CONSENSUS);
   const [savedAt, setSavedAt] = useState<string | null>(null);
 
   useEffect(() => {
-    if (typeof window === "undefined" || !storageKey) {
+    if (typeof window === "undefined") {
       setRawText("");
       setConsensus(EMPTY_CONSENSUS);
       setSavedAt(null);
@@ -82,6 +82,8 @@ export default function ConsensusInputSection({
     consensus.analystCount != null ||
     Boolean(consensus.investmentOpinion);
 
+  const displayName = name || symbol || "현재 종목";
+
   function handleParse() {
     const parsed = parseConsensusText(rawText);
 
@@ -93,7 +95,7 @@ export default function ConsensusInputSection({
   }
 
   function handleSave() {
-    if (!storageKey || typeof window === "undefined") return;
+    if (typeof window === "undefined") return;
 
     const next: ConsensusData = {
       ...consensus,
@@ -107,7 +109,7 @@ export default function ConsensusInputSection({
   }
 
   function handleClear() {
-    if (storageKey && typeof window !== "undefined") {
+    if (typeof window !== "undefined") {
       window.localStorage.removeItem(storageKey);
     }
 
@@ -173,7 +175,7 @@ export default function ConsensusInputSection({
         <div className="target-basis-box" style={{ marginTop: 16 }}>
           <div className="target-basis-header">
             <span>컨센서스 원문 입력/저장</span>
-            <strong>{name || symbol || "종목 선택 전"}</strong>
+            <strong>{displayName}</strong>
           </div>
 
           <p className="target-basis-summary">
@@ -226,7 +228,6 @@ export default function ConsensusInputSection({
                 className="button secondary-button"
                 type="button"
                 onClick={handleSave}
-                disabled={!storageKey}
               >
                 저장
               </button>
@@ -234,7 +235,7 @@ export default function ConsensusInputSection({
                 className="button secondary-button"
                 type="button"
                 onClick={handleClear}
-                disabled={!storageKey && !rawText}
+                disabled={!rawText && !hasConsensus && !savedAt}
               >
                 삭제
               </button>
@@ -302,8 +303,8 @@ export default function ConsensusInputSection({
 
         <p className="notice-text" style={{ marginTop: 14 }}>
           이 데이터는 자동 크롤링이 아니라 사용자가 복사해 붙여넣은 텍스트를
-          파싱해 저장하는 방식입니다. 다음 단계에서 추정 주가 산정의 보조
-          기준으로 반영할 수 있습니다.
+          파싱해 저장하는 방식입니다. 종목 코드가 없을 때도 임시 저장키로
+          저장되며, 종목 조회 후에는 종목별 저장키로 관리됩니다.
         </p>
       </div>
     </section>
@@ -527,12 +528,20 @@ function readConsensus(key: string): ConsensusData | null {
   }
 }
 
-function makeStorageKey(symbol?: string | null) {
-  const normalized = (symbol || "").trim().toUpperCase();
+function makeStorageKey(symbol?: string | null, name?: string | null) {
+  const normalizedSymbol = (symbol || "").trim().toUpperCase();
 
-  if (!normalized) return "";
+  if (normalizedSymbol) {
+    return `${CONSENSUS_STORAGE_PREFIX}:${normalizedSymbol}`;
+  }
 
-  return `${CONSENSUS_STORAGE_PREFIX}:${normalized}`;
+  const normalizedName = (name || "").trim();
+
+  if (normalizedName) {
+    return `${CONSENSUS_STORAGE_PREFIX}:NAME:${normalizedName}`;
+  }
+
+  return `${CONSENSUS_STORAGE_PREFIX}:CURRENT`;
 }
 
 function formatPrice(value?: number | null) {
