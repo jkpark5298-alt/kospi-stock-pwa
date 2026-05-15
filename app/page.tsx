@@ -6,7 +6,7 @@ import CompositeScoreSection from "../components/analysis/CompositeScoreSection"
 import EarningsGrowthSection from "../components/analysis/EarningsGrowthSection";
 import TargetPriceSection from "../components/analysis/TargetPriceSection";
 import DisclosureSection from "../components/analysis/DisclosureSection";
-import KisFundamentalsSection from "../components/analysis/KisFundamentalsSection";
+import FundamentalSnapshotSection from "../components/analysis/FundamentalSnapshotSection";
 import ConsensusInputSection from "../components/analysis/ConsensusInputSection";
 import TechnicalBasisExplanation from "../components/analysis/TechnicalBasisExplanation";
 import ValuationBasisExplanation from "../components/analysis/ValuationBasisExplanation";
@@ -872,7 +872,7 @@ export default function HomePage() {
           title="B. 실적·밸류 기준가 내용 및 분석"
           description="한투 재무 데이터, EPS, BPS, PER, PBR, 시가총액, 실적성장분석, 영업이익·순이익·EPS 성장률, KIS 재무·밸류 보조평가를 묶어 실적·밸류 기준가를 확인합니다."
         >
-          <KisFundamentalsSection symbol={data?.symbol} name={data?.name} />
+          <FundamentalSnapshotSection data={data} />
 
           <EarningsGrowthSection
             earningsGrowth={data?.earningsGrowth}
