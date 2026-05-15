@@ -10,6 +10,7 @@ import KisFundamentalsSection from "../components/analysis/KisFundamentalsSectio
 import ConsensusInputSection from "../components/analysis/ConsensusInputSection";
 import TechnicalBasisExplanation from "../components/analysis/TechnicalBasisExplanation";
 import ValuationBasisExplanation from "../components/analysis/ValuationBasisExplanation";
+import SupplyAnalysisSection from "../components/analysis/SupplyAnalysisSection";
 import CurrentStockSummaryCard from "../components/stock/CurrentStockSummaryCard";
 import PredictionDashboard from "../components/prediction/PredictionDashboard";
 import { useKisUsage } from "../hooks/useKisUsage";
@@ -861,8 +862,6 @@ export default function HomePage() {
           title="A. 기술적 기준가 내용 및 분석"
           description="현재가, 이동평균, RSI, MACD, 볼린저밴드, 거래량, 변동성, 퀀트 모델 일부를 묶어 기술적 기준가를 확인합니다."
         >
-          <TechnicalBasisExplanation data={data} />
-
           <ChartAnalysisSections data={data} rows={chartData} />
 
         </SectionGroup>
@@ -872,8 +871,6 @@ export default function HomePage() {
           title="B. 실적·밸류 기준가 내용 및 분석"
           description="한투 재무 데이터, EPS, BPS, PER, PBR, 시가총액, 실적성장분석, 영업이익·순이익·EPS 성장률, KIS 재무·밸류 보조평가를 묶어 실적·밸류 기준가를 확인합니다."
         >
-          <ValuationBasisExplanation data={data} />
-
           <KisFundamentalsSection symbol={data?.symbol} name={data?.name} />
 
           <EarningsGrowthSection
@@ -906,13 +903,7 @@ export default function HomePage() {
           title="수급 및 분석"
           description="외국인 순매수, 기관 순매수, 외국인+기관 5일·20일 흐름, 연속 순매수 여부, 외국인 보유율을 수급 관점에서 확인합니다."
         >
-          <div className="card">
-            <h3 className="section-title small">수급 분석 위치 안내</h3>
-            <p className="notice-text">
-              현재 수급 데이터는 종합신뢰도 점수와 한투 재무·밸류 데이터 안에 함께 표시됩니다.
-              다음 단계에서 수급 전용 컴포넌트로 분리해 이 영역에 배치합니다.
-            </p>
-          </div>
+          <SupplyAnalysisSection data={data} />
         </SectionGroup>
 
         <SectionGroup
