@@ -11,17 +11,45 @@ type ConsensusData = {
   savedAt?: string;
 };
 
+type FundamentalsData = {
+  marketCap?: number | null;
+  per?: number | null;
+  pbr?: number | null;
+  eps?: number | null;
+  bps?: number | null;
+  dividendYield?: number | null;
+  foreignOwnershipRate?: number | null;
+  sharesOutstanding?: number | null;
+  high52w?: number | null;
+  low52w?: number | null;
+};
+
+type FundamentalsPayload = {
+  ok: boolean;
+  data?: FundamentalsData;
+  message?: string;
+  error?: string;
+};
+
 type Props = {
   data?: any;
 };
 
 const CONSENSUS_STORAGE_PREFIX = "kospi-consensus-data";
+const FUNDAMENTALS_CACHE_PREFIX = "kospi-kis-fundamentals";
+const KIS_CACHE_TTL_MS = 10 * 60 * 1000;
 
 export default function SummaryAbcOverviewSection({ data }: Props) {
   const symbol = data?.symbol ?? null;
   const name = data?.name ?? null;
   const storageKey = useMemo(() => makeConsensusStorageKey(symbol, name), [symbol, name]);
+  const fundamentalsCacheKey = useMemo(
+    () => makeCacheKey(FUNDAMENTALS_CACHE_PREFIX, symbol),
+    [symbol],
+  );
+
   const [savedConsensus, setSavedConsensus] = useState<ConsensusData | null>(null);
+  const [kisFundamentals, setKisFundamentals] = useState<FundamentalsData | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -32,12 +60,66 @@ export default function SummaryAbcOverviewSection({ data }: Props) {
     setSavedConsensus(readConsensus(storageKey));
   }, [storageKey]);
 
+  useEffect(() => {
+    if (!symbol || typeof window === "undefined") {
+      setKisFundamentals(null);
+      return;
+    }
+
+    const cached = readCache<FundamentalsPayload>(fundamentalsCacheKey);
+
+    if (cached?.data?.ok && cached.data.data) {
+      setKisFundamentals(cached.data.data);
+      return;
+    }
+
+    let isMounted = true;
+
+    async function fetchFundamentals() {
+      try {
+        const response = await fetch(
+          `/api/kis/fundamentals?symbol=${encodeURIComponent(symbol)}`,
+          { cache: "no-store" },
+        );
+        const payload = (await response.json()) as FundamentalsPayload;
+
+        if (!isMounted) return;
+
+        if (payload.ok && payload.data) {
+          setKisFundamentals(payload.data);
+          writeCache(fundamentalsCacheKey, {
+            savedAt: new Date().toISOString(),
+            data: payload,
+          });
+        } else {
+          setKisFundamentals(null);
+        }
+      } catch {
+        if (isMounted) {
+          setKisFundamentals(null);
+        }
+      }
+    }
+
+    fetchFundamentals();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [fundamentalsCacheKey, symbol]);
+
   const targetPrice = data?.score?.targetPrice ?? null;
   const range = targetPrice?.technicalTargetRange ?? null;
   const valuationRange = targetPrice?.valuationTargetRange ?? null;
+  const currentPrice =
+    getNumber(data?.currentPrice) ?? getNumber(range?.currentPrice) ?? null;
+  const fundamentals = data?.fundamentals ?? kisFundamentals ?? null;
 
   const technicalTarget = getTechnicalTarget(targetPrice, range);
-  const valuationTarget = getNumber(valuationRange?.valuationTarget);
+  const valuationFallback = calculateValuationTargetRange(currentPrice, fundamentals);
+  const valuationTarget =
+    getNumber(valuationRange?.valuationTarget) ??
+    getNumber(valuationFallback?.valuationTarget);
   const consensusTarget =
     getNumber(targetPrice?.consensusTarget) ??
     getNumber(savedConsensus?.averageTargetPrice);
@@ -55,8 +137,6 @@ export default function SummaryAbcOverviewSection({ data }: Props) {
     getNumber(targetPrice?.finalTarget) ??
     currentModelTarget;
 
-  const currentPrice =
-    getNumber(data?.currentPrice) ?? getNumber(range?.currentPrice) ?? null;
   const estimatedGap =
     finalTarget != null && currentPrice != null
       ? ((finalTarget - currentPrice) / currentPrice) * 100
@@ -89,7 +169,7 @@ export default function SummaryAbcOverviewSection({ data }: Props) {
           <SummaryMetricCard
             title="B. 실적·밸류 기준가"
             value={formatPrice(valuationTarget)}
-            subText="EPS·BPS·PER·PBR 기준"
+            subText={makeValuationSubText(valuationRange, valuationFallback)}
           />
           <SummaryMetricCard
             title="C. 컨센서스 기준가"
@@ -177,6 +257,61 @@ function getTechnicalTarget(targetPrice: any, range: any) {
   return getNumber(range?.baseTarget);
 }
 
+function calculateValuationTargetRange(
+  currentPrice?: number | null,
+  fundamentals?: FundamentalsData | null,
+) {
+  if (!fundamentals || currentPrice == null || currentPrice <= 0) {
+    return {
+      epsTarget: null,
+      bpsTarget: null,
+      valuationTarget: null,
+      method: "실적·밸류 데이터 대기",
+    };
+  }
+
+  const per = fundamentals.per;
+  const pbr = fundamentals.pbr;
+  const eps = fundamentals.eps;
+  const bps = fundamentals.bps;
+
+  const perAdjustment = getPerAdjustment(per);
+  const pbrAdjustment = getPbrAdjustment(pbr);
+
+  const epsTarget =
+    eps != null && eps > 0 && per != null && per > 0 && perAdjustment != null
+      ? roundPrice(eps * per * perAdjustment)
+      : null;
+  const bpsTarget =
+    bps != null && bps > 0 && pbr != null && pbr > 0 && pbrAdjustment != null
+      ? roundPrice(bps * pbr * pbrAdjustment)
+      : null;
+
+  const targets = [epsTarget, bpsTarget].filter(
+    (value): value is number => value != null && Number.isFinite(value) && value > 0,
+  );
+
+  if (!targets.length) {
+    return {
+      epsTarget,
+      bpsTarget,
+      valuationTarget: null,
+      method: "EPS/BPS 산정 대기",
+    };
+  }
+
+  const valuationTarget = roundPrice(
+    targets.reduce((sum, value) => sum + value, 0) / targets.length,
+  );
+
+  return {
+    epsTarget,
+    bpsTarget,
+    valuationTarget: clampValuationTarget(valuationTarget, currentPrice),
+    method: "KIS EPS/PER + BPS/PBR 보조 산정",
+  };
+}
+
 function calculateAbcEstimate({
   technicalTarget,
   valuationTarget,
@@ -261,6 +396,12 @@ function makeSummaryLabel(
   return "A/B/C 차이 큼 · 근거 확인 필요";
 }
 
+function makeValuationSubText(valuationRange: any, fallback: ReturnType<typeof calculateValuationTargetRange>) {
+  if (valuationRange?.valuationTarget != null) return "EPS·BPS·PER·PBR 기준";
+  if (fallback.valuationTarget != null) return fallback.method;
+  return "KIS 조회 후 반영";
+}
+
 function makeConsensusSubText(consensus?: ConsensusData | null) {
   if (!consensus?.averageTargetPrice) return "입력/저장 후 반영";
 
@@ -288,6 +429,10 @@ function makeConsensusStorageKey(symbol?: string | null, name?: string | null) {
   return `${CONSENSUS_STORAGE_PREFIX}:CURRENT`;
 }
 
+function makeCacheKey(prefix: string, symbol?: string | null) {
+  return `${prefix}:${(symbol || "").trim().toUpperCase()}`;
+}
+
 function readConsensus(key: string): ConsensusData | null {
   if (!key || typeof window === "undefined") return null;
 
@@ -306,8 +451,65 @@ function readConsensus(key: string): ConsensusData | null {
   }
 }
 
+function readCache<T>(key: string): { savedAt: string; data: T } | null {
+  if (!key || typeof window === "undefined") return null;
+
+  try {
+    const raw = window.localStorage.getItem(key);
+
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as { savedAt: string; data: T };
+    const savedAt = new Date(parsed.savedAt).getTime();
+
+    if (!Number.isFinite(savedAt) || Date.now() - savedAt > KIS_CACHE_TTL_MS) {
+      window.localStorage.removeItem(key);
+      return null;
+    }
+
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeCache<T>(key: string, value: { savedAt: string; data: T }) {
+  if (!key || typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // 캐시 저장 실패는 화면 표시를 막지 않습니다.
+  }
+}
+
 function getNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function getPerAdjustment(per?: number | null) {
+  if (per == null || !Number.isFinite(per) || per <= 0) return null;
+  if (per <= 10) return 1.08;
+  if (per <= 20) return 1;
+  if (per <= 30) return 0.92;
+  if (per <= 40) return 0.84;
+  return 0.75;
+}
+
+function getPbrAdjustment(pbr?: number | null) {
+  if (pbr == null || !Number.isFinite(pbr) || pbr <= 0) return null;
+  if (pbr <= 1) return 1.08;
+  if (pbr <= 2) return 1;
+  if (pbr <= 3) return 0.92;
+  if (pbr <= 5) return 0.85;
+  return 0.75;
+}
+
+function clampValuationTarget(target: number, currentPrice: number) {
+  const lower = currentPrice * 0.8;
+  const upper = currentPrice * 1.35;
+
+  return roundPrice(Math.max(lower, Math.min(target, upper)));
 }
 
 function roundPrice(value: number) {
