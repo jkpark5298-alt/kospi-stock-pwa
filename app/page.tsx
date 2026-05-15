@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState, type ReactNode } from "react";
 import ChartAnalysisSections from "../components/chart/ChartAnalysisSections";
@@ -872,6 +872,8 @@ export default function HomePage() {
           title="B. 실적·밸류 기준가 내용 및 분석"
           description="한투 재무 데이터, EPS, BPS, PER, PBR, 시가총액, 실적성장분석, 영업이익·순이익·EPS 성장률, KIS 재무·밸류 보조평가를 묶어 실적·밸류 기준가를 확인합니다."
         >
+          <ValuationBasisExplanation data={data} />
+
           <FundamentalSnapshotSection data={data} />
 
           <EarningsGrowthSection
