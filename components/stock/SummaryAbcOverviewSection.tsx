@@ -31,6 +31,13 @@ type FundamentalsPayload = {
   error?: string;
 };
 
+type ValuationFallback = {
+  epsTarget: number | null;
+  bpsTarget: number | null;
+  valuationTarget: number | null;
+  method: string;
+};
+
 type Props = {
   data?: any;
 };
@@ -119,7 +126,7 @@ export default function SummaryAbcOverviewSection({ data }: Props) {
   const valuationFallback = calculateValuationTargetRange(currentPrice, fundamentals);
   const valuationTarget =
     getNumber(valuationRange?.valuationTarget) ??
-    getNumber(valuationFallback?.valuationTarget);
+    getNumber(valuationFallback.valuationTarget);
   const consensusTarget =
     getNumber(targetPrice?.consensusTarget) ??
     getNumber(savedConsensus?.averageTargetPrice);
@@ -260,7 +267,7 @@ function getTechnicalTarget(targetPrice: any, range: any) {
 function calculateValuationTargetRange(
   currentPrice?: number | null,
   fundamentals?: FundamentalsData | null,
-) {
+): ValuationFallback {
   if (!fundamentals || currentPrice == null || currentPrice <= 0) {
     return {
       epsTarget: null,
@@ -303,6 +310,15 @@ function calculateValuationTargetRange(
   const valuationTarget = roundPrice(
     targets.reduce((sum, value) => sum + value, 0) / targets.length,
   );
+
+  if (valuationTarget == null) {
+    return {
+      epsTarget,
+      bpsTarget,
+      valuationTarget: null,
+      method: "실적·밸류 기준가 산정 대기",
+    };
+  }
 
   return {
     epsTarget,
@@ -396,7 +412,7 @@ function makeSummaryLabel(
   return "A/B/C 차이 큼 · 근거 확인 필요";
 }
 
-function makeValuationSubText(valuationRange: any, fallback: ReturnType<typeof calculateValuationTargetRange>) {
+function makeValuationSubText(valuationRange: any, fallback: ValuationFallback) {
   if (valuationRange?.valuationTarget != null) return "EPS·BPS·PER·PBR 기준";
   if (fallback.valuationTarget != null) return fallback.method;
   return "KIS 조회 후 반영";
