@@ -874,7 +874,11 @@ export default function HomePage() {
         >
           <ValuationBasisExplanation data={data} />
 
-          <FundamentalSnapshotSection data={data} />
+          <FundamentalSnapshotSection
+            symbol={data?.symbol}
+            name={data?.name}
+            valuationTarget={data?.score?.targetPrice?.valuationTargetRange?.valuationTarget}
+          />
 
           <EarningsGrowthSection
             earningsGrowth={data?.earningsGrowth}
@@ -1206,3 +1210,4 @@ function getChangeTone(
   if (value < 0) return "negative";
   return "neutral";
 }
+

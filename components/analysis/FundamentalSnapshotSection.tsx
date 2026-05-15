@@ -24,6 +24,9 @@ type FundamentalsData = {
 };
 
 type Props = {
+  symbol?: string | null;
+  name?: string | null;
+  valuationTarget?: number | null;
   data?: {
     symbol?: string | null;
     name?: string | null;
@@ -43,18 +46,30 @@ type Props = {
 const FUNDAMENTALS_CACHE_PREFIX = "kospi-kis-fundamentals";
 const KIS_CACHE_TTL_MS = 10 * 60 * 1000;
 
-export default function FundamentalSnapshotSection({ data }: Props) {
-  const symbol = data?.symbol ?? null;
+export default function FundamentalSnapshotSection({
+  symbol,
+  name,
+  valuationTarget,
+  data,
+}: Props) {
+  const resolvedSymbol = symbol ?? data?.symbol ?? null;
+  const resolvedName = name ?? data?.name ?? null;
   const fallbackFundamentals = data?.fundamentals ?? null;
-  const valuation = data?.score?.targetPrice?.valuationTargetRange ?? null;
-  const cacheKey = useMemo(() => makeCacheKey(FUNDAMENTALS_CACHE_PREFIX, symbol), [symbol]);
+  const resolvedValuationTarget =
+    valuationTarget ??
+    data?.score?.targetPrice?.valuationTargetRange?.valuationTarget ??
+    null;
+  const cacheKey = useMemo(
+    () => makeCacheKey(FUNDAMENTALS_CACHE_PREFIX, resolvedSymbol),
+    [resolvedSymbol],
+  );
 
   const [payload, setPayload] = useState<FundamentalsPayload | null>(null);
   const [cachedAt, setCachedAt] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    if (!symbol) {
+    if (!resolvedSymbol) {
       setPayload(null);
       setCachedAt(null);
       return;
@@ -70,7 +85,7 @@ export default function FundamentalSnapshotSection({ data }: Props) {
 
     refreshFundamentals();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cacheKey, symbol]);
+  }, [cacheKey, resolvedSymbol]);
 
   const fundamentals = payload?.data ?? fallbackFundamentals ?? null;
   const statusText = payload?.ok
@@ -82,13 +97,13 @@ export default function FundamentalSnapshotSection({ data }: Props) {
         : "데이터 대기";
 
   async function refreshFundamentals() {
-    if (!symbol) return;
+    if (!resolvedSymbol) return;
 
     setIsLoading(true);
 
     try {
       const response = await fetch(
-        `/api/kis/fundamentals?symbol=${encodeURIComponent(symbol)}`,
+        `/api/kis/fundamentals?symbol=${encodeURIComponent(resolvedSymbol)}`,
         { cache: "no-store" },
       );
       const nextPayload = (await response.json()) as FundamentalsPayload;
@@ -121,7 +136,7 @@ export default function FundamentalSnapshotSection({ data }: Props) {
       <div className="card">
         <div className="target-basis-header">
           <span>한투 실적·밸류 핵심 요약</span>
-          <strong>{formatNumber(valuation?.valuationTarget)}</strong>
+          <strong>{formatNumber(resolvedValuationTarget)}</strong>
         </div>
 
         <p className="target-basis-summary">
@@ -136,7 +151,7 @@ export default function FundamentalSnapshotSection({ data }: Props) {
             <strong>{statusText}</strong>
           </div>
           <p className="target-basis-summary">
-            종목: {data?.name || symbol || "데이터 없음"} · 저장 시각:{" "}
+            종목: {resolvedName || resolvedSymbol || "데이터 없음"} · 저장 시각:{" "}
             {cachedAt ? formatDateTime(cachedAt) : "없음"}
           </p>
           <div style={{ marginTop: 12 }}>
@@ -144,7 +159,7 @@ export default function FundamentalSnapshotSection({ data }: Props) {
               className="button secondary-button"
               type="button"
               onClick={refreshFundamentals}
-              disabled={!symbol || isLoading}
+              disabled={!resolvedSymbol || isLoading}
             >
               {isLoading ? "조회 중" : "한투 핵심 재조회"}
             </button>
