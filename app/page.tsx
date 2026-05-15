@@ -11,6 +11,7 @@ import ConsensusInputSection from "../components/analysis/ConsensusInputSection"
 import TechnicalBasisExplanation from "../components/analysis/TechnicalBasisExplanation";
 import ValuationBasisExplanation from "../components/analysis/ValuationBasisExplanation";
 import SupplyAnalysisSection from "../components/analysis/SupplyAnalysisSection";
+import RiskAnalysisSection from "../components/analysis/RiskAnalysisSection";
 import CurrentStockSummaryCard from "../components/stock/CurrentStockSummaryCard";
 import PredictionDashboard from "../components/prediction/PredictionDashboard";
 import { useKisUsage } from "../hooks/useKisUsage";
@@ -911,6 +912,8 @@ export default function HomePage() {
           title="위험 및 검증 분석"
           description="위험 기준선, 단기 과열, 52주 고가 근접, 공시 리스크, 예측 저장·검증 결과를 묶어 확인합니다."
         >
+          <RiskAnalysisSection data={data} />
+
           <DisclosureSection symbol={data?.symbol} name={data?.name} />
 
           <PredictionDashboard
