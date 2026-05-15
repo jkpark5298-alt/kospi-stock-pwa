@@ -16,8 +16,6 @@ type Props = {
           epsTarget?: number | null;
           bpsTarget?: number | null;
           valuationTarget?: number | null;
-          perAdjustment?: number | null;
-          pbrAdjustment?: number | null;
         } | null;
       };
     };
@@ -37,65 +35,41 @@ export default function FundamentalSnapshotSection({ data }: Props) {
         </div>
 
         <p className="target-basis-summary">
-          한투 데이터 중 실적·밸류 기준 추정 주가에 직접 필요한 핵심값만
-          요약합니다. 수급 데이터는 Detail 4, 52주 고가·저가와 위험 관련
-          데이터는 Detail 5에서 따로 확인합니다.
+          실적·밸류 기준 추정 주가에 직접 필요한 핵심값만 표시합니다.
+          수급은 Detail 4, 위험 지표는 Detail 5에서 따로 확인합니다.
         </p>
 
         <div className="summary-grid summary-grid-four" style={{ marginTop: 16 }}>
           <SnapshotCard
             title="시가총액"
             value={formatMarketCap(fundamentals?.marketCap)}
-            subText="기업 규모 참고"
+            subText="기업 규모"
           />
           <SnapshotCard
             title="PER"
             value={formatRatio(fundamentals?.per)}
-            subText="이익 대비 주가 부담"
+            subText="이익 대비 부담"
           />
           <SnapshotCard
             title="PBR"
             value={formatRatio(fundamentals?.pbr)}
-            subText="자산 대비 주가 부담"
+            subText="자산 대비 부담"
           />
           <SnapshotCard
             title="EPS"
             value={formatNumber(fundamentals?.eps)}
-            subText="주당순이익"
+            subText="이익가치 기준"
           />
           <SnapshotCard
             title="BPS"
             value={formatNumber(fundamentals?.bps)}
-            subText="주당순자산"
+            subText="자산가치 기준"
           />
           <SnapshotCard
             title="배당수익률"
             value={formatPercent(fundamentals?.dividendYield)}
             subText="배당 참고"
           />
-          <SnapshotCard
-            title="EPS 기준가"
-            value={formatNumber(valuation?.epsTarget)}
-            subText="이익가치 기준"
-          />
-          <SnapshotCard
-            title="BPS 기준가"
-            value={formatNumber(valuation?.bpsTarget)}
-            subText="자산가치 기준"
-          />
-        </div>
-
-        <div className="target-basis-box" style={{ marginTop: 16 }}>
-          <div className="target-basis-header">
-            <span>추정 주가 기준 설명</span>
-            <strong>EPS/BPS + PER/PBR 부담</strong>
-          </div>
-          <p className="target-basis-summary">
-            실적·밸류 기준 추정 주가는 EPS 기준 이익가치와 BPS 기준
-            자산가치를 함께 참고합니다. PER 또는 PBR 부담이 크면 기준가는
-            보수적으로 해석하고, EPS/BPS가 안정적이면 실적·밸류 기준가의
-            신뢰도가 높아집니다.
-          </p>
         </div>
       </div>
     </section>

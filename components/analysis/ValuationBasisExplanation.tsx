@@ -55,18 +55,10 @@ export default function ValuationBasisExplanation({ data }: Props) {
         </div>
 
         <p className="target-basis-summary">
-          실적·밸류 기준가는 EPS와 BPS를 기준으로 이익가치와 자산가치를
-          계산하고, PER/PBR 부담과 실적 성장률을 함께 반영한 가치 기준가입니다.
-          실적 성장성이 좋으면 기준가 신뢰도가 높아지고, PER/PBR 부담이 크면
-          보수적으로 해석합니다.
+          EPS는 이익가치, BPS는 자산가치 기준으로 보고 PER/PBR 부담을
+          반영해 실적·밸류 기준 추정 주가를 계산합니다. 실적 성장률은 이
+          기준가를 신뢰할 수 있는지 확인하는 보조 지표입니다.
         </p>
-
-        <div className="summary-grid summary-grid-four" style={{ marginTop: 16 }}>
-          <ValueMetricCard title="EPS 기준" value={eps.title} subText={eps.description} />
-          <ValueMetricCard title="BPS 기준" value={bps.title} subText={bps.description} />
-          <ValueMetricCard title="PER" value={per.title} subText={per.description} />
-          <ValueMetricCard title="PBR" value={pbr.title} subText={pbr.description} />
-        </div>
 
         <div className="target-basis-box" style={{ marginTop: 16 }}>
           <div className="target-basis-header">
@@ -75,154 +67,118 @@ export default function ValuationBasisExplanation({ data }: Props) {
           </div>
 
           <div className="target-basis-adjustments">
-            <p>시가총액: {formatMarketCap(fundamentals?.marketCap)}</p>
+            <p>{eps.description}</p>
+            <p>{bps.description}</p>
+            <p>{per.description}</p>
+            <p>{pbr.description}</p>
             <p>
-              EPS: {formatNumber(fundamentals?.eps)} · BPS:{" "}
-              {formatNumber(fundamentals?.bps)}
+              영업이익 성장률 {formatPercent(earnings?.operatingProfitGrowthRate)} ·
+              순이익 성장률 {formatPercent(earnings?.netIncomeGrowthRate)} ·
+              EPS 성장률 {formatPercent(earnings?.epsGrowthRate)}
             </p>
-            <p>
-              PER: {formatRatio(fundamentals?.per)} · PBR:{" "}
-              {formatRatio(fundamentals?.pbr)}
-            </p>
-            <p>배당수익률: {formatPercent(fundamentals?.dividendYield)}</p>
-            <p>영업이익 성장률: {formatPercent(earnings?.operatingProfitGrowthRate)}</p>
-            <p>순이익 성장률: {formatPercent(earnings?.netIncomeGrowthRate)}</p>
-            <p>EPS 성장률: {formatPercent(earnings?.epsGrowthRate)}</p>
+            {valuationRange?.reasons?.length ? (
+              <p>{valuationRange.reasons.join(" ")}</p>
+            ) : null}
           </div>
         </div>
-
-        {valuationRange?.reasons?.length ? (
-          <div className="target-basis-box" style={{ marginTop: 16 }}>
-            <div className="target-basis-header">
-              <span>KIS 재무·밸류 보조평가</span>
-              <strong>기준가 보조 근거</strong>
-            </div>
-
-            <div className="target-basis-adjustments">
-              {valuationRange.reasons.map((reason) => (
-                <p key={reason}>{reason}</p>
-              ))}
-            </div>
-          </div>
-        ) : null}
       </div>
     </section>
-  );
-}
-
-function ValueMetricCard({
-  title,
-  value,
-  subText,
-}: {
-  title: string;
-  value: string;
-  subText: string;
-}) {
-  return (
-    <div className="target-metric-card">
-      <span>{title}</span>
-      <strong>{value}</strong>
-      <em>{subText}</em>
-    </div>
   );
 }
 
 function makeEpsAnalysis(eps?: number | null, epsTarget?: number | null) {
   if (eps == null || Number.isNaN(eps)) {
     return {
-      title: "데이터 없음",
-      description: "EPS 데이터 대기",
+      description: "EPS 데이터가 없어 이익가치 기준가 산정은 제한적입니다.",
     };
   }
 
   if (eps > 0) {
     return {
-      title: "이익가치 산정 가능",
-      description: `EPS 기준가 ${formatNumber(epsTarget)}`,
+      description: `EPS가 양수라 이익가치 기준가 산정이 가능합니다. EPS 기준가는 ${formatNumber(
+        epsTarget,
+      )}입니다.`,
     };
   }
 
   return {
-    title: "이익가치 취약",
-    description: "EPS가 0 이하라 보수적 해석",
+    description: "EPS가 0 이하라 이익가치 기준가는 보수적으로 봅니다.",
   };
 }
 
 function makeBpsAnalysis(bps?: number | null, bpsTarget?: number | null) {
   if (bps == null || Number.isNaN(bps)) {
     return {
-      title: "데이터 없음",
-      description: "BPS 데이터 대기",
+      description: "BPS 데이터가 없어 자산가치 기준가 산정은 제한적입니다.",
     };
   }
 
   if (bps > 0) {
     return {
-      title: "자산가치 산정 가능",
-      description: `BPS 기준가 ${formatNumber(bpsTarget)}`,
+      description: `BPS가 확인되어 자산가치 기준가 산정이 가능합니다. BPS 기준가는 ${formatNumber(
+        bpsTarget,
+      )}입니다.`,
     };
   }
 
   return {
-    title: "자산가치 확인 필요",
-    description: "BPS 기준 해석 제한",
+    description: "BPS 기준 자산가치 해석은 제한적입니다.",
   };
 }
 
 function makePerAnalysis(per?: number | null) {
   if (per == null || Number.isNaN(per) || per <= 0) {
     return {
-      title: "확인 필요",
-      description: "PER 데이터 부족",
+      description: "PER 데이터가 부족해 이익 대비 주가 부담은 확인이 필요합니다.",
     };
   }
 
   if (per >= 35) {
     return {
-      title: "부담 높음",
-      description: `PER ${per.toFixed(2)}배`,
+      description: `PER ${per.toFixed(
+        2,
+      )}배로 이익 대비 주가 부담이 높은 편이라 기준가를 보수적으로 해석합니다.`,
     };
   }
 
   if (per <= 12) {
     return {
-      title: "부담 낮음",
-      description: `PER ${per.toFixed(2)}배`,
+      description: `PER ${per.toFixed(
+        2,
+      )}배로 이익 대비 주가 부담은 낮은 편입니다.`,
     };
   }
 
   return {
-    title: "중립",
-    description: `PER ${per.toFixed(2)}배`,
+    description: `PER ${per.toFixed(2)}배로 이익 대비 주가 부담은 중립 구간입니다.`,
   };
 }
 
 function makePbrAnalysis(pbr?: number | null) {
   if (pbr == null || Number.isNaN(pbr) || pbr <= 0) {
     return {
-      title: "확인 필요",
-      description: "PBR 데이터 부족",
+      description: "PBR 데이터가 부족해 자산 대비 주가 부담은 확인이 필요합니다.",
     };
   }
 
   if (pbr >= 4) {
     return {
-      title: "부담 높음",
-      description: `PBR ${pbr.toFixed(2)}배`,
+      description: `PBR ${pbr.toFixed(
+        2,
+      )}배로 자산 대비 주가 부담이 높은 편입니다.`,
     };
   }
 
   if (pbr <= 1.2) {
     return {
-      title: "부담 낮음",
-      description: `PBR ${pbr.toFixed(2)}배`,
+      description: `PBR ${pbr.toFixed(
+        2,
+      )}배로 자산 대비 주가 부담은 낮은 편입니다.`,
     };
   }
 
   return {
-    title: "중립",
-    description: `PBR ${pbr.toFixed(2)}배`,
+    description: `PBR ${pbr.toFixed(2)}배로 자산 대비 주가 부담은 중립 구간입니다.`,
   };
 }
 
@@ -256,26 +212,6 @@ function formatNumber(value?: number | null) {
   return new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 2 }).format(
     value,
   );
-}
-
-function formatMarketCap(value?: number | null) {
-  if (value == null || Number.isNaN(value)) return "데이터 없음";
-
-  if (value >= 1_0000_0000_0000) {
-    return `${(value / 1_0000_0000_0000).toFixed(2)}조`;
-  }
-
-  if (value >= 1_0000_0000) {
-    return `${(value / 1_0000_0000).toFixed(2)}억`;
-  }
-
-  return formatNumber(value);
-}
-
-function formatRatio(value?: number | null) {
-  if (value == null || Number.isNaN(value)) return "데이터 없음";
-
-  return `${value.toFixed(2)}배`;
 }
 
 function formatPercent(value?: number | null) {
