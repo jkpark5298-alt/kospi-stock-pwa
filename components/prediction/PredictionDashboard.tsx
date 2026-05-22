@@ -64,7 +64,6 @@ export default function PredictionDashboard({
     (record) => record.symbol === normalizedSymbol,
   );
   const overallStats = calculatePredictionStats(symbolRecords);
-  const range = data?.score?.targetPrice?.technicalTargetRange;
   const preview = createPredictionPreview(data);
   const latestClose = getLatestClose(data?.chartData);
   const priceGap =
@@ -83,8 +82,7 @@ export default function PredictionDashboard({
           <div>
             <SectionTitleSmall>예측 검증 대시보드</SectionTitleSmall>
             <p className="prediction-subtitle">
-              현재 예측값을 Supabase에 저장하고, 이후 실제 주가와 비교해 오차율과 방향성
-              적중률을 확인합니다.
+              현재 예측값을 Supabase에 저장하고, 이후 실제 주가와 비교해 오차율과 방향성 적중률을 확인합니다.
             </p>
           </div>
           <div className="prediction-badge">Supabase 연동 검증</div>
@@ -99,7 +97,10 @@ export default function PredictionDashboard({
 
           <div className="prediction-save-grid">
             <MetricRow label="현재가" value={formatPrice(data?.currentPrice)} />
-            <MetricRow label="기준 목표가" value={formatPrice(range?.baseTarget)} />
+            <MetricRow
+              label="기준 목표가"
+              value={formatPrice(preview.targetPrice)}
+            />
             <MetricRow
               label="5일 예상가"
               value={formatPrice(preview.results["5d"].expectedPrice)}
@@ -154,7 +155,7 @@ export default function PredictionDashboard({
             <strong>저장 {overallStats.total}건</strong>
             <em>
               {predictionLoading
-                ? "예측 기록 동기화 중입니다."
+                ? "예측 기록을 동기화하는 중입니다."
                 : "PC·아이폰 기록을 함께 관리합니다."}
             </em>
             {predictionError ? <small>{predictionError}</small> : null}
@@ -263,15 +264,14 @@ export default function PredictionDashboard({
 
           {symbolRecords.length === 0 ? (
             <p className="muted-text prediction-empty-text">
-              아직 저장된 예측 기록이 없습니다. 분석 결과가 표시되면 현재
-              예측값을 저장해 주세요.
+              아직 저장된 예측 기록이 없습니다. 분석 결과가 표시되면 현재 예측값을 저장해 주세요.
             </p>
           ) : null}
         </div>
 
         <p className="notice-text">
-          예측 기록은 Supabase에 저장됩니다. PC와 아이폰에서 같은 동기화 코드를
-          사용하면 저장 기록이 함께 표시됩니다.
+          예측 기록은 Supabase에 저장됩니다. PC와 아이폰에서 같은 동기화 코드를 사용하면 저장 기록이 함께 표시됩니다.
+          기준 목표가는 Summary의 2안 추정가 계산식과 같은 기준을 사용합니다.
         </p>
       </Card>
     </section>
