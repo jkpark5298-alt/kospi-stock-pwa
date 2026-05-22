@@ -102,7 +102,7 @@ export default function SummaryAbcOverviewSection({ data }: Props) {
 
     const cached = readCache<FundamentalsPayload>(fundamentalsCacheKey);
 
-    if (cached?.data?.ok && cached.data.data) {
+    if (cached?.data?.ok && isUsableFundamentals(cached.data.data)) {
       setKisFundamentals(cached.data.data);
       return;
     }
@@ -119,7 +119,7 @@ export default function SummaryAbcOverviewSection({ data }: Props) {
 
         if (!isMounted) return;
 
-        if (payload.ok && payload.data) {
+        if (payload.ok && isUsableFundamentals(payload.data)) {
           setKisFundamentals(payload.data);
           writeCache(fundamentalsCacheKey, {
             savedAt: new Date().toISOString(),
@@ -161,10 +161,11 @@ export default function SummaryAbcOverviewSection({ data }: Props) {
     getNumber(finalRange?.currentPrice) ??
     getNumber(range?.currentPrice) ??
     null;
-  const fundamentals = data?.fundamentals ?? kisFundamentals ?? null;
+
+  const usableFundamentals = getUsableFundamentals(data?.fundamentals, kisFundamentals);
 
   const technicalTarget = getTechnicalTarget(targetPrice, range);
-  const valuationFallback = calculateValuationTargetRange(currentPrice, fundamentals);
+  const valuationFallback = calculateValuationTargetRange(currentPrice, usableFundamentals);
   const valuationTarget =
     getNumber(valuationRange?.valuationTarget) ??
     getNumber(valuationFallback.valuationTarget);
@@ -200,8 +201,8 @@ export default function SummaryAbcOverviewSection({ data }: Props) {
         </div>
 
         <p className="target-basis-summary">
-          추정가는 A/B/C 기준가의 가중평균에 퀀트·수급·위험 보정을 더해
-          계산합니다. 컨센서스가 없으면 A/B 기준으로 가중치를 자동 재분배합니다.
+          추정가는 A/B/C 기준가의 가중평균에 퀀트·수급·위험 보정을 더해 계산합니다.
+          컨센서스가 없으면 A/B 기준으로 가중치를 자동 재분배합니다.
         </p>
 
         <div className="target-basis-box" style={{ marginTop: 16 }}>
@@ -289,7 +290,9 @@ export default function SummaryAbcOverviewSection({ data }: Props) {
         <div className="target-basis-box" style={{ marginTop: 16 }}>
           <div className="target-basis-header">
             <span>3. 추정가</span>
-            <strong>{makeSummaryLabel(technicalTarget, valuationTarget, consensusTarget, estimate.estimate)}</strong>
+            <strong>
+              {makeSummaryLabel(technicalTarget, valuationTarget, consensusTarget, estimate.estimate)}
+            </strong>
           </div>
 
           <div className="summary-grid summary-grid-four" style={{ marginTop: 12 }}>
@@ -487,7 +490,7 @@ function calculateValuationTargetRange(
   currentPrice?: number | null,
   fundamentals?: FundamentalsData | null,
 ): ValuationFallback {
-  if (!fundamentals || currentPrice == null || currentPrice <= 0) {
+  if (!isUsableFundamentals(fundamentals) || currentPrice == null || currentPrice <= 0) {
     return {
       epsTarget: null,
       bpsTarget: null,
@@ -545,6 +548,23 @@ function calculateValuationTargetRange(
     valuationTarget: clampValuationTarget(valuationTarget, currentPrice),
     method: "EPS/PER + BPS/PBR",
   };
+}
+
+function getUsableFundamentals(
+  primary?: FundamentalsData | null,
+  fallback?: FundamentalsData | null,
+) {
+  if (isUsableFundamentals(primary)) return primary;
+  if (isUsableFundamentals(fallback)) return fallback;
+  return null;
+}
+
+function isUsableFundamentals(value?: FundamentalsData | null): value is FundamentalsData {
+  if (!value) return false;
+
+  const numbers = [value.per, value.pbr, value.eps, value.bps];
+
+  return numbers.some((item) => item != null && Number.isFinite(item) && item > 0);
 }
 
 function formatWeights(weights: EstimateWeights) {
