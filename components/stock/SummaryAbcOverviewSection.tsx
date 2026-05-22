@@ -48,7 +48,7 @@ type AdjustmentInfo = {
   quantPercent: number;
   supplyPercent: number;
   riskPercent: number;
-  totalPercent: number;
+  totalPercent: number | null;
   quantAmount: number | null;
   supplyAmount: number | null;
   riskAmount: number | null;
@@ -57,8 +57,7 @@ type AdjustmentInfo = {
 
 type EstimateResult = {
   basisAverage: number | null;
-  officialEstimate: number | null;
-  internalCalculatedEstimate: number | null;
+  estimate: number | null;
   weights: EstimateWeights;
   weightText: string;
   adjustment: AdjustmentInfo;
@@ -173,47 +172,41 @@ export default function SummaryAbcOverviewSection({ data }: Props) {
     getNumber(targetPrice?.consensusTarget) ??
     getNumber(savedConsensus?.averageTargetPrice);
 
-  const officialEstimate = getOfficialEstimate(targetPrice);
   const estimate = calculateEstimate({
     technicalTarget,
     valuationTarget,
     consensusTarget,
-    currentPrice,
     selectedModeResult,
-    officialEstimate,
   });
 
   const estimateGap =
-    estimate.officialEstimate != null && currentPrice != null
-      ? ((estimate.officialEstimate - currentPrice) / currentPrice) * 100
+    estimate.estimate != null && currentPrice != null
+      ? ((estimate.estimate - currentPrice) / currentPrice) * 100
       : null;
 
   const estimateProgress =
-    estimate.officialEstimate != null && currentPrice != null && estimate.officialEstimate > 0
-      ? (currentPrice / estimate.officialEstimate) * 100
+    estimate.estimate != null && currentPrice != null && estimate.estimate > 0
+      ? (currentPrice / estimate.estimate) * 100
       : null;
 
   return (
     <section className="score-section">
       <div className="card">
         <div className="target-basis-header">
-          <span>추정가 산정</span>
+          <span>추정가 산정 방식</span>
           <strong>
-            {estimate.officialEstimate != null
-              ? formatPrice(estimate.officialEstimate)
-              : "데이터 대기"}
+            {estimate.estimate != null ? formatPrice(estimate.estimate) : "데이터 대기"}
           </strong>
         </div>
 
         <p className="target-basis-summary">
-          추정가는 하나만 표시합니다. 기준가와 보정 내역은 설명용으로 보여주고,
-          최종 표시값은 앱의 공식 추정가를 우선 사용합니다. 컨센서스가 없으면
-          A/B 기준으로 가중치를 자동 재분배합니다.
+          추정가는 A/B/C 기준가의 가중평균에 퀀트·수급·위험 보정을 더해
+          계산합니다. 컨센서스가 없으면 A/B 기준으로 가중치를 자동 재분배합니다.
         </p>
 
         <div className="target-basis-box" style={{ marginTop: 16 }}>
           <div className="target-basis-header">
-            <span>기준가</span>
+            <span>1. 기준가</span>
             <strong>{estimate.weightText}</strong>
           </div>
 
@@ -248,44 +241,61 @@ export default function SummaryAbcOverviewSection({ data }: Props) {
 
         <div className="target-basis-box" style={{ marginTop: 16 }}>
           <div className="target-basis-header">
-            <span>보정</span>
-            <strong>{formatAdjustment(estimate.adjustment.totalPercent, estimate.adjustment.totalAmount)}</strong>
+            <span>2. 보정</span>
+            <strong>
+              {formatAdjustment(
+                estimate.adjustment.totalPercent,
+                estimate.adjustment.totalAmount,
+              )}
+            </strong>
           </div>
 
           <div className="summary-grid summary-grid-four" style={{ marginTop: 12 }}>
             <SummaryMetricCard
               title="퀀트 보정"
-              value={formatAdjustment(estimate.adjustment.quantPercent, estimate.adjustment.quantAmount)}
+              value={formatAdjustment(
+                estimate.adjustment.quantPercent,
+                estimate.adjustment.quantAmount,
+              )}
               subText="기본 모델 점수"
             />
             <SummaryMetricCard
               title="수급 보정"
-              value={formatAdjustment(estimate.adjustment.supplyPercent, estimate.adjustment.supplyAmount)}
+              value={formatAdjustment(
+                estimate.adjustment.supplyPercent,
+                estimate.adjustment.supplyAmount,
+              )}
               subText="수급·모멘텀 가산"
             />
             <SummaryMetricCard
               title="위험 보정"
-              value={formatAdjustment(estimate.adjustment.riskPercent, estimate.adjustment.riskAmount)}
+              value={formatAdjustment(
+                estimate.adjustment.riskPercent,
+                estimate.adjustment.riskAmount,
+              )}
               subText="과열·변동성 제한"
             />
             <SummaryMetricCard
               title="총 보정"
-              value={formatAdjustment(estimate.adjustment.totalPercent, estimate.adjustment.totalAmount)}
-              subText="기준가 가중평균 기준"
+              value={formatAdjustment(
+                estimate.adjustment.totalPercent,
+                estimate.adjustment.totalAmount,
+              )}
+              subText="퀀트+수급+위험"
             />
           </div>
         </div>
 
         <div className="target-basis-box" style={{ marginTop: 16 }}>
           <div className="target-basis-header">
-            <span>추정가</span>
-            <strong>{makeSummaryLabel(technicalTarget, valuationTarget, consensusTarget, estimate.officialEstimate)}</strong>
+            <span>3. 추정가</span>
+            <strong>{makeSummaryLabel(technicalTarget, valuationTarget, consensusTarget, estimate.estimate)}</strong>
           </div>
 
           <div className="summary-grid summary-grid-four" style={{ marginTop: 12 }}>
             <SummaryMetricCard
               title="추정가"
-              value={formatPrice(estimate.officialEstimate)}
+              value={formatPrice(estimate.estimate)}
               subText={estimate.estimateSource}
             />
             <SummaryMetricCard
@@ -328,30 +338,16 @@ function SummaryMetricCard({
   );
 }
 
-function getOfficialEstimate(targetPrice: any) {
-  return (
-    getNumber(targetPrice?.finalTargetRange?.baseTarget) ??
-    getNumber(targetPrice?.technicalTargetRange?.baseTarget) ??
-    getNumber(targetPrice?.targetModes?.find?.((mode: any) => mode?.mode === targetPrice?.selectedTargetMode)?.finalTarget) ??
-    getNumber(targetPrice?.targetModes?.find?.((mode: any) => mode?.mode === "balanced")?.finalTarget) ??
-    getNumber(targetPrice?.targetModes?.[0]?.finalTarget) ??
-    null
-  );
-}
-
 function calculateEstimate({
   technicalTarget,
   valuationTarget,
   consensusTarget,
   selectedModeResult,
-  officialEstimate,
 }: {
   technicalTarget?: number | null;
   valuationTarget?: number | null;
   consensusTarget?: number | null;
-  currentPrice?: number | null;
   selectedModeResult?: any;
-  officialEstimate?: number | null;
 }): EstimateResult {
   const hasTechnical = technicalTarget != null && Number.isFinite(technicalTarget);
   const hasValuation = valuationTarget != null && Number.isFinite(valuationTarget);
@@ -360,8 +356,7 @@ function calculateEstimate({
   if (!hasTechnical && !hasValuation && !hasConsensus) {
     return {
       basisAverage: null,
-      officialEstimate: officialEstimate ?? null,
-      internalCalculatedEstimate: null,
+      estimate: null,
       weights: {
         technical: 0,
         valuation: 0,
@@ -369,7 +364,7 @@ function calculateEstimate({
       },
       weightText: "A/B/C 데이터 대기",
       adjustment: makeAdjustmentInfo(null, 0, 0, 0),
-      estimateSource: officialEstimate != null ? "공식 추정가" : "데이터 대기",
+      estimateSource: "데이터 대기",
     };
   }
 
@@ -402,12 +397,11 @@ function calculateEstimate({
   if (basisAverage == null) {
     return {
       basisAverage: null,
-      officialEstimate: officialEstimate ?? null,
-      internalCalculatedEstimate: null,
+      estimate: null,
       weights,
       weightText: formatWeights(weights),
       adjustment: makeAdjustmentInfo(null, 0, 0, 0),
-      estimateSource: officialEstimate != null ? "공식 추정가" : "데이터 대기",
+      estimateSource: "데이터 대기",
     };
   }
 
@@ -415,28 +409,23 @@ function calculateEstimate({
   const quantPercent = getNumber(quantAdjustment.baseAdjustmentPercent) ?? 0;
   const riskPercent = getNumber(quantAdjustment.riskAdjustmentPercent) ?? 0;
   const supplyPercent = getNumber(quantAdjustment.positiveAdjustmentPercent) ?? 0;
-  const totalPercent =
-    getNumber(quantAdjustment.totalAdjustmentPercent) ??
-    quantPercent + supplyPercent + riskPercent;
 
   const adjustment = makeAdjustmentInfo(
     basisAverage,
     quantPercent,
     supplyPercent,
     riskPercent,
-    totalPercent,
   );
 
-  const internalCalculatedEstimate = roundPrice(basisAverage + (adjustment.totalAmount ?? 0));
+  const estimate = roundPrice(basisAverage + (adjustment.totalAmount ?? 0));
 
   return {
     basisAverage,
-    officialEstimate: officialEstimate ?? internalCalculatedEstimate,
-    internalCalculatedEstimate,
+    estimate,
     weights,
     weightText: formatWeights(weights),
     adjustment,
-    estimateSource: officialEstimate != null ? "공식 추정가" : "기준가+보정",
+    estimateSource: "기준가 가중평균 + 보정",
   };
 }
 
@@ -445,17 +434,30 @@ function makeAdjustmentInfo(
   quantPercent: number,
   supplyPercent: number,
   riskPercent: number,
-  totalPercent = quantPercent + supplyPercent + riskPercent,
 ): AdjustmentInfo {
+  const quantAmount = calculateAdjustmentAmount(basisAverage, quantPercent);
+  const supplyAmount = calculateAdjustmentAmount(basisAverage, supplyPercent);
+  const riskAmount = calculateAdjustmentAmount(basisAverage, riskPercent);
+
+  const totalAmount =
+    quantAmount != null && supplyAmount != null && riskAmount != null
+      ? roundPrice(quantAmount + supplyAmount + riskAmount)
+      : null;
+
+  const totalPercent =
+    basisAverage != null && basisAverage !== 0 && totalAmount != null
+      ? (totalAmount / basisAverage) * 100
+      : null;
+
   return {
     quantPercent,
     supplyPercent,
     riskPercent,
     totalPercent,
-    quantAmount: calculateAdjustmentAmount(basisAverage, quantPercent),
-    supplyAmount: calculateAdjustmentAmount(basisAverage, supplyPercent),
-    riskAmount: calculateAdjustmentAmount(basisAverage, riskPercent),
-    totalAmount: calculateAdjustmentAmount(basisAverage, totalPercent),
+    quantAmount,
+    supplyAmount,
+    riskAmount,
+    totalAmount,
   };
 }
 
