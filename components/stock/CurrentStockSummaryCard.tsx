@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import type { StockResponse } from "../../types/stock";
@@ -21,13 +21,99 @@ type DailyTargetSnapshot = {
   savedAt: string;
 };
 
+type ConsensusData = {
+  averageTargetPrice?: number | null;
+  highTargetPrice?: number | null;
+  lowTargetPrice?: number | null;
+  investmentOpinion?: string;
+  analystCount?: number | null;
+  savedAt?: string;
+};
+
+type FundamentalsData = {
+  marketCap?: number | null;
+  per?: number | null;
+  pbr?: number | null;
+  eps?: number | null;
+  bps?: number | null;
+  dividendYield?: number | null;
+  foreignOwnershipRate?: number | null;
+  sharesOutstanding?: number | null;
+  high52w?: number | null;
+  low52w?: number | null;
+};
+
+type EstimateWeights = {
+  technical: number;
+  valuation: number;
+  consensus: number;
+};
+
+type EstimateResult = {
+  basisAverage: number | null;
+  estimate: number | null;
+  quantAmount: number | null;
+  supplyAmount: number | null;
+  riskAmount: number | null;
+  totalAmount: number | null;
+  weights: EstimateWeights;
+};
+
+type SummaryRange = {
+  currentPrice: number;
+  baseTarget: number;
+  baseUpsidePercent: number;
+  riskLine: number;
+  riskDownsidePercent: number;
+};
+
 type SummaryTone = "positive" | "negative" | "neutral";
 
 const DAILY_TARGET_STORAGE_PREFIX = "kospi-daily-target";
+const CONSENSUS_STORAGE_PREFIX = "kospi-consensus-data";
 
 export default function CurrentStockSummaryCard({ data }: Props) {
   const targetPrice = data?.score?.targetPrice;
   const range = targetPrice?.finalTargetRange ?? targetPrice?.technicalTargetRange ?? null;
+
+  const storageKey = useMemo(
+    () => makeConsensusStorageKey(data?.symbol, data?.name),
+    [data?.symbol, data?.name],
+  );
+
+  const [savedConsensus, setSavedConsensus] = useState<ConsensusData | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      setSavedConsensus(null);
+      return;
+    }
+
+    setSavedConsensus(readConsensus(storageKey));
+  }, [storageKey]);
+
+  const currentPrice =
+    getNumber(data?.currentPrice) ?? getNumber(range?.currentPrice) ?? null;
+  const technicalTarget = getTechnicalTarget(targetPrice);
+  const valuationTarget =
+    getNumber(targetPrice?.valuationTargetRange?.valuationTarget) ??
+    calculateValuationTarget(currentPrice, data?.fundamentals as FundamentalsData | null);
+  const consensusTarget =
+    getNumber(targetPrice?.consensusTarget) ??
+    getNumber(savedConsensus?.averageTargetPrice);
+
+  const estimate = calculateEstimate({
+    technicalTarget,
+    valuationTarget,
+    consensusTarget,
+    targetPrice,
+  });
+
+  const summaryRange = makeSummaryRange({
+    currentPrice,
+    estimate: estimate.estimate,
+    fallbackRange: range,
+  });
 
   const todayKey = useMemo(() => makeTodayKey(), []);
   const dailyTargetKey = useMemo(
@@ -39,7 +125,7 @@ export default function CurrentStockSummaryCard({ data }: Props) {
   const [manualTargetInput, setManualTargetInput] = useState("");
 
   useEffect(() => {
-    if (!range || !data?.symbol || typeof window === "undefined") {
+    if (!summaryRange || !data?.symbol || typeof window === "undefined") {
       setDailyTarget(null);
       setManualTargetInput("");
       return;
@@ -56,8 +142,8 @@ export default function CurrentStockSummaryCard({ data }: Props) {
     const next: DailyTargetSnapshot = {
       date: todayKey,
       symbol: data.symbol,
-      targetPrice: range.baseTarget,
-      basisPrice: range.currentPrice,
+      targetPrice: summaryRange.baseTarget,
+      basisPrice: summaryRange.currentPrice,
       source: "first-query",
       savedAt: new Date().toISOString(),
     };
@@ -65,32 +151,33 @@ export default function CurrentStockSummaryCard({ data }: Props) {
     writeDailyTargetSnapshot(dailyTargetKey, next);
     setDailyTarget(next);
     setManualTargetInput(formatManualTargetInput(String(next.targetPrice)));
-  }, [dailyTargetKey, data?.symbol, range, todayKey]);
+  }, [dailyTargetKey, data?.symbol, summaryRange, todayKey]);
 
   const targetProgress =
-    range && range.baseTarget > 0
-      ? Number(((range.currentPrice / range.baseTarget) * 100).toFixed(1))
+    summaryRange && summaryRange.baseTarget > 0
+      ? Number(((summaryRange.currentPrice / summaryRange.baseTarget) * 100).toFixed(1))
       : null;
 
-  const upsidePrice = range
-    ? Number((range.baseTarget - range.currentPrice).toFixed(2))
+  const upsidePrice = summaryRange
+    ? Number((summaryRange.baseTarget - summaryRange.currentPrice).toFixed(2))
     : null;
 
   const dailyTargetProgress =
-    dailyTarget && range && dailyTarget.targetPrice > 0
-      ? Number(((range.currentPrice / dailyTarget.targetPrice) * 100).toFixed(1))
+    dailyTarget && summaryRange && dailyTarget.targetPrice > 0
+      ? Number(((summaryRange.currentPrice / dailyTarget.targetPrice) * 100).toFixed(1))
       : null;
 
   const dailyUpsidePrice =
-    dailyTarget && range
-      ? Number((dailyTarget.targetPrice - range.currentPrice).toFixed(2))
+    dailyTarget && summaryRange
+      ? Number((dailyTarget.targetPrice - summaryRange.currentPrice).toFixed(2))
       : null;
 
   const dailyUpsidePercent =
-    dailyTarget && range && range.currentPrice > 0
+    dailyTarget && summaryRange && summaryRange.currentPrice > 0
       ? Number(
           (
-            ((dailyTarget.targetPrice - range.currentPrice) / range.currentPrice) *
+            ((dailyTarget.targetPrice - summaryRange.currentPrice) /
+              summaryRange.currentPrice) *
             100
           ).toFixed(2),
         )
@@ -101,16 +188,16 @@ export default function CurrentStockSummaryCard({ data }: Props) {
   const displayMeta = [displaySymbol, data?.exchange, data?.currency]
     .filter(Boolean)
     .join(" · ");
-  const quickSummary = makeCurrentSummaryInterpretation(data, range);
+  const quickSummary = makeCurrentSummaryInterpretation(data, summaryRange);
 
   function handleSaveCurrentAsDailyTarget() {
-    if (!range || !data?.symbol) return;
+    if (!summaryRange || !data?.symbol) return;
 
     const next: DailyTargetSnapshot = {
       date: todayKey,
       symbol: data.symbol,
-      targetPrice: range.baseTarget,
-      basisPrice: range.currentPrice,
+      targetPrice: summaryRange.baseTarget,
+      basisPrice: summaryRange.currentPrice,
       source: "current-query",
       savedAt: new Date().toISOString(),
     };
@@ -121,7 +208,7 @@ export default function CurrentStockSummaryCard({ data }: Props) {
   }
 
   function handleSaveManualDailyTarget() {
-    if (!range || !data?.symbol) return;
+    if (!summaryRange || !data?.symbol) return;
 
     const parsed = parseManualTargetInput(manualTargetInput);
 
@@ -131,7 +218,7 @@ export default function CurrentStockSummaryCard({ data }: Props) {
       date: todayKey,
       symbol: data.symbol,
       targetPrice: parsed,
-      basisPrice: range.currentPrice,
+      basisPrice: summaryRange.currentPrice,
       source: "manual",
       savedAt: new Date().toISOString(),
     };
@@ -142,15 +229,15 @@ export default function CurrentStockSummaryCard({ data }: Props) {
   }
 
   function handleResetDailyTarget() {
-    if (!range || !data?.symbol || typeof window === "undefined") return;
+    if (!summaryRange || !data?.symbol || typeof window === "undefined") return;
 
     window.localStorage.removeItem(dailyTargetKey);
 
     const next: DailyTargetSnapshot = {
       date: todayKey,
       symbol: data.symbol,
-      targetPrice: range.baseTarget,
-      basisPrice: range.currentPrice,
+      targetPrice: summaryRange.baseTarget,
+      basisPrice: summaryRange.currentPrice,
       source: "first-query",
       savedAt: new Date().toISOString(),
     };
@@ -170,7 +257,7 @@ export default function CurrentStockSummaryCard({ data }: Props) {
       </div>
 
       <div className="metric-list">
-        <MetricRow label="현재가" value={formatNumber(data?.currentPrice)} />
+        <MetricRow label="현재가" value={formatNumber(summaryRange?.currentPrice ?? data?.currentPrice)} />
         <MetricRow
           label="당일 대비"
           value={`${formatSignedNumber(data?.changePrice)} / ${formatPercent(
@@ -179,14 +266,14 @@ export default function CurrentStockSummaryCard({ data }: Props) {
         />
         <MetricRow
           label="추정가"
-          value={`${formatNumber(range?.baseTarget)} ${formatDailyTargetSuffix(
+          value={`${formatNumber(estimate.estimate)} ${formatDailyTargetSuffix(
             dailyTarget,
           )}`}
         />
         <MetricRow
           label="추정 괴리율"
           value={`${formatSignedNumber(upsidePrice)} / ${formatUpside(
-            range?.baseUpsidePercent,
+            summaryRange?.baseUpsidePercent,
           )}`}
         />
         <MetricRow
@@ -201,8 +288,8 @@ export default function CurrentStockSummaryCard({ data }: Props) {
         />
         <MetricRow
           label="위험 기준선"
-          value={`${formatNumber(range?.riskLine)} / ${formatUpside(
-            range?.riskDownsidePercent,
+          value={`${formatNumber(summaryRange?.riskLine)} / ${formatUpside(
+            summaryRange?.riskDownsidePercent,
           )}`}
         />
         <MetricRow
@@ -322,7 +409,7 @@ export default function CurrentStockSummaryCard({ data }: Props) {
             className="button secondary-button"
             type="button"
             onClick={handleSaveManualDailyTarget}
-            disabled={!range}
+            disabled={!summaryRange}
           >
             직접 입력 저장
           </button>
@@ -330,7 +417,7 @@ export default function CurrentStockSummaryCard({ data }: Props) {
             className="button secondary-button"
             type="button"
             onClick={handleSaveCurrentAsDailyTarget}
-            disabled={!range}
+            disabled={!summaryRange}
           >
             현재 조회 추정가로 저장
           </button>
@@ -338,7 +425,7 @@ export default function CurrentStockSummaryCard({ data }: Props) {
             className="button secondary-button"
             type="button"
             onClick={handleResetDailyTarget}
-            disabled={!range}
+            disabled={!summaryRange}
           >
             오늘 기준 초기화
           </button>
@@ -373,9 +460,173 @@ function MetricRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+function calculateEstimate({
+  technicalTarget,
+  valuationTarget,
+  consensusTarget,
+  targetPrice,
+}: {
+  technicalTarget?: number | null;
+  valuationTarget?: number | null;
+  consensusTarget?: number | null;
+  targetPrice?: NonNullable<StockResponse["score"]>["targetPrice"];
+}): EstimateResult {
+  const hasTechnical = technicalTarget != null && Number.isFinite(technicalTarget);
+  const hasValuation = valuationTarget != null && Number.isFinite(valuationTarget);
+  const hasConsensus = consensusTarget != null && Number.isFinite(consensusTarget);
+
+  if (!hasTechnical && !hasValuation && !hasConsensus) {
+    return {
+      basisAverage: null,
+      estimate: null,
+      quantAmount: null,
+      supplyAmount: null,
+      riskAmount: null,
+      totalAmount: null,
+      weights: { technical: 0, valuation: 0, consensus: 0 },
+    };
+  }
+
+  const rawWeights = hasConsensus
+    ? {
+        technical: hasTechnical ? 0.4 : 0,
+        valuation: hasValuation ? 0.35 : 0,
+        consensus: 0.25,
+      }
+    : {
+        technical: hasTechnical ? 0.6 : 0,
+        valuation: hasValuation ? 0.4 : 0,
+        consensus: 0,
+      };
+
+  const totalWeight = rawWeights.technical + rawWeights.valuation + rawWeights.consensus;
+
+  const weights = {
+    technical: totalWeight > 0 ? rawWeights.technical / totalWeight : 0,
+    valuation: totalWeight > 0 ? rawWeights.valuation / totalWeight : 0,
+    consensus: totalWeight > 0 ? rawWeights.consensus / totalWeight : 0,
+  };
+
+  const basisAverage = roundPrice(
+    (technicalTarget ?? 0) * weights.technical +
+      (valuationTarget ?? 0) * weights.valuation +
+      (consensusTarget ?? 0) * weights.consensus,
+  );
+
+  const selectedMode = targetPrice?.selectedTargetMode ?? "balanced";
+  const targetModes = Array.isArray(targetPrice?.targetModes) ? targetPrice.targetModes : [];
+  const modeResult =
+    targetModes.find((mode) => mode?.mode === selectedMode) ??
+    targetModes.find((mode) => mode?.mode === "balanced") ??
+    targetModes[0] ??
+    null;
+  const quantAdjustment = modeResult?.quantAdjustment ?? {};
+  const quantPercent = getNumber(quantAdjustment.baseAdjustmentPercent) ?? 0;
+  const supplyPercent = getNumber(quantAdjustment.positiveAdjustmentPercent) ?? 0;
+  const riskPercent = getNumber(quantAdjustment.riskAdjustmentPercent) ?? 0;
+
+  const quantAmount = calculateAdjustmentAmount(basisAverage, quantPercent);
+  const supplyAmount = calculateAdjustmentAmount(basisAverage, supplyPercent);
+  const riskAmount = calculateAdjustmentAmount(basisAverage, riskPercent);
+  const totalAmount =
+    quantAmount != null && supplyAmount != null && riskAmount != null
+      ? roundPrice(quantAmount + supplyAmount + riskAmount)
+      : null;
+  const estimate =
+    basisAverage != null && totalAmount != null ? roundPrice(basisAverage + totalAmount) : null;
+
+  return {
+    basisAverage,
+    estimate,
+    quantAmount,
+    supplyAmount,
+    riskAmount,
+    totalAmount,
+    weights,
+  };
+}
+
+function makeSummaryRange({
+  currentPrice,
+  estimate,
+  fallbackRange,
+}: {
+  currentPrice?: number | null;
+  estimate?: number | null;
+  fallbackRange?: NonNullable<StockResponse["score"]>["targetPrice"]["technicalTargetRange"] | null;
+}): SummaryRange | null {
+  const baseCurrentPrice = currentPrice ?? fallbackRange?.currentPrice ?? null;
+
+  if (baseCurrentPrice == null || estimate == null || estimate <= 0) return null;
+
+  const fallbackRiskLine = fallbackRange?.riskLine ?? null;
+  const riskLine =
+    fallbackRiskLine != null && Number.isFinite(fallbackRiskLine)
+      ? fallbackRiskLine
+      : roundPrice(baseCurrentPrice * 0.9) ?? baseCurrentPrice;
+
+  return {
+    currentPrice: baseCurrentPrice,
+    baseTarget: estimate,
+    baseUpsidePercent: ((estimate - baseCurrentPrice) / baseCurrentPrice) * 100,
+    riskLine,
+    riskDownsidePercent: ((riskLine - baseCurrentPrice) / baseCurrentPrice) * 100,
+  };
+}
+
+function getTechnicalTarget(targetPrice?: NonNullable<StockResponse["score"]>["targetPrice"]) {
+  const candidates = targetPrice?.targetBasis?.candidates;
+
+  if (Array.isArray(candidates)) {
+    const technicalCandidate = candidates.find((candidate) =>
+      String(candidate?.label ?? "").includes("기술"),
+    );
+
+    const value = getNumber(technicalCandidate?.value);
+
+    if (value != null) return value;
+  }
+
+  return getNumber(targetPrice?.technicalTargetRange?.baseTarget);
+}
+
+function calculateValuationTarget(
+  currentPrice?: number | null,
+  fundamentals?: FundamentalsData | null,
+) {
+  if (!currentPrice || !fundamentals) return null;
+
+  const epsTarget =
+    fundamentals.eps != null &&
+    fundamentals.eps > 0 &&
+    fundamentals.per != null &&
+    fundamentals.per > 0
+      ? roundPrice(fundamentals.eps * fundamentals.per * getPerAdjustment(fundamentals.per))
+      : null;
+  const bpsTarget =
+    fundamentals.bps != null &&
+    fundamentals.bps > 0 &&
+    fundamentals.pbr != null &&
+    fundamentals.pbr > 0
+      ? roundPrice(fundamentals.bps * fundamentals.pbr * getPbrAdjustment(fundamentals.pbr))
+      : null;
+
+  const targets = [epsTarget, bpsTarget].filter(
+    (value): value is number => value != null && Number.isFinite(value) && value > 0,
+  );
+
+  if (!targets.length) return null;
+
+  const average = roundPrice(targets.reduce((sum, value) => sum + value, 0) / targets.length);
+
+  if (average == null) return null;
+
+  return clampValuationTarget(average, currentPrice);
+}
+
 function makeCurrentSummaryInterpretation(
   data: StockResponse | null,
-  range?: NonNullable<StockResponse["score"]>["targetPrice"]["technicalTargetRange"],
+  range: SummaryRange | null,
 ) {
   const latest = getLatestChartRow(data?.chartData);
   const current = data?.currentPrice ?? latest?.close ?? range?.currentPrice ?? null;
@@ -496,10 +747,7 @@ function makeChartSummary(
   };
 }
 
-function makePredictionSummary(
-  current: number | null,
-  range?: NonNullable<StockResponse["score"]>["targetPrice"]["technicalTargetRange"],
-) {
+function makePredictionSummary(current: number | null, range: SummaryRange | null) {
   const baseTarget = range?.baseTarget ?? null;
 
   if (current == null || baseTarget == null || baseTarget <= 0) {
@@ -722,4 +970,81 @@ function formatDateTime(value?: string | null) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+function makeConsensusStorageKey(symbol?: string | null, name?: string | null) {
+  const normalizedSymbol = (symbol || "").trim().toUpperCase();
+
+  if (normalizedSymbol) {
+    return `${CONSENSUS_STORAGE_PREFIX}:${normalizedSymbol}`;
+  }
+
+  const normalizedName = (name || "").trim();
+
+  if (normalizedName) {
+    return `${CONSENSUS_STORAGE_PREFIX}:NAME:${normalizedName}`;
+  }
+
+  return `${CONSENSUS_STORAGE_PREFIX}:CURRENT`;
+}
+
+function readConsensus(key: string): ConsensusData | null {
+  if (!key || typeof window === "undefined") return null;
+
+  try {
+    const raw = window.localStorage.getItem(key);
+
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as ConsensusData;
+
+    if (!parsed || typeof parsed !== "object") return null;
+
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function getNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function calculateAdjustmentAmount(basisAverage: number | null, percent: number) {
+  if (basisAverage == null || !Number.isFinite(basisAverage)) return null;
+
+  return roundPrice((basisAverage * percent) / 100);
+}
+
+function getPerAdjustment(per?: number | null) {
+  if (per == null || !Number.isFinite(per) || per <= 0) return 1;
+  if (per <= 10) return 1.08;
+  if (per <= 20) return 1;
+  if (per <= 30) return 0.92;
+  if (per <= 40) return 0.84;
+  return 0.75;
+}
+
+function getPbrAdjustment(pbr?: number | null) {
+  if (pbr == null || !Number.isFinite(pbr) || pbr <= 0) return 1;
+  if (pbr <= 1) return 1.08;
+  if (pbr <= 2) return 1;
+  if (pbr <= 3) return 0.92;
+  if (pbr <= 5) return 0.85;
+  return 0.75;
+}
+
+function clampValuationTarget(target: number, currentPrice: number) {
+  const lower = currentPrice * 0.8;
+  const upper = currentPrice * 1.35;
+
+  return roundPrice(Math.max(lower, Math.min(target, upper)));
+}
+
+function roundPrice(value: number) {
+  if (!Number.isFinite(value)) return null;
+
+  if (value >= 100_000) return Math.round(value / 10) * 10;
+  if (value >= 10_000) return Math.round(value / 5) * 5;
+  return Math.round(value);
 }
