@@ -17,6 +17,13 @@ type Props = {
     } | null;
     score?: {
       targetPrice?: {
+        finalTargetRange?: {
+          currentPrice: number;
+          baseTarget: number;
+          baseUpsidePercent: number;
+          riskLine: number;
+          riskDownsidePercent: number;
+        } | null;
         technicalTargetRange?: {
           currentPrice: number;
           baseTarget: number;
@@ -30,7 +37,10 @@ type Props = {
 };
 
 export default function RiskAnalysisSection({ data }: Props) {
-  const range = data?.score?.targetPrice?.technicalTargetRange ?? null;
+  const range =
+    data?.score?.targetPrice?.finalTargetRange ??
+    data?.score?.targetPrice?.technicalTargetRange ??
+    null;
   const latest = getLatestChartRow(data?.chartData);
   const currentPrice = data?.currentPrice ?? range?.currentPrice ?? latest?.close ?? null;
 
@@ -46,14 +56,15 @@ export default function RiskAnalysisSection({ data }: Props) {
       <div className="card">
         <div className="target-basis-header">
           <span>위험 분석 방식</span>
-          <strong>{makeOverallRiskLabel([riskLine, overheat, high52w, rsi, bollinger, targetProgress])}</strong>
+          <strong>
+            {makeOverallRiskLabel([riskLine, overheat, high52w, rsi, bollinger, targetProgress])}
+          </strong>
         </div>
 
         <p className="target-basis-summary">
-          위험 분석은 추정 주가가 있더라도 현재 가격이 과열권인지, 위험
-          기준선과 얼마나 떨어져 있는지, 52주 고가와 볼린저밴드 상단에
-          가까운지를 확인하는 영역입니다. 상승 가능성과 별개로 진입 부담과
-          변동성 확대 가능성을 함께 봅니다.
+          위험 분석은 추정가가 있더라도 현재 가격이 과열권인지, 위험 기준선과
+          얼마나 떨어져 있는지, 52주 고가와 볼린저밴드 상단에 가까운지를
+          확인하는 영역입니다.
         </p>
 
         <div className="summary-grid summary-grid-four" style={{ marginTop: 16 }}>
@@ -76,7 +87,7 @@ export default function RiskAnalysisSection({ data }: Props) {
             tone={high52w.tone}
           />
           <RiskMetricCard
-            title="현재 모델 도달률"
+            title="추정가 도달률"
             value={targetProgress.title}
             subText={targetProgress.description}
             tone={targetProgress.tone}
@@ -98,13 +109,15 @@ export default function RiskAnalysisSection({ data }: Props) {
         <div className="target-basis-box" style={{ marginTop: 16 }}>
           <div className="target-basis-header">
             <span>위험 해석</span>
-            <strong>{makeRiskSummary([riskLine, overheat, high52w, rsi, bollinger, targetProgress])}</strong>
+            <strong>
+              {makeRiskSummary([riskLine, overheat, high52w, rsi, bollinger, targetProgress])}
+            </strong>
           </div>
 
           <div className="target-basis-adjustments">
             <p>현재가: {formatNumber(currentPrice)}</p>
-            <p>현재 모델 추정가: {formatNumber(range?.baseTarget)}</p>
-            <p>현재 모델 추정 괴리율: {formatPercent(range?.baseUpsidePercent)}</p>
+            <p>추정가: {formatNumber(range?.baseTarget)}</p>
+            <p>추정 괴리율: {formatPercent(range?.baseUpsidePercent)}</p>
             <p>위험 기준선 대비 하락 여지: {formatPercent(range?.riskDownsidePercent)}</p>
             <p>52주 고가: {formatNumber(data?.fundamentals?.high52w)}</p>
             <p>52주 저가: {formatNumber(data?.fundamentals?.low52w)}</p>
@@ -218,7 +231,7 @@ function makeOverheatAnalysis(
 
   return {
     title: "과열 제한적",
-    description: "단기 과열 신호는 제한적",
+    description: "단기 과열 신호 제한적",
     tone: "neutral",
     isRisk: false,
   };
@@ -349,7 +362,7 @@ function makeTargetProgressAnalysis(
   if (!currentPrice || !baseTarget || baseTarget <= 0) {
     return {
       title: "데이터 없음",
-      description: "현재 모델 추정가 대기",
+      description: "추정가 대기",
       tone: "neutral",
       isRisk: false,
     };
@@ -360,7 +373,7 @@ function makeTargetProgressAnalysis(
   if (progress >= 97) {
     return {
       title: `${progress.toFixed(1)}%`,
-      description: "현재 모델 추정가에 근접",
+      description: "추정가에 근접",
       tone: "negative",
       isRisk: true,
     };
