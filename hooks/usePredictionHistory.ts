@@ -448,7 +448,7 @@ function calculateBasisAverage({
   );
 }
 
-function getTechnicalTarget(targetPrice?: StockResponse["score"]["targetPrice"]) {
+function getTechnicalTarget(targetPrice?: any) {
   const candidates = targetPrice?.targetBasis?.candidates;
 
   if (Array.isArray(candidates)) {
@@ -463,13 +463,13 @@ function getTechnicalTarget(targetPrice?: StockResponse["score"]["targetPrice"])
   return getNumber(targetPrice?.technicalTargetRange?.baseTarget);
 }
 
-function getSelectedQuantAdjustment(targetPrice?: StockResponse["score"]["targetPrice"]) {
+function getSelectedQuantAdjustment(targetPrice?: any) {
   const selectedMode = String(targetPrice?.selectedTargetMode ?? "");
   const targetModes = Array.isArray(targetPrice?.targetModes)
     ? targetPrice.targetModes
     : [];
   const modeResult =
-    targetModes.find((mode) => String(mode?.mode ?? "") === selectedMode) ??
+    targetModes.find((mode: any) => String(mode?.mode ?? "") === selectedMode) ??
     targetModes[0] ??
     null;
 
