@@ -7,6 +7,45 @@ type ChartRow = {
   bbLower?: number | null;
 };
 
+type TargetModeResultLike = {
+  mode?: string | null;
+  quantAdjustment?: {
+    baseAdjustmentPercent?: number | null;
+    positiveAdjustmentPercent?: number | null;
+    riskAdjustmentPercent?: number | null;
+  } | null;
+};
+
+type TargetPriceLike = {
+  finalTargetRange?: {
+    currentPrice: number;
+    baseTarget: number;
+    baseUpsidePercent: number;
+    riskLine: number;
+    riskDownsidePercent: number;
+  } | null;
+  technicalTargetRange?: {
+    currentPrice: number;
+    baseTarget: number;
+    baseUpsidePercent: number;
+    riskLine: number;
+    riskDownsidePercent: number;
+  } | null;
+  targetBasis?: {
+    candidates?: {
+      label: string;
+      value: number;
+      weight: number;
+    }[];
+  } | null;
+  valuationTargetRange?: {
+    valuationTarget?: number | null;
+  } | null;
+  consensusTarget?: number | null;
+  selectedTargetMode?: string | null;
+  targetModes?: TargetModeResultLike[] | null;
+};
+
 type Props = {
   data?: {
     currentPrice?: number | null;
@@ -16,40 +55,59 @@ type Props = {
       low52w?: number | null;
     } | null;
     score?: {
-      targetPrice?: {
-        finalTargetRange?: {
-          currentPrice: number;
-          baseTarget: number;
-          baseUpsidePercent: number;
-          riskLine: number;
-          riskDownsidePercent: number;
-        } | null;
-        technicalTargetRange?: {
-          currentPrice: number;
-          baseTarget: number;
-          baseUpsidePercent: number;
-          riskLine: number;
-          riskDownsidePercent: number;
-        } | null;
-      };
+      targetPrice?: TargetPriceLike;
     };
   } | null;
 };
 
-export default function RiskAnalysisSection({ data }: Props) {
-  const range =
-    data?.score?.targetPrice?.finalTargetRange ??
-    data?.score?.targetPrice?.technicalTargetRange ??
-    null;
-  const latest = getLatestChartRow(data?.chartData);
-  const currentPrice = data?.currentPrice ?? range?.currentPrice ?? latest?.close ?? null;
+type RiskTone = "positive" | "negative" | "neutral";
 
-  const riskLine = makeRiskLineAnalysis(currentPrice, range?.riskLine);
+type RiskItem = {
+  title: string;
+  description: string;
+  tone: RiskTone;
+  isRisk: boolean;
+};
+
+type Option2Estimate = {
+  currentPrice: number | null;
+  technicalTarget: number | null;
+  valuationTarget: number | null;
+  consensusTarget: number | null;
+  basisAverage: number | null;
+  estimate: number | null;
+  quantPercent: number;
+  supplyPercent: number;
+  riskPercent: number;
+  totalAdjustmentAmount: number | null;
+};
+
+export default function RiskAnalysisSection({ data }: Props) {
+  const targetPrice = data?.score?.targetPrice ?? null;
+  const sourceRange =
+    targetPrice?.finalTargetRange ?? targetPrice?.technicalTargetRange ?? null;
+  const latest = getLatestChartRow(data?.chartData);
+  const currentPrice =
+    data?.currentPrice ?? sourceRange?.currentPrice ?? latest?.close ?? null;
+
+  const option2 = calculateOption2Estimate(targetPrice, currentPrice);
+  const estimate = option2.estimate;
+  const riskLineValue = sourceRange?.riskLine ?? makeFallbackRiskLine(currentPrice);
+  const baseUpsidePercent =
+    estimate != null && currentPrice != null && currentPrice > 0
+      ? ((estimate - currentPrice) / currentPrice) * 100
+      : null;
+  const riskDownsidePercent =
+    riskLineValue != null && currentPrice != null && currentPrice > 0
+      ? ((riskLineValue - currentPrice) / currentPrice) * 100
+      : null;
+
+  const riskLine = makeRiskLineAnalysis(currentPrice, riskLineValue);
   const overheat = makeOverheatAnalysis(latest?.rsi14, currentPrice, latest);
   const high52w = makeHigh52wAnalysis(currentPrice, data?.fundamentals?.high52w);
   const rsi = makeRsiRiskAnalysis(latest?.rsi14);
   const bollinger = makeBollingerRiskAnalysis(currentPrice, latest);
-  const targetProgress = makeTargetProgressAnalysis(currentPrice, range?.baseTarget);
+  const targetProgress = makeTargetProgressAnalysis(currentPrice, estimate);
 
   return (
     <section className="score-section">
@@ -57,20 +115,27 @@ export default function RiskAnalysisSection({ data }: Props) {
         <div className="target-basis-header">
           <span>위험 분석 방식</span>
           <strong>
-            {makeOverallRiskLabel([riskLine, overheat, high52w, rsi, bollinger, targetProgress])}
+            {makeOverallRiskLabel([
+              riskLine,
+              overheat,
+              high52w,
+              rsi,
+              bollinger,
+              targetProgress,
+            ])}
           </strong>
         </div>
 
         <p className="target-basis-summary">
-          위험 분석은 추정가가 있더라도 현재 가격이 과열권인지, 위험 기준선과
-          얼마나 떨어져 있는지, 52주 고가와 볼린저밴드 상단에 가까운지를
-          확인하는 영역입니다.
+          위험 분석은 2안 추정가 기준으로 현재 가격이 과열권인지, 위험
+          기준선과 얼마나 떨어져 있는지, 52주 고가와 볼린저밴드 상단에
+          가까운지를 확인하는 영역입니다.
         </p>
 
         <div className="summary-grid summary-grid-four" style={{ marginTop: 16 }}>
           <RiskMetricCard
             title="위험 기준선"
-            value={formatNumber(range?.riskLine)}
+            value={formatNumber(riskLineValue)}
             subText={riskLine.description}
             tone={riskLine.tone}
           />
@@ -110,15 +175,24 @@ export default function RiskAnalysisSection({ data }: Props) {
           <div className="target-basis-header">
             <span>위험 해석</span>
             <strong>
-              {makeRiskSummary([riskLine, overheat, high52w, rsi, bollinger, targetProgress])}
+              {makeRiskSummary([
+                riskLine,
+                overheat,
+                high52w,
+                rsi,
+                bollinger,
+                targetProgress,
+              ])}
             </strong>
           </div>
 
           <div className="target-basis-adjustments">
             <p>현재가: {formatNumber(currentPrice)}</p>
-            <p>추정가: {formatNumber(range?.baseTarget)}</p>
-            <p>추정 괴리율: {formatPercent(range?.baseUpsidePercent)}</p>
-            <p>위험 기준선 대비 하락 여지: {formatPercent(range?.riskDownsidePercent)}</p>
+            <p>추정가: {formatNumber(estimate)}</p>
+            <p>추정 괴리율: {formatPercent(baseUpsidePercent)}</p>
+            <p>
+              위험 기준선 대비 하락 여지: {formatPercent(riskDownsidePercent)}
+            </p>
             <p>52주 고가: {formatNumber(data?.fundamentals?.high52w)}</p>
             <p>52주 저가: {formatNumber(data?.fundamentals?.low52w)}</p>
           </div>
@@ -127,15 +201,6 @@ export default function RiskAnalysisSection({ data }: Props) {
     </section>
   );
 }
-
-type RiskTone = "positive" | "negative" | "neutral";
-
-type RiskItem = {
-  title: string;
-  description: string;
-  tone: RiskTone;
-  isRisk: boolean;
-};
 
 function RiskMetricCard({
   title,
@@ -155,6 +220,122 @@ function RiskMetricCard({
       <em className={tone}>{subText}</em>
     </div>
   );
+}
+
+function calculateOption2Estimate(
+  targetPrice?: TargetPriceLike | null,
+  currentPrice?: number | null,
+): Option2Estimate {
+  const sourceRange =
+    targetPrice?.finalTargetRange ?? targetPrice?.technicalTargetRange ?? null;
+
+  const baseCurrentPrice = currentPrice ?? sourceRange?.currentPrice ?? null;
+  const technicalTarget = getTechnicalTarget(targetPrice);
+  const valuationTarget = getNumber(targetPrice?.valuationTargetRange?.valuationTarget);
+  const consensusTarget = getNumber(targetPrice?.consensusTarget);
+
+  const hasTechnical = isValidNumber(technicalTarget);
+  const hasValuation = isValidNumber(valuationTarget);
+  const hasConsensus = isValidNumber(consensusTarget);
+
+  if (!hasTechnical && !hasValuation && !hasConsensus) {
+    return {
+      currentPrice: baseCurrentPrice,
+      technicalTarget: null,
+      valuationTarget: null,
+      consensusTarget: null,
+      basisAverage: null,
+      estimate: null,
+      quantPercent: 0,
+      supplyPercent: 0,
+      riskPercent: 0,
+      totalAdjustmentAmount: null,
+    };
+  }
+
+  const rawWeights = hasConsensus
+    ? {
+        technical: hasTechnical ? 0.4 : 0,
+        valuation: hasValuation ? 0.35 : 0,
+        consensus: 0.25,
+      }
+    : {
+        technical: hasTechnical ? 0.6 : 0,
+        valuation: hasValuation ? 0.4 : 0,
+        consensus: 0,
+      };
+
+  const totalWeight =
+    rawWeights.technical + rawWeights.valuation + rawWeights.consensus;
+  const technicalWeight = totalWeight > 0 ? rawWeights.technical / totalWeight : 0;
+  const valuationWeight = totalWeight > 0 ? rawWeights.valuation / totalWeight : 0;
+  const consensusWeight = totalWeight > 0 ? rawWeights.consensus / totalWeight : 0;
+
+  const basisAverage = roundPrice(
+    (technicalTarget ?? 0) * technicalWeight +
+      (valuationTarget ?? 0) * valuationWeight +
+      (consensusTarget ?? 0) * consensusWeight,
+  );
+
+  const selectedMode = String(targetPrice?.selectedTargetMode ?? "");
+  const targetModes = Array.isArray(targetPrice?.targetModes)
+    ? targetPrice.targetModes
+    : [];
+  const modeResult =
+    targetModes.find((mode: any) => String(mode?.mode ?? "") === selectedMode) ??
+    targetModes[0] ??
+    null;
+  const quantAdjustment = modeResult?.quantAdjustment ?? {};
+  const quantPercent = getNumber(quantAdjustment.baseAdjustmentPercent) ?? 0;
+  const supplyPercent = getNumber(quantAdjustment.positiveAdjustmentPercent) ?? 0;
+  const riskPercent = getNumber(quantAdjustment.riskAdjustmentPercent) ?? 0;
+
+  const quantAmount = calculateAdjustmentAmount(basisAverage, quantPercent);
+  const supplyAmount = calculateAdjustmentAmount(basisAverage, supplyPercent);
+  const riskAmount = calculateAdjustmentAmount(basisAverage, riskPercent);
+  const totalAdjustmentAmount =
+    quantAmount != null && supplyAmount != null && riskAmount != null
+      ? roundPrice(quantAmount + supplyAmount + riskAmount)
+      : null;
+  const estimate =
+    basisAverage != null && totalAdjustmentAmount != null
+      ? roundPrice(basisAverage + totalAdjustmentAmount)
+      : null;
+
+  return {
+    currentPrice: baseCurrentPrice,
+    technicalTarget,
+    valuationTarget,
+    consensusTarget,
+    basisAverage,
+    estimate,
+    quantPercent,
+    supplyPercent,
+    riskPercent,
+    totalAdjustmentAmount,
+  };
+}
+
+function getTechnicalTarget(targetPrice?: TargetPriceLike | null) {
+  const candidates = targetPrice?.targetBasis?.candidates;
+
+  if (Array.isArray(candidates)) {
+    const technicalCandidate = candidates.find((candidate) =>
+      String(candidate?.label ?? "").includes("기술"),
+    );
+
+    const value = getNumber(technicalCandidate?.value);
+
+    if (value != null) return value;
+  }
+
+  return getNumber(targetPrice?.technicalTargetRange?.baseTarget);
+}
+
+function calculateAdjustmentAmount(basisAverage: number | null, percent: number) {
+  if (basisAverage == null || !Number.isFinite(basisAverage)) return null;
+
+  return roundPrice((basisAverage * percent) / 100);
 }
 
 function getLatestChartRow(rows?: ChartRow[]) {
@@ -357,9 +538,9 @@ function makeBollingerRiskAnalysis(
 
 function makeTargetProgressAnalysis(
   currentPrice?: number | null,
-  baseTarget?: number | null,
+  estimate?: number | null,
 ): RiskItem {
-  if (!currentPrice || !baseTarget || baseTarget <= 0) {
+  if (!currentPrice || !estimate || estimate <= 0) {
     return {
       title: "데이터 없음",
       description: "추정가 대기",
@@ -368,7 +549,16 @@ function makeTargetProgressAnalysis(
     };
   }
 
-  const progress = (currentPrice / baseTarget) * 100;
+  const progress = (currentPrice / estimate) * 100;
+
+  if (progress >= 105) {
+    return {
+      title: `${progress.toFixed(1)}%`,
+      description: "추정가 초과",
+      tone: "negative",
+      isRisk: true,
+    };
+  }
 
   if (progress >= 97) {
     return {
@@ -431,6 +621,12 @@ function makeRiskSummary(items: RiskItem[]) {
   return "위험 부담 제한적";
 }
 
+function makeFallbackRiskLine(currentPrice?: number | null) {
+  if (currentPrice == null || !Number.isFinite(currentPrice)) return null;
+
+  return roundPrice(currentPrice * 0.9);
+}
+
 function formatNumber(value?: number | null) {
   if (value == null || Number.isNaN(value)) return "데이터 없음";
 
@@ -443,4 +639,20 @@ function formatPercent(value?: number | null) {
   if (value == null || Number.isNaN(value)) return "데이터 없음";
 
   return `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
+
+function getNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function isValidNumber(value?: number | null) {
+  return value != null && Number.isFinite(value);
+}
+
+function roundPrice(value: number) {
+  if (!Number.isFinite(value)) return null;
+
+  if (value >= 100_000) return Math.round(value / 10) * 10;
+  if (value >= 10_000) return Math.round(value / 5) * 5;
+  return Math.round(value);
 }
