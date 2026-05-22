@@ -513,11 +513,10 @@ function calculateEstimate({
       (consensusTarget ?? 0) * weights.consensus,
   );
 
-  const selectedMode = targetPrice?.selectedTargetMode ?? "balanced";
+  const selectedMode = String(targetPrice?.selectedTargetMode ?? "");
   const targetModes = Array.isArray(targetPrice?.targetModes) ? targetPrice.targetModes : [];
   const modeResult =
-    targetModes.find((mode) => mode?.mode === selectedMode) ??
-    targetModes.find((mode) => mode?.mode === "balanced") ??
+    targetModes.find((mode) => String(mode?.mode ?? "") === selectedMode) ??
     targetModes[0] ??
     null;
   const quantAdjustment = modeResult?.quantAdjustment ?? {};
