@@ -157,21 +157,21 @@ export default function SummaryAbcOverviewSection({ data }: Props) {
     <section className="score-section">
       <div className="card">
         <div className="target-basis-header">
-          <span>Summary A/B/C 기준가 비교</span>
-          <strong>{finalTarget != null ? "추정가 구조 요약" : "데이터 대기"}</strong>
+          <span>Summary A/B/C 추정가 구조</span>
+          <strong>{finalTarget != null ? "최종 추정가 요약" : "데이터 대기"}</strong>
         </div>
 
         <p className="target-basis-summary">
-          A 기술적 기준가, B 실적·밸류 기준가, C 컨센서스 기준가를 한 번에
-          비교합니다. Detail 1~3의 근거를 요약해 현재 모델 추정가와 최종 추정
-          주가의 관계를 확인하는 영역입니다.
+          A는 차트 기준, B는 실적·밸류 기준, C는 시장 컨센서스 기준입니다.
+          A/B/C 1차 추정가는 세 기준가를 가중 평균한 참고값이고, 최종 추정
+          주가는 여기에 모델 보정과 위험 신호를 함께 반영한 값입니다.
         </p>
 
         <div className="summary-grid summary-grid-four" style={{ marginTop: 16 }}>
           <SummaryMetricCard
             title="A. 기술적 기준가"
             value={formatPrice(technicalTarget)}
-            subText="차트·가격 흐름 기준"
+            subText="차트 기준"
           />
           <SummaryMetricCard
             title="B. 실적·밸류 기준가"
@@ -194,35 +194,34 @@ export default function SummaryAbcOverviewSection({ data }: Props) {
           <SummaryMetricCard
             title="현재 모델 추정가"
             value={formatPrice(currentModelTarget)}
-            subText="현재 조회 기준 모델값"
+            subText="현재 조회 기준"
           />
           <SummaryMetricCard
             title="최종 추정 주가"
             value={formatPrice(finalTarget)}
-            subText="모델 보정 후 기준"
+            subText="보정 반영 후"
           />
           <SummaryMetricCard
             title="추정 괴리율"
             value={formatPercent(estimatedGap)}
-            subText="현재가 대비 여력"
+            subText="현재가 대비"
           />
           <SummaryMetricCard
             title="현재 모델 도달률"
             value={formatPercent(targetProgress, false)}
-            subText="현재가 / 최종 추정 주가"
+            subText="현재가 / 최종 추정가"
           />
         </div>
 
         <div className="target-basis-box" style={{ marginTop: 16 }}>
           <div className="target-basis-header">
-            <span>해석</span>
+            <span>한 줄 해석</span>
             <strong>{makeSummaryLabel(technicalTarget, valuationTarget, consensusTarget, finalTarget)}</strong>
           </div>
           <p className="target-basis-summary">
-            A/B/C 값이 서로 가까우면 추정가의 방향성이 비교적 일관된 것으로
-            볼 수 있습니다. 반대로 A는 높고 B가 낮거나, C가 없으면 현재 모델
-            추정가는 참고값으로 보고 Detail 영역에서 근거를 다시 확인하는 것이
-            좋습니다.
+            A/B/C 값이 비슷하면 추정 방향이 비교적 일관된 편입니다. 값 차이가
+            크면 어느 기준이 과도하게 높거나 낮은지 Detail 1~3에서 먼저 확인하고,
+            최종 판단은 수급과 위험 분석까지 함께 보는 것이 좋습니다.
           </p>
         </div>
       </div>
@@ -273,7 +272,7 @@ function calculateValuationTargetRange(
       epsTarget: null,
       bpsTarget: null,
       valuationTarget: null,
-      method: "실적·밸류 데이터 대기",
+      method: "KIS 조회 후 반영",
     };
   }
 
@@ -316,7 +315,7 @@ function calculateValuationTargetRange(
       epsTarget,
       bpsTarget,
       valuationTarget: null,
-      method: "실적·밸류 기준가 산정 대기",
+      method: "실적·밸류 산정 대기",
     };
   }
 
@@ -324,7 +323,7 @@ function calculateValuationTargetRange(
     epsTarget,
     bpsTarget,
     valuationTarget: clampValuationTarget(valuationTarget, currentPrice),
-    method: "KIS EPS/PER + BPS/PBR 보조 산정",
+    method: "EPS/PER + BPS/PBR",
   };
 }
 
@@ -413,7 +412,7 @@ function makeSummaryLabel(
 }
 
 function makeValuationSubText(valuationRange: any, fallback: ValuationFallback) {
-  if (valuationRange?.valuationTarget != null) return "EPS·BPS·PER·PBR 기준";
+  if (valuationRange?.valuationTarget != null) return "EPS/PER + BPS/PBR";
   if (fallback.valuationTarget != null) return fallback.method;
   return "KIS 조회 후 반영";
 }
