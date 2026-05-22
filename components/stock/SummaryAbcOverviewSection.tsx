@@ -57,10 +57,12 @@ type AdjustmentInfo = {
 
 type EstimateResult = {
   basisAverage: number | null;
-  estimate: number | null;
+  officialEstimate: number | null;
+  internalCalculatedEstimate: number | null;
   weights: EstimateWeights;
   weightText: string;
   adjustment: AdjustmentInfo;
+  estimateSource: string;
 };
 
 type Props = {
@@ -143,6 +145,7 @@ export default function SummaryAbcOverviewSection({ data }: Props) {
 
   const targetPrice = data?.score?.targetPrice ?? null;
   const range = targetPrice?.technicalTargetRange ?? null;
+  const finalRange = targetPrice?.finalTargetRange ?? null;
   const valuationRange = targetPrice?.valuationTargetRange ?? null;
   const targetModes = Array.isArray(targetPrice?.targetModes)
     ? targetPrice.targetModes
@@ -155,7 +158,10 @@ export default function SummaryAbcOverviewSection({ data }: Props) {
     null;
 
   const currentPrice =
-    getNumber(data?.currentPrice) ?? getNumber(range?.currentPrice) ?? null;
+    getNumber(data?.currentPrice) ??
+    getNumber(finalRange?.currentPrice) ??
+    getNumber(range?.currentPrice) ??
+    null;
   const fundamentals = data?.fundamentals ?? kisFundamentals ?? null;
 
   const technicalTarget = getTechnicalTarget(targetPrice, range);
@@ -167,22 +173,24 @@ export default function SummaryAbcOverviewSection({ data }: Props) {
     getNumber(targetPrice?.consensusTarget) ??
     getNumber(savedConsensus?.averageTargetPrice);
 
+  const officialEstimate = getOfficialEstimate(targetPrice);
   const estimate = calculateEstimate({
     technicalTarget,
     valuationTarget,
     consensusTarget,
     currentPrice,
     selectedModeResult,
+    officialEstimate,
   });
 
   const estimateGap =
-    estimate.estimate != null && currentPrice != null
-      ? ((estimate.estimate - currentPrice) / currentPrice) * 100
+    estimate.officialEstimate != null && currentPrice != null
+      ? ((estimate.officialEstimate - currentPrice) / currentPrice) * 100
       : null;
 
   const estimateProgress =
-    estimate.estimate != null && currentPrice != null && estimate.estimate > 0
-      ? (currentPrice / estimate.estimate) * 100
+    estimate.officialEstimate != null && currentPrice != null && estimate.officialEstimate > 0
+      ? (currentPrice / estimate.officialEstimate) * 100
       : null;
 
   return (
@@ -190,13 +198,17 @@ export default function SummaryAbcOverviewSection({ data }: Props) {
       <div className="card">
         <div className="target-basis-header">
           <span>추정가 산정</span>
-          <strong>{estimate.estimate != null ? formatPrice(estimate.estimate) : "데이터 대기"}</strong>
+          <strong>
+            {estimate.officialEstimate != null
+              ? formatPrice(estimate.officialEstimate)
+              : "데이터 대기"}
+          </strong>
         </div>
 
         <p className="target-basis-summary">
-          추정가는 A/B/C 기준가를 가중 평균한 뒤, 퀀트·수급·위험 보정을
-          반영해 계산합니다. 컨센서스가 없으면 A/B 기준으로 가중치를 자동
-          재분배합니다.
+          추정가는 하나만 표시합니다. 기준가와 보정 내역은 설명용으로 보여주고,
+          최종 표시값은 앱의 공식 추정가를 우선 사용합니다. 컨센서스가 없으면
+          A/B 기준으로 가중치를 자동 재분배합니다.
         </p>
 
         <div className="target-basis-box" style={{ marginTop: 16 }}>
@@ -259,7 +271,7 @@ export default function SummaryAbcOverviewSection({ data }: Props) {
             <SummaryMetricCard
               title="총 보정"
               value={formatAdjustment(estimate.adjustment.totalPercent, estimate.adjustment.totalAmount)}
-              subText="추정가 반영"
+              subText="기준가 가중평균 기준"
             />
           </div>
         </div>
@@ -267,14 +279,14 @@ export default function SummaryAbcOverviewSection({ data }: Props) {
         <div className="target-basis-box" style={{ marginTop: 16 }}>
           <div className="target-basis-header">
             <span>추정가</span>
-            <strong>{makeSummaryLabel(technicalTarget, valuationTarget, consensusTarget, estimate.estimate)}</strong>
+            <strong>{makeSummaryLabel(technicalTarget, valuationTarget, consensusTarget, estimate.officialEstimate)}</strong>
           </div>
 
           <div className="summary-grid summary-grid-four" style={{ marginTop: 12 }}>
             <SummaryMetricCard
               title="추정가"
-              value={formatPrice(estimate.estimate)}
-              subText="기준가 + 보정"
+              value={formatPrice(estimate.officialEstimate)}
+              subText={estimate.estimateSource}
             />
             <SummaryMetricCard
               title="추정 괴리율"
@@ -316,18 +328,30 @@ function SummaryMetricCard({
   );
 }
 
+function getOfficialEstimate(targetPrice: any) {
+  return (
+    getNumber(targetPrice?.finalTargetRange?.baseTarget) ??
+    getNumber(targetPrice?.technicalTargetRange?.baseTarget) ??
+    getNumber(targetPrice?.targetModes?.find?.((mode: any) => mode?.mode === targetPrice?.selectedTargetMode)?.finalTarget) ??
+    getNumber(targetPrice?.targetModes?.find?.((mode: any) => mode?.mode === "balanced")?.finalTarget) ??
+    getNumber(targetPrice?.targetModes?.[0]?.finalTarget) ??
+    null
+  );
+}
+
 function calculateEstimate({
   technicalTarget,
   valuationTarget,
   consensusTarget,
-  currentPrice,
   selectedModeResult,
+  officialEstimate,
 }: {
   technicalTarget?: number | null;
   valuationTarget?: number | null;
   consensusTarget?: number | null;
   currentPrice?: number | null;
   selectedModeResult?: any;
+  officialEstimate?: number | null;
 }): EstimateResult {
   const hasTechnical = technicalTarget != null && Number.isFinite(technicalTarget);
   const hasValuation = valuationTarget != null && Number.isFinite(valuationTarget);
@@ -336,7 +360,8 @@ function calculateEstimate({
   if (!hasTechnical && !hasValuation && !hasConsensus) {
     return {
       basisAverage: null,
-      estimate: null,
+      officialEstimate: officialEstimate ?? null,
+      internalCalculatedEstimate: null,
       weights: {
         technical: 0,
         valuation: 0,
@@ -344,6 +369,7 @@ function calculateEstimate({
       },
       weightText: "A/B/C 데이터 대기",
       adjustment: makeAdjustmentInfo(null, 0, 0, 0),
+      estimateSource: officialEstimate != null ? "공식 추정가" : "데이터 대기",
     };
   }
 
@@ -376,10 +402,12 @@ function calculateEstimate({
   if (basisAverage == null) {
     return {
       basisAverage: null,
-      estimate: null,
+      officialEstimate: officialEstimate ?? null,
+      internalCalculatedEstimate: null,
       weights,
       weightText: formatWeights(weights),
       adjustment: makeAdjustmentInfo(null, 0, 0, 0),
+      estimateSource: officialEstimate != null ? "공식 추정가" : "데이터 대기",
     };
   }
 
@@ -399,24 +427,16 @@ function calculateEstimate({
     totalPercent,
   );
 
-  const estimateBeforeStabilize = basisAverage + (adjustment.totalAmount ?? 0);
-  const estimate =
-    currentPrice != null && currentPrice > 0
-      ? stabilizeEstimate(
-          estimateBeforeStabilize,
-          currentPrice,
-          technicalTarget,
-          valuationTarget,
-          consensusTarget,
-        )
-      : roundPrice(estimateBeforeStabilize);
+  const internalCalculatedEstimate = roundPrice(basisAverage + (adjustment.totalAmount ?? 0));
 
   return {
     basisAverage,
-    estimate,
+    officialEstimate: officialEstimate ?? internalCalculatedEstimate,
+    internalCalculatedEstimate,
     weights,
     weightText: formatWeights(weights),
     adjustment,
+    estimateSource: officialEstimate != null ? "공식 추정가" : "기준가+보정",
   };
 }
 
@@ -523,26 +543,6 @@ function calculateValuationTargetRange(
     valuationTarget: clampValuationTarget(valuationTarget, currentPrice),
     method: "EPS/PER + BPS/PBR",
   };
-}
-
-function stabilizeEstimate(
-  estimate: number,
-  currentPrice: number,
-  technicalTarget?: number | null,
-  valuationTarget?: number | null,
-  consensusTarget?: number | null,
-) {
-  const references = [technicalTarget, valuationTarget, consensusTarget].filter(
-    (value): value is number => value != null && Number.isFinite(value) && value > 0,
-  );
-
-  if (!references.length) return roundPrice(estimate);
-
-  const referenceMax = Math.max(...references, currentPrice * 1.02);
-  const lowerBound = currentPrice * 0.85;
-  const upperBound = Math.min(currentPrice * 1.35, referenceMax * 1.15);
-
-  return roundPrice(Math.max(lowerBound, Math.min(estimate, upperBound)));
 }
 
 function formatWeights(weights: EstimateWeights) {
