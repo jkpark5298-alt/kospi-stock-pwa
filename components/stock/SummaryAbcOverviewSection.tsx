@@ -38,6 +38,19 @@ type ValuationFallback = {
   method: string;
 };
 
+type EstimateWeights = {
+  technical: number;
+  valuation: number;
+  consensus: number;
+};
+
+type EstimateResult = {
+  basisAverage: number | null;
+  adjustedEstimate: number | null;
+  weights: EstimateWeights;
+  description: string;
+};
+
 type Props = {
   data?: any;
 };
@@ -118,6 +131,16 @@ export default function SummaryAbcOverviewSection({ data }: Props) {
   const targetPrice = data?.score?.targetPrice ?? null;
   const range = targetPrice?.technicalTargetRange ?? null;
   const valuationRange = targetPrice?.valuationTargetRange ?? null;
+  const targetModes = Array.isArray(targetPrice?.targetModes)
+    ? targetPrice.targetModes
+    : [];
+  const selectedTargetMode = targetPrice?.selectedTargetMode ?? "balanced";
+  const selectedModeResult =
+    targetModes.find((modeResult: any) => modeResult?.mode === selectedTargetMode) ??
+    targetModes.find((modeResult: any) => modeResult?.mode === "balanced") ??
+    targetModes[0] ??
+    null;
+
   const currentPrice =
     getNumber(data?.currentPrice) ?? getNumber(range?.currentPrice) ?? null;
   const fundamentals = data?.fundamentals ?? kisFundamentals ?? null;
@@ -131,97 +154,123 @@ export default function SummaryAbcOverviewSection({ data }: Props) {
     getNumber(targetPrice?.consensusTarget) ??
     getNumber(savedConsensus?.averageTargetPrice);
 
-  const abcEstimate = calculateAbcEstimate({
+  const adjustment = getAdjustmentInfo(selectedModeResult);
+  const estimate = calculateEstimate({
     technicalTarget,
     valuationTarget,
     consensusTarget,
+    currentPrice,
+    adjustmentPercent: adjustment.total,
   });
 
-  const currentModelTarget = getNumber(range?.baseTarget) ?? abcEstimate.value;
-  const finalTarget =
-    getNumber(targetPrice?.adjustedTarget?.finalTarget) ??
-    getNumber(targetPrice?.quantAdjustedTarget?.finalTarget) ??
-    getNumber(targetPrice?.finalTarget) ??
-    currentModelTarget;
-
-  const estimatedGap =
-    finalTarget != null && currentPrice != null
-      ? ((finalTarget - currentPrice) / currentPrice) * 100
+  const estimateGap =
+    estimate.adjustedEstimate != null && currentPrice != null
+      ? ((estimate.adjustedEstimate - currentPrice) / currentPrice) * 100
       : null;
-  const targetProgress =
-    finalTarget != null && currentPrice != null && finalTarget > 0
-      ? (currentPrice / finalTarget) * 100
+  const estimateProgress =
+    estimate.adjustedEstimate != null &&
+    currentPrice != null &&
+    estimate.adjustedEstimate > 0
+      ? (currentPrice / estimate.adjustedEstimate) * 100
       : null;
 
   return (
     <section className="score-section">
       <div className="card">
         <div className="target-basis-header">
-          <span>Summary A/B/C 추정가 구조</span>
-          <strong>{finalTarget != null ? "최종 추정가 요약" : "데이터 대기"}</strong>
+          <span>추정가 산정 구조</span>
+          <strong>{estimate.adjustedEstimate != null ? "추정가 계산 완료" : "데이터 대기"}</strong>
         </div>
 
         <p className="target-basis-summary">
-          A는 차트 기준, B는 실적·밸류 기준, C는 시장 컨센서스 기준입니다.
-          A/B/C 1차 추정가는 세 기준가를 가중 평균한 참고값이고, 최종 추정
-          주가는 여기에 모델 보정과 위험 신호를 함께 반영한 값입니다.
+          추정가는 A 기술적 기준가, B 실적·밸류 기준가, C 컨센서스 기준가를
+          가중 평균한 뒤 퀀트·수급·위험 보정을 반영해 계산합니다. C가 없으면
+          A/B 기준으로 가중치를 자동 재분배합니다.
         </p>
 
         <div className="summary-grid summary-grid-four" style={{ marginTop: 16 }}>
           <SummaryMetricCard
             title="A. 기술적 기준가"
             value={formatPrice(technicalTarget)}
-            subText="차트 기준"
+            subText={`가중치 ${formatWeight(estimate.weights.technical)}`}
           />
           <SummaryMetricCard
             title="B. 실적·밸류 기준가"
             value={formatPrice(valuationTarget)}
-            subText={makeValuationSubText(valuationRange, valuationFallback)}
+            subText={`가중치 ${formatWeight(estimate.weights.valuation)} · ${makeValuationSubText(
+              valuationRange,
+              valuationFallback,
+            )}`}
           />
           <SummaryMetricCard
             title="C. 컨센서스 기준가"
             value={formatPrice(consensusTarget)}
-            subText={makeConsensusSubText(savedConsensus)}
+            subText={`가중치 ${formatWeight(estimate.weights.consensus)} · ${makeConsensusSubText(
+              savedConsensus,
+            )}`}
           />
           <SummaryMetricCard
-            title="A/B/C 1차 추정가"
-            value={formatPrice(abcEstimate.value)}
-            subText={abcEstimate.description}
+            title="기준가 가중평균"
+            value={formatPrice(estimate.basisAverage)}
+            subText={estimate.description}
           />
         </div>
 
         <div className="summary-grid summary-grid-four" style={{ marginTop: 12 }}>
           <SummaryMetricCard
-            title="현재 모델 추정가"
-            value={formatPrice(currentModelTarget)}
-            subText="현재 조회 기준"
+            title="퀀트 보정"
+            value={formatPercent(adjustment.base)}
+            subText="기본 모델 보정"
           />
           <SummaryMetricCard
-            title="최종 추정 주가"
-            value={formatPrice(finalTarget)}
-            subText="보정 반영 후"
+            title="수급 보정"
+            value={formatPercent(adjustment.positive)}
+            subText="수급·모멘텀 가산"
+          />
+          <SummaryMetricCard
+            title="위험 보정"
+            value={formatPercent(adjustment.risk)}
+            subText="과열·변동성 제한"
+          />
+          <SummaryMetricCard
+            title="총 보정"
+            value={formatPercent(adjustment.total)}
+            subText="추정가 반영 보정률"
+          />
+        </div>
+
+        <div className="summary-grid summary-grid-four" style={{ marginTop: 12 }}>
+          <SummaryMetricCard
+            title="추정가"
+            value={formatPrice(estimate.adjustedEstimate)}
+            subText="A/B/C + 보정"
           />
           <SummaryMetricCard
             title="추정 괴리율"
-            value={formatPercent(estimatedGap)}
+            value={formatPercent(estimateGap)}
             subText="현재가 대비"
           />
           <SummaryMetricCard
-            title="현재 모델 도달률"
-            value={formatPercent(targetProgress, false)}
-            subText="현재가 / 최종 추정가"
+            title="추정가 도달률"
+            value={formatPercent(estimateProgress, false)}
+            subText="현재가 / 추정가"
+          />
+          <SummaryMetricCard
+            title="산정 방식"
+            value={consensusTarget != null ? "A+B+C" : "A+B"}
+            subText={consensusTarget != null ? "컨센서스 반영" : "컨센서스 미반영"}
           />
         </div>
 
         <div className="target-basis-box" style={{ marginTop: 16 }}>
           <div className="target-basis-header">
             <span>한 줄 해석</span>
-            <strong>{makeSummaryLabel(technicalTarget, valuationTarget, consensusTarget, finalTarget)}</strong>
+            <strong>{makeSummaryLabel(technicalTarget, valuationTarget, consensusTarget, estimate.adjustedEstimate)}</strong>
           </div>
           <p className="target-basis-summary">
-            A/B/C 값이 비슷하면 추정 방향이 비교적 일관된 편입니다. 값 차이가
-            크면 어느 기준이 과도하게 높거나 낮은지 Detail 1~3에서 먼저 확인하고,
-            최종 판단은 수급과 위험 분석까지 함께 보는 것이 좋습니다.
+            추정가는 하나의 최종 기준으로 표시합니다. A/B/C 기준가의 차이가
+            크면 Detail 1~3에서 근거를 먼저 확인하고, 최종 판단은 수급 보정과
+            위험 보정까지 함께 봅니다.
           </p>
         </div>
       </div>
@@ -327,22 +376,28 @@ function calculateValuationTargetRange(
   };
 }
 
-function calculateAbcEstimate({
+function calculateEstimate({
   technicalTarget,
   valuationTarget,
   consensusTarget,
+  currentPrice,
+  adjustmentPercent,
 }: {
   technicalTarget?: number | null;
   valuationTarget?: number | null;
   consensusTarget?: number | null;
-}) {
+  currentPrice?: number | null;
+  adjustmentPercent: number;
+}): EstimateResult {
   const hasTechnical = technicalTarget != null && Number.isFinite(technicalTarget);
   const hasValuation = valuationTarget != null && Number.isFinite(valuationTarget);
   const hasConsensus = consensusTarget != null && Number.isFinite(consensusTarget);
 
   if (!hasTechnical && !hasValuation && !hasConsensus) {
     return {
-      value: null,
+      basisAverage: null,
+      adjustedEstimate: null,
+      weights: { technical: 0, valuation: 0, consensus: 0 },
       description: "A/B/C 데이터 대기",
     };
   }
@@ -367,18 +422,78 @@ function calculateAbcEstimate({
     consensus: totalWeight > 0 ? rawWeights.consensus / totalWeight : 0,
   };
 
-  const value =
+  const basisAverage = roundPrice(
     (technicalTarget ?? 0) * weights.technical +
-    (valuationTarget ?? 0) * weights.valuation +
-    (consensusTarget ?? 0) * weights.consensus;
+      (valuationTarget ?? 0) * weights.valuation +
+      (consensusTarget ?? 0) * weights.consensus,
+  );
+
+  if (basisAverage == null) {
+    return {
+      basisAverage: null,
+      adjustedEstimate: null,
+      weights,
+      description: formatWeights(weights),
+    };
+  }
+
+  const adjustedRaw = basisAverage * (1 + adjustmentPercent / 100);
+  const adjustedEstimate =
+    currentPrice != null && currentPrice > 0
+      ? stabilizeEstimate(
+          adjustedRaw,
+          currentPrice,
+          technicalTarget,
+          valuationTarget,
+          consensusTarget,
+        )
+      : roundPrice(adjustedRaw);
 
   return {
-    value: roundPrice(value),
+    basisAverage,
+    adjustedEstimate,
+    weights,
     description: formatWeights(weights),
   };
 }
 
-function formatWeights(weights: { technical: number; valuation: number; consensus: number }) {
+function getAdjustmentInfo(selectedModeResult: any) {
+  const quantAdjustment = selectedModeResult?.quantAdjustment ?? {};
+
+  const base = getNumber(quantAdjustment.baseAdjustmentPercent) ?? 0;
+  const risk = getNumber(quantAdjustment.riskAdjustmentPercent) ?? 0;
+  const positive = getNumber(quantAdjustment.positiveAdjustmentPercent) ?? 0;
+  const total = getNumber(quantAdjustment.totalAdjustmentPercent) ?? base + risk + positive;
+
+  return {
+    base,
+    risk,
+    positive,
+    total,
+  };
+}
+
+function stabilizeEstimate(
+  estimate: number,
+  currentPrice: number,
+  technicalTarget?: number | null,
+  valuationTarget?: number | null,
+  consensusTarget?: number | null,
+) {
+  const references = [technicalTarget, valuationTarget, consensusTarget].filter(
+    (value): value is number => value != null && Number.isFinite(value) && value > 0,
+  );
+
+  if (!references.length) return roundPrice(estimate);
+
+  const referenceMax = Math.max(...references, currentPrice * 1.02);
+  const lowerBound = currentPrice * 0.85;
+  const upperBound = Math.min(currentPrice * 1.35, referenceMax * 1.15);
+
+  return roundPrice(Math.max(lowerBound, Math.min(estimate, upperBound)));
+}
+
+function formatWeights(weights: EstimateWeights) {
   const parts = [];
 
   if (weights.technical > 0) parts.push(`A ${formatWeight(weights.technical)}`);
@@ -392,14 +507,14 @@ function makeSummaryLabel(
   technicalTarget?: number | null,
   valuationTarget?: number | null,
   consensusTarget?: number | null,
-  finalTarget?: number | null,
+  estimate?: number | null,
 ) {
   const values = [technicalTarget, valuationTarget, consensusTarget].filter(
     (value): value is number => value != null && Number.isFinite(value),
   );
 
-  if (!values.length || finalTarget == null) return "기준가 확인 필요";
-  if (values.length < 3) return "일부 기준가 기준";
+  if (!values.length || estimate == null) return "추정가 확인 필요";
+  if (values.length < 3) return "A/B 기준 추정가";
 
   const max = Math.max(...values);
   const min = Math.min(...values);
