@@ -73,13 +73,36 @@ type Fundamentals = {
   low52w: number | null;
 };
 
-
 type KisFundamentalsPayload = {
   ok: boolean;
   message?: string;
   normalizedCode?: string;
   data?: Partial<Fundamentals>;
   error?: string;
+};
+
+
+type ConsensusTarget = {
+  symbol: string;
+  name: string | null;
+  baseDate: string;
+  averageTarget: number | null;
+  highTarget: number | null;
+  lowTarget: number | null;
+  opinion: string | null;
+  brokerCount: number | null;
+  reportCount: number | null;
+  source: string | null;
+  memo: string | null;
+  uploadedFileName?: string | null;
+  updatedAt?: string | null;
+};
+
+type ConsensusTargetPayload = {
+  ok: boolean;
+  data?: ConsensusTarget | null;
+  error?: string;
+  message?: string;
 };
 
 type EarningsGrowthSource = "none" | "manual" | "kis" | "dart" | "consensus";
@@ -244,7 +267,7 @@ type CompositeScore = {
     technicalTargetRange: TargetPriceRange | null;
     targetBasis: TargetBasis | null;
     supplyAdjustedTarget: number | null;
-    consensusTarget: null;
+    consensusTarget: number | null;
     riskLine: number | null;
     valuationTargetRange?: ValuationTargetRange | null;
     finalTargetRange?: TargetPriceRange | null;
@@ -284,6 +307,7 @@ type StockResponse = {
   earningsGrowth?: EarningsGrowthData;
   supply?: SupplyData;
   score?: CompositeScore;
+  consensus?: ConsensusTarget | null;
   quant?: QuantModelResult;
   cached?: boolean;
   cacheSource?: string;
@@ -487,6 +511,10 @@ export default function HomePage() {
     await clearAllPredictions();
   }
 
+  async function handleConsensusUpdated() {
+    await fetchStock(data?.symbol || symbol, range, earningsGrowthMode, manualEarningsGrowth);
+  }
+
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem(WATCHLIST_KEY);
@@ -582,8 +610,12 @@ export default function HomePage() {
         return;
       }
 
-      const enrichedJson = await refreshKisFundamentalsAfterAnalyze(
+      const fundamentalsEnrichedJson = await refreshKisFundamentalsAfterAnalyze(
         json,
+        finalSymbol,
+      );
+      const enrichedJson = await refreshConsensusAfterAnalyze(
+        fundamentalsEnrichedJson,
         finalSymbol,
       );
 
@@ -920,7 +952,8 @@ export default function HomePage() {
           <ConsensusInputSection
             symbol={data?.symbol}
             name={data?.name}
-            appTargetPrice={data?.score?.targetPrice?.technicalTargetRange?.baseTarget}
+            appTargetPrice={data?.score?.targetPrice?.finalTargetRange?.baseTarget ?? data?.score?.targetPrice?.technicalTargetRange?.baseTarget}
+            onConsensusUpdated={handleConsensusUpdated}
           />
         </SectionGroup>
 
@@ -964,6 +997,7 @@ export default function HomePage() {
     </main>
   );
 }
+
 
 async function refreshKisFundamentalsAfterAnalyze(
   stock: StockResponse,
@@ -1018,6 +1052,64 @@ async function refreshKisFundamentalsAfterAnalyze(
   }
 }
 
+async function refreshConsensusAfterAnalyze(
+  stock: StockResponse,
+  requestedSymbol: string,
+): Promise<StockResponse> {
+  const targetSymbol = stock.symbol || stock.rawSymbol || requestedSymbol;
+
+  if (!targetSymbol || typeof window === "undefined") {
+    return stock;
+  }
+
+  try {
+    const response = await fetch(
+      `/api/consensus?symbol=${encodeURIComponent(targetSymbol)}`,
+      { cache: "no-store" },
+    );
+    const payload = (await response.json()) as ConsensusTargetPayload;
+
+    if (!payload.ok || !payload.data || !isValidConsensusTarget(payload.data)) {
+      return stock;
+    }
+
+    return mergeConsensusIntoStock(stock, payload.data);
+  } catch {
+    return stock;
+  }
+}
+
+function mergeConsensusIntoStock(
+  stock: StockResponse,
+  consensus: ConsensusTarget,
+): StockResponse {
+  const averageTarget = toNullableNumber(consensus.averageTarget);
+
+  return {
+    ...stock,
+    consensus,
+    score: stock.score
+      ? {
+          ...stock.score,
+          targetPrice: {
+            ...stock.score.targetPrice,
+            consensusTarget: averageTarget,
+          },
+        }
+      : stock.score,
+  };
+}
+
+function isValidConsensusTarget(value?: ConsensusTarget | null) {
+  return (
+    value != null &&
+    typeof value.symbol === "string" &&
+    typeof value.averageTarget === "number" &&
+    Number.isFinite(value.averageTarget) &&
+    value.averageTarget > 0
+  );
+}
+
 function normalizeFundamentals(value: Partial<Fundamentals>): Fundamentals {
   return {
     marketCap: toNullableNumber(value.marketCap),
@@ -1055,7 +1147,7 @@ function writeLocalCache<T>(key: string, value: { savedAt: string; data: T }) {
   try {
     window.localStorage.setItem(key, JSON.stringify(value));
   } catch {
-    // localStorage 저장이 실패해도 분석 결과 표시는 계속 진행합니다.
+    // localStorage 저장 실패는 분석 진행을 막지 않습니다.
   }
 }
 
@@ -1068,7 +1160,6 @@ function removeLocalCache(key: string) {
     // localStorage 삭제 실패는 조용히 무시합니다.
   }
 }
-
 
 function appendManualEarningsParams(
   params: URLSearchParams,

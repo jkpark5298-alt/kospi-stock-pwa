@@ -92,17 +92,17 @@ export default function RiskAnalysisSection({ data }: Props) {
 
   const option2 = calculateOption2Estimate(targetPrice, currentPrice);
   const estimate = option2.estimate;
-  const riskLineValue = sourceRange?.riskLine ?? makeFallbackRiskLine(currentPrice);
+  const supportLineValue = sourceRange?.riskLine ?? makeFallbackSupportLine(currentPrice);
   const baseUpsidePercent =
     estimate != null && currentPrice != null && currentPrice > 0
       ? ((estimate - currentPrice) / currentPrice) * 100
       : null;
-  const riskDownsidePercent =
-    riskLineValue != null && currentPrice != null && currentPrice > 0
-      ? ((riskLineValue - currentPrice) / currentPrice) * 100
+  const supportDownsidePercent =
+    supportLineValue != null && currentPrice != null && currentPrice > 0
+      ? ((supportLineValue - currentPrice) / currentPrice) * 100
       : null;
 
-  const riskLine = makeRiskLineAnalysis(currentPrice, riskLineValue);
+  const supportLine = makeSupportLineAnalysis(currentPrice, supportLineValue);
   const overheat = makeOverheatAnalysis(latest?.rsi14, currentPrice, latest);
   const high52w = makeHigh52wAnalysis(currentPrice, data?.fundamentals?.high52w);
   const rsi = makeRsiRiskAnalysis(latest?.rsi14);
@@ -113,10 +113,10 @@ export default function RiskAnalysisSection({ data }: Props) {
     <section className="score-section">
       <div className="card">
         <div className="target-basis-header">
-          <span>위험 분석 방식</span>
+          <span>위험 및 검증 분석</span>
           <strong>
             {makeOverallRiskLabel([
-              riskLine,
+              supportLine,
               overheat,
               high52w,
               rsi,
@@ -127,17 +127,16 @@ export default function RiskAnalysisSection({ data }: Props) {
         </div>
 
         <p className="target-basis-summary">
-          위험 분석은 2안 추정가 기준으로 현재 가격이 과열권인지, 위험
-          기준선과 얼마나 떨어져 있는지, 52주 고가와 볼린저밴드 상단에
-          가까운지를 확인하는 영역입니다.
+          위험 분석은 2안 추정가 기준으로 현재 가격이 과열권인지, 하락 지지선과
+          얼마나 떨어져 있는지, 52주 고가와 볼린저밴드 상단에 가까운지를 확인하는 영역입니다.
         </p>
 
         <div className="summary-grid summary-grid-four" style={{ marginTop: 16 }}>
           <RiskMetricCard
-            title="위험 기준선"
-            value={formatNumber(riskLineValue)}
-            subText={riskLine.description}
-            tone={riskLine.tone}
+            title="하락 지지선"
+            value={formatNumber(supportLineValue)}
+            subText={supportLine.description}
+            tone={supportLine.tone}
           />
           <RiskMetricCard
             title="단기 과열"
@@ -176,7 +175,7 @@ export default function RiskAnalysisSection({ data }: Props) {
             <span>위험 해석</span>
             <strong>
               {makeRiskSummary([
-                riskLine,
+                supportLine,
                 overheat,
                 high52w,
                 rsi,
@@ -190,9 +189,7 @@ export default function RiskAnalysisSection({ data }: Props) {
             <p>현재가: {formatNumber(currentPrice)}</p>
             <p>추정가: {formatNumber(estimate)}</p>
             <p>추정 괴리율: {formatPercent(baseUpsidePercent)}</p>
-            <p>
-              위험 기준선 대비 하락 여지: {formatPercent(riskDownsidePercent)}
-            </p>
+            <p>하락 지지선 대비 여지: {formatPercent(supportDownsidePercent)}</p>
             <p>52주 고가: {formatNumber(data?.fundamentals?.high52w)}</p>
             <p>52주 저가: {formatNumber(data?.fundamentals?.low52w)}</p>
           </div>
@@ -352,25 +349,25 @@ function getLatestChartRow(rows?: ChartRow[]) {
   return null;
 }
 
-function makeRiskLineAnalysis(
+function makeSupportLineAnalysis(
   currentPrice?: number | null,
-  riskLine?: number | null,
+  supportLine?: number | null,
 ): RiskItem {
-  if (!currentPrice || !riskLine || riskLine <= 0) {
+  if (!currentPrice || !supportLine || supportLine <= 0) {
     return {
       title: "데이터 없음",
-      description: "위험 기준선 대기",
+      description: "하락 지지선 대기",
       tone: "neutral",
       isRisk: false,
     };
   }
 
-  const gap = ((currentPrice - riskLine) / currentPrice) * 100;
+  const gap = ((currentPrice - supportLine) / currentPrice) * 100;
 
   if (gap <= 8) {
     return {
       title: "근접",
-      description: `위험 기준선까지 ${gap.toFixed(1)}%`,
+      description: `하락 지지선까지 ${gap.toFixed(1)}%`,
       tone: "negative",
       isRisk: true,
     };
@@ -378,7 +375,7 @@ function makeRiskLineAnalysis(
 
   return {
     title: "여유",
-    description: `위험 기준선까지 ${gap.toFixed(1)}%`,
+    description: `하락 지지선까지 ${gap.toFixed(1)}%`,
     tone: "neutral",
     isRisk: false,
   };
@@ -621,7 +618,7 @@ function makeRiskSummary(items: RiskItem[]) {
   return "위험 부담 제한적";
 }
 
-function makeFallbackRiskLine(currentPrice?: number | null) {
+function makeFallbackSupportLine(currentPrice?: number | null) {
   if (currentPrice == null || !Number.isFinite(currentPrice)) return null;
 
   return roundPrice(currentPrice * 0.9);

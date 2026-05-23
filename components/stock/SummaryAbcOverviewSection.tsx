@@ -11,6 +11,16 @@ type ConsensusData = {
   savedAt?: string;
 };
 
+type SupabaseConsensusData = {
+  averageTarget?: number | null;
+  highTarget?: number | null;
+  lowTarget?: number | null;
+  opinion?: string | null;
+  brokerCount?: number | null;
+  source?: string | null;
+  baseDate?: string | null;
+};
+
 type FundamentalsData = {
   marketCap?: number | null;
   per?: number | null;
@@ -102,7 +112,7 @@ export default function SummaryAbcOverviewSection({ data }: Props) {
 
     const cached = readCache<FundamentalsPayload>(fundamentalsCacheKey);
 
-    if (cached?.data?.ok && isUsableFundamentals(cached.data.data)) {
+    if (cached?.data?.ok && cached.data.data) {
       setKisFundamentals(cached.data.data);
       return;
     }
@@ -119,7 +129,7 @@ export default function SummaryAbcOverviewSection({ data }: Props) {
 
         if (!isMounted) return;
 
-        if (payload.ok && isUsableFundamentals(payload.data)) {
+        if (payload.ok && payload.data) {
           setKisFundamentals(payload.data);
           writeCache(fundamentalsCacheKey, {
             savedAt: new Date().toISOString(),
@@ -161,16 +171,17 @@ export default function SummaryAbcOverviewSection({ data }: Props) {
     getNumber(finalRange?.currentPrice) ??
     getNumber(range?.currentPrice) ??
     null;
-
-  const usableFundamentals = getUsableFundamentals(data?.fundamentals, kisFundamentals);
+  const fundamentals = data?.fundamentals ?? kisFundamentals ?? null;
 
   const technicalTarget = getTechnicalTarget(targetPrice, range);
-  const valuationFallback = calculateValuationTargetRange(currentPrice, usableFundamentals);
+  const valuationFallback = calculateValuationTargetRange(currentPrice, fundamentals);
   const valuationTarget =
     getNumber(valuationRange?.valuationTarget) ??
     getNumber(valuationFallback.valuationTarget);
+  const supabaseConsensus = data?.consensus as SupabaseConsensusData | null | undefined;
   const consensusTarget =
     getNumber(targetPrice?.consensusTarget) ??
+    getNumber(supabaseConsensus?.averageTarget) ??
     getNumber(savedConsensus?.averageTargetPrice);
 
   const estimate = calculateEstimate({
@@ -194,55 +205,55 @@ export default function SummaryAbcOverviewSection({ data }: Props) {
     <section className="score-section">
       <div className="card">
         <div className="target-basis-header">
-          <span>추정가 산정 방식</span>
+          <span>異붿젙媛 ?곗젙 諛⑹떇</span>
           <strong>
-            {estimate.estimate != null ? formatPrice(estimate.estimate) : "데이터 대기"}
+            {estimate.estimate != null ? formatPrice(estimate.estimate) : "?곗씠???湲?}
           </strong>
         </div>
 
         <p className="target-basis-summary">
-          추정가는 A/B/C 기준가의 가중평균에 퀀트·수급·위험 보정을 더해 계산합니다.
-          컨센서스가 없으면 A/B 기준으로 가중치를 자동 재분배합니다.
+          異붿젙媛??A/B/C 湲곗?媛??媛以묓룊洹좎뿉 ??맞룹닔湲됀룹쐞??蹂댁젙???뷀빐
+          怨꾩궛?⑸땲?? 而⑥꽱?쒖뒪媛 ?놁쑝硫?A/B 湲곗??쇰줈 媛以묒튂瑜??먮룞 ?щ텇諛고빀?덈떎.
         </p>
 
         <div className="target-basis-box" style={{ marginTop: 16 }}>
           <div className="target-basis-header">
-            <span>1. 기준가</span>
+            <span>1. 湲곗?媛</span>
             <strong>{estimate.weightText}</strong>
           </div>
 
           <div className="summary-grid summary-grid-four" style={{ marginTop: 12 }}>
             <SummaryMetricCard
-              title="A. 기술적 기준가"
+              title="A. 湲곗닠??湲곗?媛"
               value={formatPrice(technicalTarget)}
-              subText={`가중치 ${formatWeight(estimate.weights.technical)}`}
+              subText={`媛以묒튂 ${formatWeight(estimate.weights.technical)}`}
             />
             <SummaryMetricCard
-              title="B. 실적·밸류 기준가"
+              title="B. ?ㅼ쟻쨌諛몃쪟 湲곗?媛"
               value={formatPrice(valuationTarget)}
-              subText={`가중치 ${formatWeight(estimate.weights.valuation)} · ${makeValuationSubText(
+              subText={`媛以묒튂 ${formatWeight(estimate.weights.valuation)} 쨌 ${makeValuationSubText(
                 valuationRange,
                 valuationFallback,
               )}`}
             />
             <SummaryMetricCard
-              title="C. 컨센서스 기준가"
+              title="C. 而⑥꽱?쒖뒪 湲곗?媛"
               value={formatPrice(consensusTarget)}
-              subText={`가중치 ${formatWeight(estimate.weights.consensus)} · ${makeConsensusSubText(
+              subText={`媛以묒튂 ${formatWeight(estimate.weights.consensus)} 쨌 ${makeConsensusSubText(
                 savedConsensus,
               )}`}
             />
             <SummaryMetricCard
-              title="기준가 가중평균"
+              title="湲곗?媛 媛以묓룊洹?
               value={formatPrice(estimate.basisAverage)}
-              subText={consensusTarget != null ? "A+B+C 기준" : "A+B 기준"}
+              subText={consensusTarget != null ? "A+B+C 湲곗?" : "A+B 湲곗?"}
             />
           </div>
         </div>
 
         <div className="target-basis-box" style={{ marginTop: 16 }}>
           <div className="target-basis-header">
-            <span>2. 보정</span>
+            <span>2. 蹂댁젙</span>
             <strong>
               {formatAdjustment(
                 estimate.adjustment.totalPercent,
@@ -253,68 +264,66 @@ export default function SummaryAbcOverviewSection({ data }: Props) {
 
           <div className="summary-grid summary-grid-four" style={{ marginTop: 12 }}>
             <SummaryMetricCard
-              title="퀀트 보정"
+              title="???蹂댁젙"
               value={formatAdjustment(
                 estimate.adjustment.quantPercent,
                 estimate.adjustment.quantAmount,
               )}
-              subText="기본 모델 점수"
+              subText="湲곕낯 紐⑤뜽 ?먯닔"
             />
             <SummaryMetricCard
-              title="수급 보정"
+              title="?섍툒 蹂댁젙"
               value={formatAdjustment(
                 estimate.adjustment.supplyPercent,
                 estimate.adjustment.supplyAmount,
               )}
-              subText="수급·모멘텀 가산"
+              subText="?섍툒쨌紐⑤찘? 媛??
             />
             <SummaryMetricCard
-              title="위험 보정"
+              title="?꾪뿕 蹂댁젙"
               value={formatAdjustment(
                 estimate.adjustment.riskPercent,
                 estimate.adjustment.riskAmount,
               )}
-              subText="과열·변동성 제한"
+              subText="怨쇱뿴쨌蹂?숈꽦 ?쒗븳"
             />
             <SummaryMetricCard
-              title="총 보정"
+              title="珥?蹂댁젙"
               value={formatAdjustment(
                 estimate.adjustment.totalPercent,
                 estimate.adjustment.totalAmount,
               )}
-              subText="퀀트+수급+위험"
+              subText="????섍툒+?꾪뿕"
             />
           </div>
         </div>
 
         <div className="target-basis-box" style={{ marginTop: 16 }}>
           <div className="target-basis-header">
-            <span>3. 추정가</span>
-            <strong>
-              {makeSummaryLabel(technicalTarget, valuationTarget, consensusTarget, estimate.estimate)}
-            </strong>
+            <span>3. 異붿젙媛</span>
+            <strong>{makeSummaryLabel(technicalTarget, valuationTarget, consensusTarget, estimate.estimate)}</strong>
           </div>
 
           <div className="summary-grid summary-grid-four" style={{ marginTop: 12 }}>
             <SummaryMetricCard
-              title="추정가"
+              title="異붿젙媛"
               value={formatPrice(estimate.estimate)}
               subText={estimate.estimateSource}
             />
             <SummaryMetricCard
-              title="추정 괴리율"
+              title="異붿젙 愿대━??
               value={formatPercent(estimateGap)}
-              subText="현재가 대비"
+              subText="?꾩옱媛 ?鍮?
             />
             <SummaryMetricCard
-              title="추정가 도달률"
+              title="異붿젙媛 ?꾨떖瑜?
               value={formatPercent(estimateProgress, false)}
-              subText="현재가 / 추정가"
+              subText="?꾩옱媛 / 異붿젙媛"
             />
             <SummaryMetricCard
-              title="세부 산정 근거"
+              title="?몃? ?곗젙 洹쇨굅"
               value="Detail 1~5"
-              subText="기준가·수급·위험 확인"
+              subText="湲곗?媛쨌?섍툒쨌?꾪뿕 ?뺤씤"
             />
           </div>
         </div>
@@ -365,9 +374,9 @@ function calculateEstimate({
         valuation: 0,
         consensus: 0,
       },
-      weightText: "A/B/C 데이터 대기",
+      weightText: "A/B/C ?곗씠???湲?,
       adjustment: makeAdjustmentInfo(null, 0, 0, 0),
-      estimateSource: "데이터 대기",
+      estimateSource: "?곗씠???湲?,
     };
   }
 
@@ -404,7 +413,7 @@ function calculateEstimate({
       weights,
       weightText: formatWeights(weights),
       adjustment: makeAdjustmentInfo(null, 0, 0, 0),
-      estimateSource: "데이터 대기",
+      estimateSource: "?곗씠???湲?,
     };
   }
 
@@ -428,7 +437,7 @@ function calculateEstimate({
     weights,
     weightText: formatWeights(weights),
     adjustment,
-    estimateSource: "기준가 가중평균 + 보정",
+    estimateSource: "湲곗?媛 媛以묓룊洹?+ 蹂댁젙",
   };
 }
 
@@ -475,7 +484,7 @@ function getTechnicalTarget(targetPrice: any, range: any) {
 
   if (Array.isArray(candidates)) {
     const technicalCandidate = candidates.find((candidate) =>
-      String(candidate?.label ?? "").includes("기술"),
+      String(candidate?.label ?? "").includes("湲곗닠"),
     );
 
     const value = getNumber(technicalCandidate?.value);
@@ -490,12 +499,12 @@ function calculateValuationTargetRange(
   currentPrice?: number | null,
   fundamentals?: FundamentalsData | null,
 ): ValuationFallback {
-  if (!isUsableFundamentals(fundamentals) || currentPrice == null || currentPrice <= 0) {
+  if (!fundamentals || currentPrice == null || currentPrice <= 0) {
     return {
       epsTarget: null,
       bpsTarget: null,
       valuationTarget: null,
-      method: "KIS 조회 후 반영",
+      method: "KIS 議고쉶 ??諛섏쁺",
     };
   }
 
@@ -525,7 +534,7 @@ function calculateValuationTargetRange(
       epsTarget,
       bpsTarget,
       valuationTarget: null,
-      method: "EPS/BPS 산정 대기",
+      method: "EPS/BPS ?곗젙 ?湲?,
     };
   }
 
@@ -538,7 +547,7 @@ function calculateValuationTargetRange(
       epsTarget,
       bpsTarget,
       valuationTarget: null,
-      method: "실적·밸류 산정 대기",
+      method: "?ㅼ쟻쨌諛몃쪟 ?곗젙 ?湲?,
     };
   }
 
@@ -550,23 +559,6 @@ function calculateValuationTargetRange(
   };
 }
 
-function getUsableFundamentals(
-  primary?: FundamentalsData | null,
-  fallback?: FundamentalsData | null,
-) {
-  if (isUsableFundamentals(primary)) return primary;
-  if (isUsableFundamentals(fallback)) return fallback;
-  return null;
-}
-
-function isUsableFundamentals(value?: FundamentalsData | null): value is FundamentalsData {
-  if (!value) return false;
-
-  const numbers = [value.per, value.pbr, value.eps, value.bps];
-
-  return numbers.some((item) => item != null && Number.isFinite(item) && item > 0);
-}
-
 function formatWeights(weights: EstimateWeights) {
   const parts = [];
 
@@ -574,7 +566,7 @@ function formatWeights(weights: EstimateWeights) {
   if (weights.valuation > 0) parts.push(`B ${formatWeight(weights.valuation)}`);
   if (weights.consensus > 0) parts.push(`C ${formatWeight(weights.consensus)}`);
 
-  return parts.length ? parts.join(" · ") : "가중치 대기";
+  return parts.length ? parts.join(" 쨌 ") : "媛以묒튂 ?湲?;
 }
 
 function makeSummaryLabel(
@@ -587,34 +579,34 @@ function makeSummaryLabel(
     (value): value is number => value != null && Number.isFinite(value),
   );
 
-  if (!values.length || estimate == null) return "추정가 확인 필요";
-  if (values.length < 3) return "A/B 기준";
+  if (!values.length || estimate == null) return "異붿젙媛 ?뺤씤 ?꾩슂";
+  if (values.length < 3) return "A/B 湲곗?";
 
   const max = Math.max(...values);
   const min = Math.min(...values);
   const avg = values.reduce((sum, value) => sum + value, 0) / values.length;
   const dispersion = avg > 0 ? ((max - min) / avg) * 100 : 0;
 
-  if (dispersion <= 10) return "A/B/C 일치";
-  if (dispersion <= 25) return "일부 차이";
-  return "차이 큼";
+  if (dispersion <= 10) return "A/B/C ?쇱튂";
+  if (dispersion <= 25) return "?쇰? 李⑥씠";
+  return "李⑥씠 ??;
 }
 
 function makeValuationSubText(valuationRange: any, fallback: ValuationFallback) {
   if (valuationRange?.valuationTarget != null) return "EPS/PER + BPS/PBR";
   if (fallback.valuationTarget != null) return fallback.method;
-  return "KIS 조회 후 반영";
+  return "KIS 議고쉶 ??諛섏쁺";
 }
 
 function makeConsensusSubText(consensus?: ConsensusData | null) {
-  if (!consensus?.averageTargetPrice) return "입력/저장 후 반영";
+  if (!consensus?.averageTargetPrice) return "?낅젰/?????諛섏쁺";
 
   const parts = [];
 
   if (consensus.investmentOpinion) parts.push(consensus.investmentOpinion);
-  if (consensus.analystCount != null) parts.push(`${consensus.analystCount}개`);
+  if (consensus.analystCount != null) parts.push(`${consensus.analystCount}媛?);
 
-  return parts.length ? parts.join(" · ") : "저장된 컨센서스";
+  return parts.length ? parts.join(" 쨌 ") : "??λ맂 而⑥꽱?쒖뒪";
 }
 
 function makeConsensusStorageKey(symbol?: string | null, name?: string | null) {
@@ -683,7 +675,7 @@ function writeCache<T>(key: string, value: { savedAt: string; data: T }) {
   try {
     window.localStorage.setItem(key, JSON.stringify(value));
   } catch {
-    // 캐시 저장 실패는 화면 표시를 막지 않습니다.
+    // 罹먯떆 ????ㅽ뙣???붾㈃ ?쒖떆瑜?留됱? ?딆뒿?덈떎.
   }
 }
 
@@ -725,33 +717,34 @@ function roundPrice(value: number) {
 }
 
 function formatPrice(value?: number | null) {
-  if (value == null || Number.isNaN(value)) return "데이터 없음";
+  if (value == null || Number.isNaN(value)) return "?곗씠???놁쓬";
 
-  return `${new Intl.NumberFormat("ko-KR").format(value)}원`;
+  return `${new Intl.NumberFormat("ko-KR").format(value)}??;
 }
 
 function formatSignedPrice(value?: number | null) {
-  if (value == null || Number.isNaN(value)) return "데이터 없음";
+  if (value == null || Number.isNaN(value)) return "?곗씠???놁쓬";
 
   const sign = value > 0 ? "+" : "";
-  return `${sign}${new Intl.NumberFormat("ko-KR").format(value)}원`;
+  return `${sign}${new Intl.NumberFormat("ko-KR").format(value)}??;
 }
 
 function formatPercent(value?: number | null, withSign = true) {
-  if (value == null || Number.isNaN(value)) return "데이터 없음";
+  if (value == null || Number.isNaN(value)) return "?곗씠???놁쓬";
 
   const sign = withSign && value > 0 ? "+" : "";
   return `${sign}${value.toFixed(2)}%`;
 }
 
 function formatAdjustment(percent?: number | null, amount?: number | null) {
-  if (percent == null || Number.isNaN(percent)) return "데이터 없음";
+  if (percent == null || Number.isNaN(percent)) return "?곗씠???놁쓬";
 
   return `${formatPercent(percent)} / ${formatSignedPrice(amount)}`;
 }
 
 function formatWeight(value?: number | null) {
-  if (value == null || Number.isNaN(value)) return "데이터 없음";
+  if (value == null || Number.isNaN(value)) return "?곗씠???놁쓬";
 
   return `${(value * 100).toFixed(0)}%`;
 }
+
