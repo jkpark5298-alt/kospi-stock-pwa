@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import * as XLSX from "xlsx";
 
-type ConsensusSource = "naver" | "fnguide" | "manual" | "report";
+type ConsensusSource = "naver" | "fnguide" | "manual" | "report" | "excel";
 
 type ConsensusData = {
   averageTargetPrice: number | null;
@@ -10,10 +11,42 @@ type ConsensusData = {
   lowTargetPrice: number | null;
   investmentOpinion: string;
   analystCount: number | null;
+  reportCount: number | null;
   source: ConsensusSource;
   baseDate: string;
+  memo: string;
   rawText: string;
   savedAt: string;
+};
+
+type ConsensusUploadTarget = {
+  symbol: string;
+  name?: string | null;
+  baseDate: string;
+  averageTarget: number | null;
+  highTarget: number | null;
+  lowTarget: number | null;
+  opinion?: string | null;
+  brokerCount?: number | null;
+  reportCount?: number | null;
+  source?: string | null;
+  memo?: string | null;
+};
+
+type ConsensusApiRecord = {
+  symbol?: string | null;
+  name?: string | null;
+  baseDate?: string | null;
+  averageTarget?: number | null;
+  highTarget?: number | null;
+  lowTarget?: number | null;
+  opinion?: string | null;
+  brokerCount?: number | null;
+  reportCount?: number | null;
+  source?: string | null;
+  memo?: string | null;
+  updatedAt?: string | null;
+  createdAt?: string | null;
 };
 
 type Props = {
@@ -30,8 +63,10 @@ const EMPTY_CONSENSUS: ConsensusData = {
   lowTargetPrice: null,
   investmentOpinion: "",
   analystCount: null,
+  reportCount: null,
   source: "naver",
   baseDate: "",
+  memo: "",
   rawText: "",
   savedAt: "",
 };
@@ -42,9 +77,17 @@ export default function ConsensusInputSection({
   appTargetPrice,
 }: Props) {
   const storageKey = useMemo(() => makeStorageKey(symbol, name), [symbol, name]);
+  const normalizedSymbol = useMemo(() => normalizeSymbol(symbol), [symbol]);
+
   const [rawText, setRawText] = useState("");
   const [consensus, setConsensus] = useState<ConsensusData>(EMPTY_CONSENSUS);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+
+  const [uploadFileName, setUploadFileName] = useState("");
+  const [uploadStatus, setUploadStatus] = useState("엑셀 파일을 선택해 주세요.");
+  const [uploadRows, setUploadRows] = useState<ConsensusUploadTarget[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -68,6 +111,11 @@ export default function ConsensusInputSection({
     setSavedAt(null);
   }, [storageKey]);
 
+  useEffect(() => {
+    refreshCurrentConsensus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [normalizedSymbol]);
+
   const comparison = makeConsensusComparison(
     appTargetPrice,
     consensus.averageTargetPrice,
@@ -83,6 +131,60 @@ export default function ConsensusInputSection({
     Boolean(consensus.investmentOpinion);
 
   const displayName = name || symbol || "현재 종목";
+
+  function applyConsensus(next: ConsensusData) {
+    setConsensus(next);
+    setRawText(next.rawText || "");
+    setSavedAt(next.savedAt || null);
+
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(storageKey, JSON.stringify(next));
+    }
+  }
+
+  async function refreshCurrentConsensus() {
+    if (!normalizedSymbol) return;
+
+    setIsRefreshing(true);
+
+    try {
+      const response = await fetch(
+        `/api/consensus?symbol=${encodeURIComponent(normalizedSymbol)}`,
+        { cache: "no-store" },
+      );
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        record?: ConsensusApiRecord | null;
+        error?: string;
+      };
+
+      if (!response.ok || !payload.ok) {
+        setUploadStatus(payload.error || "현재 종목 컨센서스 조회에 실패했습니다.");
+        return;
+      }
+
+      if (!payload.record) {
+        setUploadStatus("현재 종목에 저장된 Supabase 컨센서스가 없습니다.");
+        return;
+      }
+
+      const next = mapApiRecordToConsensus(payload.record);
+      applyConsensus(next);
+      setUploadStatus(
+        `${normalizedSymbol} 컨센서스를 불러왔습니다. 평균목표가 ${formatPrice(
+          next.averageTargetPrice,
+        )}`,
+      );
+    } catch (error) {
+      setUploadStatus(
+        error instanceof Error
+          ? error.message
+          : "현재 종목 컨센서스 조회에 실패했습니다.",
+      );
+    } finally {
+      setIsRefreshing(false);
+    }
+  }
 
   function handleParse() {
     const parsed = parseConsensusText(rawText);
@@ -106,6 +208,7 @@ export default function ConsensusInputSection({
     window.localStorage.setItem(storageKey, JSON.stringify(next));
     setConsensus(next);
     setSavedAt(next.savedAt);
+    setUploadStatus("브라우저 임시 저장을 완료했습니다. Supabase 저장은 엑셀 업로드를 사용하세요.");
   }
 
   function handleClear() {
@@ -116,6 +219,113 @@ export default function ConsensusInputSection({
     setRawText("");
     setConsensus(EMPTY_CONSENSUS);
     setSavedAt(null);
+    setUploadStatus("현재 화면의 임시 입력값을 지웠습니다.");
+  }
+
+  async function handleExcelFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+
+    if (!file) return;
+
+    setUploadFileName(file.name);
+    setUploadStatus("엑셀 파일을 읽는 중입니다.");
+
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
+      const sheetName =
+        workbook.SheetNames.find((item) => item.trim() === "컨센서스") ??
+        workbook.SheetNames[0];
+
+      if (!sheetName) {
+        setUploadRows([]);
+        setUploadStatus("엑셀 시트를 찾지 못했습니다.");
+        return;
+      }
+
+      const sheet = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
+        defval: "",
+      });
+      const parsedRows = rows
+        .map((row) => mapExcelRowToTarget(row))
+        .filter((row): row is ConsensusUploadTarget => Boolean(row));
+
+      setUploadRows(parsedRows);
+
+      if (!parsedRows.length) {
+        setUploadStatus(
+          "저장할 행이 없습니다. 필수 컬럼은 종목코드, 기준일, 평균목표가입니다.",
+        );
+        return;
+      }
+
+      setUploadStatus(
+        `${file.name}에서 ${parsedRows.length}건을 읽었습니다. Supabase 저장을 눌러 주세요.`,
+      );
+    } catch (error) {
+      setUploadRows([]);
+      setUploadStatus(
+        error instanceof Error ? error.message : "엑셀 파일을 읽지 못했습니다.",
+      );
+    } finally {
+      event.target.value = "";
+    }
+  }
+
+  async function handleUploadToSupabase() {
+    if (!uploadRows.length) {
+      setUploadStatus("저장할 컨센서스 행이 없습니다.");
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadStatus("Supabase에 저장 중입니다.");
+
+    try {
+      const response = await fetch("/api/consensus", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          targets: uploadRows,
+          uploadedFileName: uploadFileName || null,
+        }),
+      });
+
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        count?: number;
+        records?: ConsensusApiRecord[];
+        error?: string;
+      };
+
+      if (!response.ok || !payload.ok) {
+        setUploadStatus(payload.error || "Supabase 저장에 실패했습니다.");
+        return;
+      }
+
+      const matchedRecord = payload.records?.find(
+        (record) => normalizeSymbol(record.symbol) === normalizedSymbol,
+      );
+
+      if (matchedRecord) {
+        applyConsensus(mapApiRecordToConsensus(matchedRecord));
+      } else if (normalizedSymbol) {
+        await refreshCurrentConsensus();
+      }
+
+      setUploadStatus(
+        `Supabase 저장 완료: ${payload.count ?? uploadRows.length}건 저장`,
+      );
+    } catch (error) {
+      setUploadStatus(
+        error instanceof Error ? error.message : "Supabase 저장에 실패했습니다.",
+      );
+    } finally {
+      setIsUploading(false);
+    }
   }
 
   return (
@@ -127,30 +337,97 @@ export default function ConsensusInputSection({
         </div>
 
         <p className="target-basis-summary">
-          네이버증권, FnGuide, 리포트 목표가의 평균·최고·최저 목표가를
-          참고해 외부 시장 기대치를 확인합니다. 컨센서스 기준가는 앱 모델
-          추정가가 시장 기대치보다 보수적인지, 과도하게 높은지 비교하는 보조
-          기준입니다.
+          네이버증권, FnGuide, 증권사 리포트의 평균·최고·최저 목표가와
+          투자의견을 엑셀로 입력한 뒤 Supabase에 저장합니다. 저장된 평균목표가는
+          다음 단계에서 C. 컨센서스 기준가로 연결합니다.
         </p>
+
+        <div className="target-basis-box" style={{ marginTop: 16 }}>
+          <div className="target-basis-header">
+            <span>컨센서스 엑셀 업로드</span>
+            <strong>{uploadRows.length ? `${uploadRows.length}건 읽음` : "대기"}</strong>
+          </div>
+
+          <p className="target-basis-summary">
+            엑셀 컬럼: 종목코드, 종목명, 기준일, 평균목표가, 최고목표가,
+            최저목표가, 투자의견, 참여증권사수, 리포트수, 출처, 메모
+          </p>
+
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              flexWrap: "wrap",
+              alignItems: "center",
+              marginTop: 12,
+            }}
+          >
+            <input
+              className="form-control"
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              onChange={handleExcelFileChange}
+              style={{ maxWidth: 320 }}
+            />
+            <button
+              className="button primary-button"
+              type="button"
+              onClick={handleUploadToSupabase}
+              disabled={!uploadRows.length || isUploading}
+            >
+              {isUploading ? "저장 중" : "Supabase 저장"}
+            </button>
+            <button
+              className="button secondary-button"
+              type="button"
+              onClick={refreshCurrentConsensus}
+              disabled={!normalizedSymbol || isRefreshing}
+            >
+              {isRefreshing ? "조회 중" : "현재 종목 새로고침"}
+            </button>
+          </div>
+
+          <div className="target-basis-adjustments">
+            <p>파일명: {uploadFileName || "선택 전"}</p>
+            <p>상태: {uploadStatus}</p>
+          </div>
+
+          {uploadRows.length ? (
+            <div className="target-basis-adjustments">
+              <p>
+                미리보기:{" "}
+                {uploadRows
+                  .slice(0, 3)
+                  .map(
+                    (row) =>
+                      `${row.symbol} ${formatPrice(row.averageTarget)} ${
+                        row.opinion || ""
+                      }`,
+                  )
+                  .join(" / ")}
+              </p>
+            </div>
+          ) : null}
+        </div>
 
         <div className="summary-grid summary-grid-four" style={{ marginTop: 16 }}>
           <ConsensusMetricCard
-            title="평균 목표가"
+            title="평균목표가"
             value={formatPrice(consensus.averageTargetPrice)}
-            subText="컨센서스 기준"
+            subText="C 기준가 후보"
           />
           <ConsensusMetricCard
-            title="최고 목표가"
+            title="최고목표가"
             value={formatPrice(consensus.highTargetPrice)}
             subText="공격적 전망"
           />
           <ConsensusMetricCard
-            title="최저 목표가"
+            title="최저목표가"
             value={formatPrice(consensus.lowTargetPrice)}
             subText="보수적 전망"
           />
           <ConsensusMetricCard
-            title="참여 증권사"
+            title="참여증권사수"
             value={formatCount(consensus.analystCount)}
             subText={consensus.investmentOpinion || "투자의견 없음"}
           />
@@ -169,19 +446,21 @@ export default function ConsensusInputSection({
             <p>컨센서스 평균: {formatPrice(consensus.averageTargetPrice)}</p>
             <p>차이: {comparison.gapText}</p>
             <p>저장 시각: {formatDateTime(savedAt)}</p>
+            <p>기준일: {consensus.baseDate || "데이터 없음"}</p>
+            <p>출처: {formatSource(consensus.source)}</p>
           </div>
         </div>
 
         <div className="target-basis-box" style={{ marginTop: 16 }}>
           <div className="target-basis-header">
-            <span>컨센서스 원문 입력/저장</span>
+            <span>컨센서스 원문 입력/임시 저장</span>
             <strong>{displayName}</strong>
           </div>
 
           <p className="target-basis-summary">
-            네이버증권, FnGuide, 리포트 화면에서 컨센서스 관련 텍스트를
-            복사해 붙여넣으면 평균 목표가, 최고·최저 목표가, 투자의견, 참여
-            증권사 수를 최대한 읽어 저장합니다.
+            엑셀 업로드 전 간단히 목표가를 읽어보는 보조 입력입니다. 이 저장은
+            브라우저 임시 저장이며, Supabase 저장은 위 엑셀 업로드 영역을
+            사용합니다.
           </p>
 
           <div
@@ -196,9 +475,9 @@ export default function ConsensusInputSection({
               value={rawText}
               onChange={(event) => setRawText(event.target.value)}
               placeholder={`예시)
-평균 목표가 296,000
-최고 목표가 330,000
-최저 목표가 250,000
+평균목표가 296,000
+최고목표가 330,000
+최저목표가 250,000
 투자의견 BUY
 참여 18개 증권사`}
               rows={7}
@@ -229,7 +508,7 @@ export default function ConsensusInputSection({
                 type="button"
                 onClick={handleSave}
               >
-                저장
+                임시 저장
               </button>
               <button
                 className="button secondary-button"
@@ -237,7 +516,7 @@ export default function ConsensusInputSection({
                 onClick={handleClear}
                 disabled={!rawText && !hasConsensus && !savedAt}
               >
-                삭제
+                지우기
               </button>
             </div>
           </div>
@@ -267,6 +546,7 @@ export default function ConsensusInputSection({
               <option value="fnguide">FnGuide</option>
               <option value="report">리포트</option>
               <option value="manual">수동</option>
+              <option value="excel">엑셀</option>
             </select>
           </label>
 
@@ -281,7 +561,7 @@ export default function ConsensusInputSection({
                   baseDate: event.target.value,
                 }))
               }
-              placeholder="예: 2026-05-11"
+              placeholder="예: 2026-05-23"
             />
           </label>
 
@@ -302,9 +582,8 @@ export default function ConsensusInputSection({
         </div>
 
         <p className="notice-text" style={{ marginTop: 14 }}>
-          이 데이터는 자동 크롤링이 아니라 사용자가 복사해 붙여넣은 텍스트를
-          파싱해 저장하는 방식입니다. 종목 코드가 없을 때도 임시 저장키로
-          저장되며, 종목 조회 후에는 종목별 저장키로 관리됩니다.
+          2단계에서는 엑셀 업로드와 Supabase 저장까지만 연결합니다. Summary의
+          C. 컨센서스 기준가 자동 반영은 다음 단계에서 적용합니다.
         </p>
       </div>
     </section>
@@ -327,6 +606,82 @@ function ConsensusMetricCard({
       <em>{subText}</em>
     </div>
   );
+}
+
+function mapExcelRowToTarget(
+  row: Record<string, unknown>,
+): ConsensusUploadTarget | null {
+  const symbol = normalizeSymbol(getCell(row, ["종목코드", "symbol", "Symbol"]));
+  const baseDate = parseDateValue(getCell(row, ["기준일", "baseDate", "base_date"]));
+  const averageTarget = parseNumber(
+    getCell(row, ["평균목표가", "평균 목표가", "averageTarget", "average_target"]),
+  );
+
+  if (!symbol || !baseDate || averageTarget == null || averageTarget <= 0) {
+    return null;
+  }
+
+  return {
+    symbol,
+    name: toCleanString(getCell(row, ["종목명", "name", "Name"])),
+    baseDate,
+    averageTarget,
+    highTarget: parseNumber(
+      getCell(row, ["최고목표가", "최고 목표가", "highTarget", "high_target"]),
+    ),
+    lowTarget: parseNumber(
+      getCell(row, ["최저목표가", "최저 목표가", "lowTarget", "low_target"]),
+    ),
+    opinion: toCleanString(getCell(row, ["투자의견", "opinion"])),
+    brokerCount: parseInteger(
+      getCell(row, ["참여증권사수", "참여 증권사 수", "brokerCount", "broker_count"]),
+    ),
+    reportCount: parseInteger(
+      getCell(row, ["리포트수", "리포트 수", "reportCount", "report_count"]),
+    ),
+    source: toCleanString(getCell(row, ["출처", "source"])) || "엑셀",
+    memo: toCleanString(getCell(row, ["메모", "memo"])),
+  };
+}
+
+function getCell(row: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(row, key)) {
+      return row[key];
+    }
+  }
+
+  const normalizedMap = new Map(
+    Object.keys(row).map((key) => [normalizeHeader(key), key]),
+  );
+
+  for (const key of keys) {
+    const matchedKey = normalizedMap.get(normalizeHeader(key));
+
+    if (matchedKey) return row[matchedKey];
+  }
+
+  return null;
+}
+
+function normalizeHeader(value: string) {
+  return value.replace(/\s+/g, "").trim().toLowerCase();
+}
+
+function mapApiRecordToConsensus(record: ConsensusApiRecord): ConsensusData {
+  return {
+    averageTargetPrice: toNullableNumber(record.averageTarget),
+    highTargetPrice: toNullableNumber(record.highTarget),
+    lowTargetPrice: toNullableNumber(record.lowTarget),
+    investmentOpinion: record.opinion || "",
+    analystCount: toNullableNumber(record.brokerCount),
+    reportCount: toNullableNumber(record.reportCount),
+    source: normalizeConsensusSource(record.source),
+    baseDate: record.baseDate || "",
+    memo: record.memo || "",
+    rawText: "",
+    savedAt: record.updatedAt || record.createdAt || new Date().toISOString(),
+  };
 }
 
 function parseConsensusText(text: string): Partial<ConsensusData> {
@@ -529,7 +884,7 @@ function readConsensus(key: string): ConsensusData | null {
 }
 
 function makeStorageKey(symbol?: string | null, name?: string | null) {
-  const normalizedSymbol = (symbol || "").trim().toUpperCase();
+  const normalizedSymbol = normalizeSymbol(symbol);
 
   if (normalizedSymbol) {
     return `${CONSENSUS_STORAGE_PREFIX}:${normalizedSymbol}`;
@@ -542,6 +897,31 @@ function makeStorageKey(symbol?: string | null, name?: string | null) {
   }
 
   return `${CONSENSUS_STORAGE_PREFIX}:CURRENT`;
+}
+
+function normalizeSymbol(value?: unknown) {
+  return String(value || "").trim().toUpperCase();
+}
+
+function normalizeConsensusSource(value?: string | null): ConsensusSource {
+  const normalized = String(value || "").trim().toLowerCase();
+
+  if (normalized.includes("naver") || normalized.includes("네이버")) return "naver";
+  if (normalized.includes("fnguide") || normalized.includes("fn")) return "fnguide";
+  if (normalized.includes("report") || normalized.includes("리포트")) return "report";
+  if (normalized.includes("excel") || normalized.includes("엑셀")) return "excel";
+  if (normalized.includes("manual") || normalized.includes("수동")) return "manual";
+
+  return "excel";
+}
+
+function formatSource(value: ConsensusSource) {
+  if (value === "naver") return "네이버증권";
+  if (value === "fnguide") return "FnGuide";
+  if (value === "report") return "리포트";
+  if (value === "manual") return "수동";
+  if (value === "excel") return "엑셀";
+  return value;
 }
 
 function formatPrice(value?: number | null) {
@@ -570,6 +950,72 @@ function formatDateTime(value?: string | null) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+function parseNumber(value: unknown) {
+  if (value == null || value === "") return null;
+
+  const parsed = Number(String(value).replace(/,/g, "").trim());
+
+  if (!Number.isFinite(parsed)) return null;
+
+  return Math.round(parsed);
+}
+
+function parseInteger(value: unknown) {
+  const parsed = parseNumber(value);
+  return parsed == null ? null : Math.trunc(parsed);
+}
+
+function parseDateValue(value: unknown) {
+  if (value == null || value === "") return "";
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return formatDateInput(value);
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const parsed = XLSX.SSF.parse_date_code(value);
+
+    if (parsed) {
+      return `${parsed.y}-${String(parsed.m).padStart(2, "0")}-${String(
+        parsed.d,
+      ).padStart(2, "0")}`;
+    }
+  }
+
+  const text = String(value).trim();
+
+  if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(text)) {
+    const [year, month, day] = text.split("-");
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  }
+
+  if (/^\d{4}[./]\d{1,2}[./]\d{1,2}$/.test(text)) {
+    const [year, month, day] = text.split(/[./]/);
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  }
+
+  return text;
+}
+
+function formatDateInput(value: Date) {
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(
+    2,
+    "0",
+  )}-${String(value.getDate()).padStart(2, "0")}`;
+}
+
+function toCleanString(value: unknown) {
+  if (value == null) return "";
+
+  return String(value).trim();
+}
+
+function toNullableNumber(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+
+  return parseNumber(value);
 }
 
 function escapeRegExp(value: string) {
