@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState, type ReactNode } from "react";
 import ChartAnalysisSections from "../components/chart/ChartAnalysisSections";
@@ -71,6 +71,15 @@ type Fundamentals = {
   sharesOutstanding: number | null;
   high52w: number | null;
   low52w: number | null;
+};
+
+
+type KisFundamentalsPayload = {
+  ok: boolean;
+  message?: string;
+  normalizedCode?: string;
+  data?: Partial<Fundamentals>;
+  error?: string;
 };
 
 type EarningsGrowthSource = "none" | "manual" | "kis" | "dart" | "consensus";
@@ -319,6 +328,7 @@ const DEFAULT_SYMBOL = "005930.KS";
 const DEFAULT_RANGE = "6mo";
 const WATCHLIST_KEY = "kospi-watchlist";
 const MANUAL_EARNINGS_STORAGE_KEY = "kospi-manual-earnings-growth";
+const FUNDAMENTALS_CACHE_PREFIX = "kospi-kis-fundamentals";
 
 function normalizeManualEarningsKey(value?: string | null) {
   return (value || "").trim().toUpperCase();
@@ -572,10 +582,15 @@ export default function HomePage() {
         return;
       }
 
+      const enrichedJson = await refreshKisFundamentalsAfterAnalyze(
+        json,
+        finalSymbol,
+      );
+
       const restored = getStoredManualEarnings(
-        json.symbol,
-        json.rawSymbol,
-        json.name,
+        enrichedJson.symbol,
+        enrichedJson.rawSymbol,
+        enrichedJson.name,
         finalSymbol,
       );
 
@@ -585,9 +600,9 @@ export default function HomePage() {
           saveManualEarnings(
             restored.input,
             restored.mode,
-            json.symbol,
-            json.rawSymbol,
-            json.name,
+            enrichedJson.symbol,
+            enrichedJson.rawSymbol,
+            enrichedJson.name,
             finalSymbol,
           ) ||
           new Date().toISOString();
@@ -601,7 +616,7 @@ export default function HomePage() {
 
         if (!currentRequestHadManualInput && !skipStoredRefetch) {
           await fetchStock(
-            json.symbol || finalSymbol,
+            enrichedJson.symbol || finalSymbol,
             finalRange,
             restored.mode,
             restored.input,
@@ -615,10 +630,10 @@ export default function HomePage() {
         setManualEarningsSavedAt(null);
       }
 
-      setData(json);
+      setData(enrichedJson);
       setLastFetchedAt(new Date().toISOString());
 
-      await recordKisApiUsageFromResponse(json);
+      await recordKisApiUsageFromResponse(enrichedJson);
     } catch (error: unknown) {
       setData(null);
       setUiError(
@@ -880,6 +895,8 @@ export default function HomePage() {
             symbol={data?.symbol}
             name={data?.name}
             valuationTarget={data?.score?.targetPrice?.valuationTargetRange?.valuationTarget}
+            data={data}
+            lastFetchedAt={lastFetchedAt}
           />
 
           <EarningsGrowthSection
@@ -947,6 +964,111 @@ export default function HomePage() {
     </main>
   );
 }
+
+async function refreshKisFundamentalsAfterAnalyze(
+  stock: StockResponse,
+  requestedSymbol: string,
+): Promise<StockResponse> {
+  const targetSymbol = stock.symbol || stock.rawSymbol || requestedSymbol;
+
+  if (!targetSymbol || typeof window === "undefined") {
+    return stock;
+  }
+
+  try {
+    const response = await fetch(
+      `/api/kis/fundamentals?symbol=${encodeURIComponent(targetSymbol)}`,
+      { cache: "no-store" },
+    );
+    const payload = (await response.json()) as KisFundamentalsPayload;
+
+    if (!payload.ok || !payload.data || !hasUsableFundamentals(payload.data)) {
+      removeLocalCache(makeLocalCacheKey(FUNDAMENTALS_CACHE_PREFIX, targetSymbol));
+      return stock;
+    }
+
+    const savedAt = new Date().toISOString();
+    const normalized = normalizeFundamentals(payload.data);
+    const cachePayload: KisFundamentalsPayload = {
+      ...payload,
+      data: normalized,
+    };
+
+    writeLocalCache(makeLocalCacheKey(FUNDAMENTALS_CACHE_PREFIX, targetSymbol), {
+      savedAt,
+      data: cachePayload,
+    });
+
+    if (stock.symbol && stock.symbol !== targetSymbol) {
+      writeLocalCache(makeLocalCacheKey(FUNDAMENTALS_CACHE_PREFIX, stock.symbol), {
+        savedAt,
+        data: cachePayload,
+      });
+    }
+
+    return {
+      ...stock,
+      fundamentals: {
+        ...stock.fundamentals,
+        ...normalized,
+      },
+    };
+  } catch {
+    return stock;
+  }
+}
+
+function normalizeFundamentals(value: Partial<Fundamentals>): Fundamentals {
+  return {
+    marketCap: toNullableNumber(value.marketCap),
+    per: toNullableNumber(value.per),
+    pbr: toNullableNumber(value.pbr),
+    eps: toNullableNumber(value.eps),
+    bps: toNullableNumber(value.bps),
+    dividendYield: toNullableNumber(value.dividendYield),
+    foreignOwnershipRate: toNullableNumber(value.foreignOwnershipRate),
+    sharesOutstanding: toNullableNumber(value.sharesOutstanding),
+    high52w: toNullableNumber(value.high52w),
+    low52w: toNullableNumber(value.low52w),
+  };
+}
+
+function hasUsableFundamentals(value?: Partial<Fundamentals> | null) {
+  if (!value) return false;
+
+  return [value.per, value.pbr, value.eps, value.bps].some(
+    (item) => typeof item === "number" && Number.isFinite(item) && item > 0,
+  );
+}
+
+function toNullableNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function makeLocalCacheKey(prefix: string, symbol?: string | null) {
+  return `${prefix}:${(symbol || "").trim().toUpperCase()}`;
+}
+
+function writeLocalCache<T>(key: string, value: { savedAt: string; data: T }) {
+  if (!key || typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // localStorage 저장이 실패해도 분석 결과 표시는 계속 진행합니다.
+  }
+}
+
+function removeLocalCache(key: string) {
+  if (!key || typeof window === "undefined") return;
+
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // localStorage 삭제 실패는 조용히 무시합니다.
+  }
+}
+
 
 function appendManualEarningsParams(
   params: URLSearchParams,
@@ -1212,5 +1334,6 @@ function getChangeTone(
   if (value < 0) return "negative";
   return "neutral";
 }
+
 
 
