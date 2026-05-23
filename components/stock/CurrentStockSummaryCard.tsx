@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import type { StockResponse } from "../../types/stock";
@@ -21,33 +21,111 @@ type DailyTargetSnapshot = {
   savedAt: string;
 };
 
-type SummaryTone = "positive" | "negative" | "neutral";
-
-type AbcEstimate = {
-  value: number | null;
-  technicalWeight: number | null;
-  valuationWeight: number | null;
-  consensusWeight: number | null;
-  description: string;
+type ConsensusData = {
+  averageTargetPrice?: number | null;
+  highTargetPrice?: number | null;
+  lowTargetPrice?: number | null;
+  investmentOpinion?: string;
+  analystCount?: number | null;
+  savedAt?: string;
 };
 
+type FundamentalsData = {
+  marketCap?: number | null;
+  per?: number | null;
+  pbr?: number | null;
+  eps?: number | null;
+  bps?: number | null;
+  dividendYield?: number | null;
+  foreignOwnershipRate?: number | null;
+  sharesOutstanding?: number | null;
+  high52w?: number | null;
+  low52w?: number | null;
+};
+
+type EstimateWeights = {
+  technical: number;
+  valuation: number;
+  consensus: number;
+};
+
+type EstimateResult = {
+  basisAverage: number | null;
+  estimate: number | null;
+  quantAmount: number | null;
+  supplyAmount: number | null;
+  riskAmount: number | null;
+  totalAmount: number | null;
+  weights: EstimateWeights;
+};
+
+type SummaryRange = {
+  currentPrice: number;
+  baseTarget: number;
+  baseUpsidePercent: number;
+  riskLine: number;
+  riskDownsidePercent: number;
+};
+
+type SummaryTone = "positive" | "negative" | "neutral";
+
 const DAILY_TARGET_STORAGE_PREFIX = "kospi-daily-target";
+const CONSENSUS_STORAGE_PREFIX = "kospi-consensus-data";
 
 export default function CurrentStockSummaryCard({ data }: Props) {
-  const range = data?.score?.targetPrice?.technicalTargetRange;
+  const targetPrice = data?.score?.targetPrice;
+  const range = targetPrice?.finalTargetRange ?? targetPrice?.technicalTargetRange ?? null;
+
+  const storageKey = useMemo(
+    () => makeConsensusStorageKey(data?.symbol, data?.name),
+    [data?.symbol, data?.name],
+  );
+
+  const [savedConsensus, setSavedConsensus] = useState<ConsensusData | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      setSavedConsensus(null);
+      return;
+    }
+
+    setSavedConsensus(readConsensus(storageKey));
+  }, [storageKey]);
+
+  const currentPrice =
+    getNumber(data?.currentPrice) ?? getNumber(range?.currentPrice) ?? null;
+  const technicalTarget = getTechnicalTarget(targetPrice);
+  const valuationTarget =
+    getNumber(targetPrice?.valuationTargetRange?.valuationTarget) ??
+    calculateValuationTarget(currentPrice, data?.fundamentals as FundamentalsData | null);
+  const consensusTarget =
+    getNumber(targetPrice?.consensusTarget) ??
+    getNumber(savedConsensus?.averageTargetPrice);
+
+  const estimate = calculateEstimate({
+    technicalTarget,
+    valuationTarget,
+    consensusTarget,
+    targetPrice,
+  });
+
+  const summaryRange = makeSummaryRange({
+    currentPrice,
+    estimate: estimate.estimate,
+    fallbackRange: range,
+  });
+
   const todayKey = useMemo(() => makeTodayKey(), []);
   const dailyTargetKey = useMemo(
     () => makeDailyTargetKey(data?.symbol, todayKey),
     [data?.symbol, todayKey],
   );
 
-  const [dailyTarget, setDailyTarget] = useState<DailyTargetSnapshot | null>(
-    null,
-  );
+  const [dailyTarget, setDailyTarget] = useState<DailyTargetSnapshot | null>(null);
   const [manualTargetInput, setManualTargetInput] = useState("");
 
   useEffect(() => {
-    if (!range || !data?.symbol || typeof window === "undefined") {
+    if (!summaryRange || !data?.symbol || typeof window === "undefined") {
       setDailyTarget(null);
       setManualTargetInput("");
       return;
@@ -64,8 +142,8 @@ export default function CurrentStockSummaryCard({ data }: Props) {
     const next: DailyTargetSnapshot = {
       date: todayKey,
       symbol: data.symbol,
-      targetPrice: range.baseTarget,
-      basisPrice: range.currentPrice,
+      targetPrice: summaryRange.baseTarget,
+      basisPrice: summaryRange.currentPrice,
       source: "first-query",
       savedAt: new Date().toISOString(),
     };
@@ -73,54 +151,53 @@ export default function CurrentStockSummaryCard({ data }: Props) {
     writeDailyTargetSnapshot(dailyTargetKey, next);
     setDailyTarget(next);
     setManualTargetInput(formatManualTargetInput(String(next.targetPrice)));
-  }, [dailyTargetKey, data?.symbol, range, todayKey]);
+  }, [dailyTargetKey, data?.symbol, summaryRange, todayKey]);
 
   const targetProgress =
-    range && range.baseTarget > 0
-      ? Number(((range.currentPrice / range.baseTarget) * 100).toFixed(1))
+    summaryRange && summaryRange.baseTarget > 0
+      ? Number(((summaryRange.currentPrice / summaryRange.baseTarget) * 100).toFixed(1))
       : null;
 
-  const upsidePrice = range
-    ? Number((range.baseTarget - range.currentPrice).toFixed(2))
+  const upsidePrice = summaryRange
+    ? Number((summaryRange.baseTarget - summaryRange.currentPrice).toFixed(2))
     : null;
 
   const dailyTargetProgress =
-    dailyTarget && range && dailyTarget.targetPrice > 0
-      ? Number(((range.currentPrice / dailyTarget.targetPrice) * 100).toFixed(1))
+    dailyTarget && summaryRange && dailyTarget.targetPrice > 0
+      ? Number(((summaryRange.currentPrice / dailyTarget.targetPrice) * 100).toFixed(1))
       : null;
 
   const dailyUpsidePrice =
-    dailyTarget && range
-      ? Number((dailyTarget.targetPrice - range.currentPrice).toFixed(2))
+    dailyTarget && summaryRange
+      ? Number((dailyTarget.targetPrice - summaryRange.currentPrice).toFixed(2))
       : null;
 
   const dailyUpsidePercent =
-    dailyTarget && range && range.currentPrice > 0
+    dailyTarget && summaryRange && summaryRange.currentPrice > 0
       ? Number(
           (
-            ((dailyTarget.targetPrice - range.currentPrice) /
-              range.currentPrice) *
+            ((dailyTarget.targetPrice - summaryRange.currentPrice) /
+              summaryRange.currentPrice) *
             100
           ).toFixed(2),
         )
       : null;
 
-  const displaySymbol = data?.symbol || "?곗씠???놁쓬";
-  const displayName = data?.name || "醫낅ぉ紐??놁쓬";
+  const displaySymbol = data?.symbol || "데이터 없음";
+  const displayName = data?.name || "종목명 없음";
   const displayMeta = [displaySymbol, data?.exchange, data?.currency]
     .filter(Boolean)
-    .join(" 쨌 ");
-  const quickSummary = makeCurrentSummaryInterpretation(data, range);
-  const abcEstimate = makeAbcEstimate(data);
+    .join(" · ");
+  const quickSummary = makeCurrentSummaryInterpretation(data, summaryRange);
 
   function handleSaveCurrentAsDailyTarget() {
-    if (!range || !data?.symbol) return;
+    if (!summaryRange || !data?.symbol) return;
 
     const next: DailyTargetSnapshot = {
       date: todayKey,
       symbol: data.symbol,
-      targetPrice: range.baseTarget,
-      basisPrice: range.currentPrice,
+      targetPrice: summaryRange.baseTarget,
+      basisPrice: summaryRange.currentPrice,
       source: "current-query",
       savedAt: new Date().toISOString(),
     };
@@ -131,7 +208,7 @@ export default function CurrentStockSummaryCard({ data }: Props) {
   }
 
   function handleSaveManualDailyTarget() {
-    if (!range || !data?.symbol) return;
+    if (!summaryRange || !data?.symbol) return;
 
     const parsed = parseManualTargetInput(manualTargetInput);
 
@@ -141,7 +218,7 @@ export default function CurrentStockSummaryCard({ data }: Props) {
       date: todayKey,
       symbol: data.symbol,
       targetPrice: parsed,
-      basisPrice: range.currentPrice,
+      basisPrice: summaryRange.currentPrice,
       source: "manual",
       savedAt: new Date().toISOString(),
     };
@@ -152,15 +229,15 @@ export default function CurrentStockSummaryCard({ data }: Props) {
   }
 
   function handleResetDailyTarget() {
-    if (!range || !data?.symbol || typeof window === "undefined") return;
+    if (!summaryRange || !data?.symbol || typeof window === "undefined") return;
 
     window.localStorage.removeItem(dailyTargetKey);
 
     const next: DailyTargetSnapshot = {
       date: todayKey,
       symbol: data.symbol,
-      targetPrice: range.baseTarget,
-      basisPrice: range.currentPrice,
+      targetPrice: summaryRange.baseTarget,
+      basisPrice: summaryRange.currentPrice,
       source: "first-query",
       savedAt: new Date().toISOString(),
     };
@@ -172,74 +249,74 @@ export default function CurrentStockSummaryCard({ data }: Props) {
 
   return (
     <div className="card">
-      <h3 className="section-title small">?꾩옱 醫낅ぉ ?붿빟</h3>
+      <h3 className="section-title small">현재 종목 요약</h3>
 
       <div className="stock-identity">
         <div className="stock-name">{displayName}</div>
-        <div className="stock-meta">{displayMeta || "?쒖옣 ?뺣낫 ?湲?}</div>
+        <div className="stock-meta">{displayMeta || "시장 정보 대기"}</div>
       </div>
 
       <div className="metric-list">
-        <MetricRow label="?꾩옱媛" value={formatNumber(data?.currentPrice)} />
+        <MetricRow label="현재가" value={formatNumber(summaryRange?.currentPrice ?? data?.currentPrice)} />
         <MetricRow
-          label="?꾩씪 ?鍮?
+          label="당일 대비"
           value={`${formatSignedNumber(data?.changePrice)} / ${formatPercent(
             data?.change,
           )}`}
         />
         <MetricRow
-          label="異붿젙 二쇨?(?꾩옱 議고쉶 湲곗?)"
-          value={`${formatNumber(range?.baseTarget)} ${formatDailyTargetSuffix(
+          label="추정가"
+          value={`${formatNumber(estimate.estimate)} ${formatDailyTargetSuffix(
             dailyTarget,
           )}`}
         />
         <MetricRow
-          label="異붿젙 愿대━??
+          label="추정 괴리율"
           value={`${formatSignedNumber(upsidePrice)} / ${formatUpside(
-            range?.baseUpsidePercent,
+            summaryRange?.baseUpsidePercent,
           )}`}
         />
         <MetricRow
-          label="湲곗닠??遺꾩꽍"
-          value={data?.signalSummary || "?곗씠???놁쓬"}
-        />
-        <MetricRow
-          label="醫낇빀 ?먯닔"
-          value={
-            data?.score?.total != null
-              ? `${data.score.total} / 100 쨌 ${data.score.grade}`
-              : "?곗씠???놁쓬"
-          }
-        />
-        <MetricRow
-          label="異붿젙 二쇨? ?꾨떖 媛?μ꽦"
-          value={
-            data?.score?.targetPrice?.score != null
-              ? `${data.score.targetPrice.score} / 100 쨌 ${data.score.targetPrice.label}`
-              : "?곗씠???놁쓬"
-          }
-        />
-        <MetricRow
-          label="?꾩옱 議고쉶 湲곗? 異붿젙 二쇨? ?꾨떖瑜?
+          label="추정가 도달률"
           value={formatTargetProgress(targetProgress)}
         />
         <MetricRow
-          label="?뱀씪 湲곗? 異붿젙 二쇨? ?꾨떖瑜?
-          value={`${formatTargetProgress(dailyTargetProgress)} 쨌 ${formatSignedNumber(
+          label="당일 기준 도달률"
+          value={`${formatTargetProgress(dailyTargetProgress)} · ${formatSignedNumber(
             dailyUpsidePrice,
           )} / ${formatUpside(dailyUpsidePercent)}`}
         />
         <MetricRow
-          label="하락 지지선"
-          value={`${formatNumber(range?.riskLine)} / ${formatUpside(
-            range?.riskDownsidePercent,
+          label="위험 기준선"
+          value={`${formatNumber(summaryRange?.riskLine)} / ${formatUpside(
+            summaryRange?.riskDownsidePercent,
           )}`}
+        />
+        <MetricRow
+          label="기술적 분석"
+          value={data?.signalSummary || "데이터 없음"}
+        />
+        <MetricRow
+          label="종합 점수"
+          value={
+            data?.score?.total != null
+              ? `${data.score.total} / 100 · ${data.score.grade}`
+              : "데이터 없음"
+          }
+        />
+        <MetricRow
+          label="추정가 신뢰도"
+          value={
+            data?.score?.targetPrice?.score != null
+              ? `${data.score.targetPrice.score} / 100 · ${data.score.targetPrice.label}`
+              : "데이터 없음"
+          }
         />
       </div>
 
       <div className="target-basis-box" style={{ marginTop: 16 }}>
         <div className="target-basis-header">
-          <span>?듭떖 ?댁꽍</span>
+          <span>종합 해석</span>
           <strong>{quickSummary.overall}</strong>
         </div>
 
@@ -267,46 +344,45 @@ export default function CurrentStockSummaryCard({ data }: Props) {
         </p>
       </div>
 
-      <ReferenceAbcEstimateBox data={data} estimate={abcEstimate} />
-
       <div className="target-basis-box" style={{ marginTop: 16 }}>
         <div className="target-basis-header">
-          <span>湲곗닠??遺꾩꽍?대??</span>
-          <strong>{data?.signalSummary || "?곗씠???놁쓬"}</strong>
+          <span>기술적 분석 요약</span>
+          <strong>{data?.signalSummary || "데이터 없음"}</strong>
         </div>
         <p className="target-basis-summary">
-          湲곗닠??遺꾩꽍? ?대룞?됯퇏, RSI, MACD, 蹂쇰┛?諛대뱶 ??李⑦듃 吏?쒕?
-          諛뷀깢?쇰줈 ?꾩옱 二쇨? ?먮쫫怨?留ㅼ닔쨌留ㅻ룄 李멸퀬 援ш컙???붿빟???좏샇?낅땲??
-          ?ㅼ젣 ?먮떒? ?섍툒, ?ㅼ쟻, 怨듭떆, ?쒖옣 ?곹솴怨??④퍡 ?뺤씤?댁빞 ?⑸땲??
+          기술적 분석은 이동평균, RSI, MACD, 볼린저밴드 등 차트 지표를
+          바탕으로 현재 주가 흐름과 매수·매도 참고 구간을 요약한 신호입니다.
+          실제 판단은 추정가 산정, 수급, 실적, 공시, 시장 상황을 함께 확인해야 합니다.
         </p>
 
         <div className="target-basis-adjustments" style={{ marginTop: 12 }}>
           <p>
-            <strong>?곷???媛뺤꽭</strong> ???곸듅 ?먮쫫 ?곗쐞, ?④린 怨쇱뿴 ?щ? ?뺤씤
+            <strong>상승 강세</strong> · 상승 흐름 우위, 단기 과열 여부 확인
           </p>
           <p>
-            <strong>以묐┰</strong> ??諛⑺뼢???뺤씤 ?꾩슂, 愿留?援ш컙
+            <strong>중립</strong> · 방향성 확인 필요, 관망 구간
           </p>
           <p>
-            <strong>?쎌꽭</strong> ???섎씫 ?뺣젰 ?곗쐞, 諛섎벑 ?뺤씤 ?꾩슂
+            <strong>약세</strong> · 하락 압력 우위, 반등 확인 필요
           </p>
           <p>
-            <strong>?④린 怨쇱뿴</strong> ??異붽꺽 留ㅼ닔 ?좎쨷, 蹂?숈꽦 ?뺤씤
+            <strong>단기 과열</strong> · 추격 매수 신중, 변동성 확인
           </p>
           <p>
-            <strong>議곗젙 ??諛섎벑</strong> ??留ㅼ닔 愿??援ш컙 媛?μ꽦
+            <strong>조정 후 반등</strong> · 매수 관심 구간 가능성
           </p>
         </div>
       </div>
 
       <div className="target-basis-box" style={{ marginTop: 16 }}>
         <div className="target-basis-header">
-          <span>?뱀씪 湲곗? 異붿젙 二쇨? ?ㅼ젙</span>
+          <span>당일 기준 추정가 설정</span>
           <strong>{formatDailyTargetSource(dailyTarget)}</strong>
         </div>
 
         <p className="target-basis-summary">
-          ?뱀씪 湲곗? 異붿젙 二쇨?: {formatNumber(dailyTarget?.targetPrice)} 쨌 ???          湲곗?媛: {formatNumber(dailyTarget?.basisPrice)} 쨌 ????쒓컖:{" "}
+          당일 기준 추정가: {formatNumber(dailyTarget?.targetPrice)} · 저장
+          기준가: {formatNumber(dailyTarget?.basisPrice)} · 저장 시각:{" "}
           {formatDateTime(dailyTarget?.savedAt)}
         </p>
 
@@ -326,131 +402,51 @@ export default function CurrentStockSummaryCard({ data }: Props) {
             onChange={(event) =>
               setManualTargetInput(formatManualTargetInput(event.target.value))
             }
-            placeholder="吏곸젒 ?낅젰 ?? 288,000"
+            placeholder="직접 입력 예: 288,000"
             style={{ maxWidth: 220 }}
           />
           <button
             className="button secondary-button"
             type="button"
             onClick={handleSaveManualDailyTarget}
-            disabled={!range}
+            disabled={!summaryRange}
           >
-            吏곸젒 ?낅젰 ???          </button>
+            직접 입력 저장
+          </button>
           <button
             className="button secondary-button"
             type="button"
             onClick={handleSaveCurrentAsDailyTarget}
-            disabled={!range}
+            disabled={!summaryRange}
           >
-            ?꾩옱 議고쉶 異붿젙 二쇨?濡????          </button>
+            현재 조회 추정가로 저장
+          </button>
           <button
             className="button secondary-button"
             type="button"
             onClick={handleResetDailyTarget}
-            disabled={!range}
+            disabled={!summaryRange}
           >
-            ?ㅻ뒛 湲곗? 珥덇린??          </button>
+            오늘 기준 초기화
+          </button>
         </div>
 
         <div className="target-basis-adjustments">
           <p>
-            泥?議고쉶 ???뱀씪 湲곗? 異붿젙 二쇨?媛 ?먮룞 ??λ맗?덈떎. ?댄썑?먮뒗 吏곸젒
-            ?낅젰?섍굅???꾩옱 議고쉶 異붿젙 二쇨?濡??ㅼ떆 ??ν븷 ???덉뒿?덈떎.
+            첫 조회 시 당일 기준 추정가가 자동 저장됩니다. 이후에는 직접
+            입력하거나 현재 조회 추정가로 다시 저장할 수 있습니다.
           </p>
           <p>
-            異붿젙 二쇨?(?꾩옱 議고쉶 湲곗?)??議고쉶???뚮쭏??諛붾????덇퀬, ?뱀씪 湲곗?
-            異붿젙 二쇨???媛숈? ?좎쭨??異붿젙 二쇨? ?꾨떖瑜??됯? 湲곗??쇰줈 ?좎??⑸땲??
+            추정가는 조회할 때마다 바뀔 수 있고, 당일 기준 추정가는 같은 날짜의
+            평가 기준으로 유지됩니다.
           </p>
         </div>
       </div>
 
       <p className="notice-text">
-        異붿젙 二쇨?(?꾩옱 議고쉶 湲곗?)??理쒖떊 ?꾩옱媛? 吏?쒕줈 ?ㅼ떆 怨꾩궛?⑸땲?? 愿꾪샇
-        ?덉쓽 ?뱀씪 湲곗? 異붿젙 二쇨????ㅻ뒛 ?됯? 湲곗??쇰줈 ??λ맂 異붿젙 二쇨??낅땲??
+        추정가 산정 방식은 Summary의 별도 영역에서 하나로 확인합니다. 이 요약
+        카드는 현재가, 추정가, 도달률, 위험 기준선만 빠르게 보여줍니다.
       </p>
-    </div>
-  );
-}
-
-function ReferenceAbcEstimateBox({
-  data,
-  estimate,
-}: {
-  data: StockResponse | null;
-  estimate: AbcEstimate;
-}) {
-  const range = data?.score?.targetPrice?.technicalTargetRange;
-  const basis = data?.score?.targetPrice?.targetBasis;
-  const valuationRange = data?.score?.targetPrice?.valuationTargetRange ?? null;
-  const technicalTarget = getTechnicalBasisPrice(basis, range?.baseTarget);
-  const valuationTarget = valuationRange?.valuationTarget ?? null;
-  const consensusTarget = data?.score?.targetPrice?.consensusTarget ?? null;
-  const modelTarget = range?.baseTarget ?? null;
-  const modelGap =
-    estimate.value != null && modelTarget != null
-      ? percentChange(modelTarget, estimate.value)
-      : null;
-
-  return (
-    <div className="target-basis-box" style={{ marginTop: 16 }}>
-      <div className="target-basis-header">
-        <span>李멸퀬 A/B/C 異붿젙媛</span>
-        <strong>{estimate.value != null ? "?붿빟 湲곗?媛 鍮꾧탳" : "?곗씠???湲?}</strong>
-      </div>
-
-      <p className="target-basis-summary">
-        ?꾩옱 醫낅ぉ ?붿빟?먯꽌??A 湲곗닠??湲곗?媛, B ?ㅼ쟻쨌諛몃쪟 湲곗?媛, C 而⑥꽱?쒖뒪
-        湲곗?媛瑜?李멸퀬媛믪쑝濡??④퍡 蹂댁뿬以띾땲?? ?꾩옱 紐⑤뜽 異붿젙媛? A/B/C 湲곗?
-        1李?異붿젙媛???꾩쭅 ?ㅻ? ???덉뒿?덈떎.
-      </p>
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-          gap: 10,
-          marginTop: 12,
-        }}
-      >
-        <div className="target-metric-card">
-          <span>A. 湲곗닠??湲곗?媛</span>
-          <strong>{formatNumber(technicalTarget)}</strong>
-          <em>{makeTechnicalBasisText(basis)}</em>
-        </div>
-
-        <div className="target-metric-card">
-          <span>B. ?ㅼ쟻쨌諛몃쪟 湲곗?媛</span>
-          <strong>{formatNumber(valuationTarget)}</strong>
-          <em>{makeValuationText(valuationRange)}</em>
-        </div>
-
-        <div className="target-metric-card">
-          <span>C. 而⑥꽱?쒖뒪 湲곗?媛</span>
-          <strong>{formatNumber(consensusTarget)}</strong>
-          <em>而⑥꽱?쒖뒪 ?낅젰 ???쒖떆</em>
-        </div>
-
-        <div className="target-metric-card">
-          <span>A/B/C 湲곗? 1李?異붿젙媛</span>
-          <strong>{formatNumber(estimate.value)}</strong>
-          <em>{formatAbcWeights(estimate)}</em>
-        </div>
-
-        <div className="target-metric-card">
-          <span>?꾩옱 紐⑤뜽 異붿젙媛</span>
-          <strong>{formatNumber(modelTarget)}</strong>
-          <em>A/B/C 1李??鍮?{formatUpside(modelGap)}</em>
-        </div>
-      </div>
-
-      <div className="target-basis-adjustments">
-        <p>
-          ?꾩옱 ?쒖떆 湲곗?: 而⑥꽱?쒖뒪媛 ?놁쑝硫?A 60%, B 40%濡?1李?異붿젙媛瑜?          怨꾩궛?⑸땲??
-        </p>
-        <p>
-          而⑥꽱?쒖뒪媛 ?낅젰?섎㈃ A 40%, B 35%, C 25% 援ъ“濡?鍮꾧탳???덉젙?낅땲??
-        </p>
-      </div>
     </div>
   );
 }
@@ -464,9 +460,172 @@ function MetricRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+function calculateEstimate({
+  technicalTarget,
+  valuationTarget,
+  consensusTarget,
+  targetPrice,
+}: {
+  technicalTarget?: number | null;
+  valuationTarget?: number | null;
+  consensusTarget?: number | null;
+  targetPrice?: NonNullable<StockResponse["score"]>["targetPrice"];
+}): EstimateResult {
+  const hasTechnical = technicalTarget != null && Number.isFinite(technicalTarget);
+  const hasValuation = valuationTarget != null && Number.isFinite(valuationTarget);
+  const hasConsensus = consensusTarget != null && Number.isFinite(consensusTarget);
+
+  if (!hasTechnical && !hasValuation && !hasConsensus) {
+    return {
+      basisAverage: null,
+      estimate: null,
+      quantAmount: null,
+      supplyAmount: null,
+      riskAmount: null,
+      totalAmount: null,
+      weights: { technical: 0, valuation: 0, consensus: 0 },
+    };
+  }
+
+  const rawWeights = hasConsensus
+    ? {
+        technical: hasTechnical ? 0.4 : 0,
+        valuation: hasValuation ? 0.35 : 0,
+        consensus: 0.25,
+      }
+    : {
+        technical: hasTechnical ? 0.6 : 0,
+        valuation: hasValuation ? 0.4 : 0,
+        consensus: 0,
+      };
+
+  const totalWeight = rawWeights.technical + rawWeights.valuation + rawWeights.consensus;
+
+  const weights = {
+    technical: totalWeight > 0 ? rawWeights.technical / totalWeight : 0,
+    valuation: totalWeight > 0 ? rawWeights.valuation / totalWeight : 0,
+    consensus: totalWeight > 0 ? rawWeights.consensus / totalWeight : 0,
+  };
+
+  const basisAverage = roundPrice(
+    (technicalTarget ?? 0) * weights.technical +
+      (valuationTarget ?? 0) * weights.valuation +
+      (consensusTarget ?? 0) * weights.consensus,
+  );
+
+  const selectedMode = String(targetPrice?.selectedTargetMode ?? "");
+  const targetModes = Array.isArray(targetPrice?.targetModes) ? targetPrice.targetModes : [];
+  const modeResult =
+    targetModes.find((mode) => String(mode?.mode ?? "") === selectedMode) ??
+    targetModes[0] ??
+    null;
+  const quantAdjustment = modeResult?.quantAdjustment ?? {};
+  const quantPercent = getNumber(quantAdjustment.baseAdjustmentPercent) ?? 0;
+  const supplyPercent = getNumber(quantAdjustment.positiveAdjustmentPercent) ?? 0;
+  const riskPercent = getNumber(quantAdjustment.riskAdjustmentPercent) ?? 0;
+
+  const quantAmount = calculateAdjustmentAmount(basisAverage, quantPercent);
+  const supplyAmount = calculateAdjustmentAmount(basisAverage, supplyPercent);
+  const riskAmount = calculateAdjustmentAmount(basisAverage, riskPercent);
+  const totalAmount =
+    quantAmount != null && supplyAmount != null && riskAmount != null
+      ? roundPrice(quantAmount + supplyAmount + riskAmount)
+      : null;
+  const estimate =
+    basisAverage != null && totalAmount != null ? roundPrice(basisAverage + totalAmount) : null;
+
+  return {
+    basisAverage,
+    estimate,
+    quantAmount,
+    supplyAmount,
+    riskAmount,
+    totalAmount,
+    weights,
+  };
+}
+
+function makeSummaryRange({
+  currentPrice,
+  estimate,
+  fallbackRange,
+}: {
+  currentPrice?: number | null;
+  estimate?: number | null;
+  fallbackRange?: NonNullable<StockResponse["score"]>["targetPrice"]["technicalTargetRange"] | null;
+}): SummaryRange | null {
+  const baseCurrentPrice = currentPrice ?? fallbackRange?.currentPrice ?? null;
+
+  if (baseCurrentPrice == null || estimate == null || estimate <= 0) return null;
+
+  const fallbackRiskLine = fallbackRange?.riskLine ?? null;
+  const riskLine =
+    fallbackRiskLine != null && Number.isFinite(fallbackRiskLine)
+      ? fallbackRiskLine
+      : roundPrice(baseCurrentPrice * 0.9) ?? baseCurrentPrice;
+
+  return {
+    currentPrice: baseCurrentPrice,
+    baseTarget: estimate,
+    baseUpsidePercent: ((estimate - baseCurrentPrice) / baseCurrentPrice) * 100,
+    riskLine,
+    riskDownsidePercent: ((riskLine - baseCurrentPrice) / baseCurrentPrice) * 100,
+  };
+}
+
+function getTechnicalTarget(targetPrice?: NonNullable<StockResponse["score"]>["targetPrice"]) {
+  const candidates = targetPrice?.targetBasis?.candidates;
+
+  if (Array.isArray(candidates)) {
+    const technicalCandidate = candidates.find((candidate) =>
+      String(candidate?.label ?? "").includes("기술"),
+    );
+
+    const value = getNumber(technicalCandidate?.value);
+
+    if (value != null) return value;
+  }
+
+  return getNumber(targetPrice?.technicalTargetRange?.baseTarget);
+}
+
+function calculateValuationTarget(
+  currentPrice?: number | null,
+  fundamentals?: FundamentalsData | null,
+) {
+  if (!currentPrice || !fundamentals) return null;
+
+  const epsTarget =
+    fundamentals.eps != null &&
+    fundamentals.eps > 0 &&
+    fundamentals.per != null &&
+    fundamentals.per > 0
+      ? roundPrice(fundamentals.eps * fundamentals.per * getPerAdjustment(fundamentals.per))
+      : null;
+  const bpsTarget =
+    fundamentals.bps != null &&
+    fundamentals.bps > 0 &&
+    fundamentals.pbr != null &&
+    fundamentals.pbr > 0
+      ? roundPrice(fundamentals.bps * fundamentals.pbr * getPbrAdjustment(fundamentals.pbr))
+      : null;
+
+  const targets = [epsTarget, bpsTarget].filter(
+    (value): value is number => value != null && Number.isFinite(value) && value > 0,
+  );
+
+  if (!targets.length) return null;
+
+  const average = roundPrice(targets.reduce((sum, value) => sum + value, 0) / targets.length);
+
+  if (average == null) return null;
+
+  return clampValuationTarget(average, currentPrice);
+}
+
 function makeCurrentSummaryInterpretation(
   data: StockResponse | null,
-  range?: NonNullable<StockResponse["score"]>["targetPrice"]["technicalTargetRange"],
+  range: SummaryRange | null,
 ) {
   const latest = getLatestChartRow(data?.chartData);
   const current = data?.currentPrice ?? latest?.close ?? range?.currentPrice ?? null;
@@ -479,21 +638,21 @@ function makeCurrentSummaryInterpretation(
     summary: overall.detail,
     cards: [
       {
-        title: "李⑦듃",
+        title: "차트",
         icon: chart.icon,
         label: chart.label,
         detail: chart.detail,
         tone: chart.tone,
       },
       {
-        title: "?덉륫",
+        title: "추정가",
         icon: prediction.icon,
         label: prediction.label,
         detail: prediction.detail,
         tone: prediction.tone,
       },
       {
-        title: "醫낇빀",
+        title: "종합",
         icon: overall.icon,
         label: overall.title,
         detail: overall.shortDetail,
@@ -523,9 +682,9 @@ function makeChartSummary(
 ) {
   if (!latest || current == null) {
     return {
-      icon: "??,
-      label: "李⑦듃 ?뺤씤 ?꾩슂",
-      detail: "?곗씠???湲?,
+      icon: "⏳",
+      label: "차트 확인 필요",
+      detail: "데이터 대기",
       tone: "neutral" as SummaryTone,
     };
   }
@@ -554,50 +713,47 @@ function makeChartSummary(
 
   if (isUpTrend && isOverheated) {
     return {
-      icon: "?좑툘",
-      label: "?④린 怨쇱뿴 二쇱쓽",
-      detail: "?곸듅 異붿꽭 媛뺥븿",
+      icon: "⚠️",
+      label: "단기 과열 주의",
+      detail: "상승 추세 강함",
       tone: "negative" as SummaryTone,
     };
   }
 
   if (isUpTrend || isAboveAvg) {
     return {
-      icon: "?윟",
-      label: "?곸듅 異붿꽭 ?좎?",
-      detail: "?대룞?됯퇏????,
+      icon: "↗️",
+      label: "상승 추세 유지",
+      detail: "이동평균 우위",
       tone: "positive" as SummaryTone,
     };
   }
 
   if (isWeak) {
     return {
-      icon: "?뵽",
-      label: "異붿꽭 ?쎌꽭",
-      detail: "?대룞?됯퇏???꾨옒",
+      icon: "↘️",
+      label: "추세 약세",
+      detail: "이동평균 아래",
       tone: "negative" as SummaryTone,
     };
   }
 
   return {
-    icon: "??,
-    label: "諛⑺뼢???뺤씤",
-    detail: "?쇱“ 援ш컙",
+    icon: "➖",
+    label: "방향성 확인",
+    detail: "혼조 구간",
     tone: "neutral" as SummaryTone,
   };
 }
 
-function makePredictionSummary(
-  current: number | null,
-  range?: NonNullable<StockResponse["score"]>["targetPrice"]["technicalTargetRange"],
-) {
+function makePredictionSummary(current: number | null, range: SummaryRange | null) {
   const baseTarget = range?.baseTarget ?? null;
 
   if (current == null || baseTarget == null || baseTarget <= 0) {
     return {
-      icon: "??,
-      label: "?덉륫 ?뺤씤 ?꾩슂",
-      detail: "異붿젙媛 ?湲?,
+      icon: "⏳",
+      label: "추정가 확인 필요",
+      detail: "추정가 대기",
       tone: "neutral" as SummaryTone,
     };
   }
@@ -607,276 +763,92 @@ function makePredictionSummary(
 
   if (upsideRate >= 3) {
     return {
-      icon: "?윟",
-      label: "?곸듅 ?щ젰 ?덉쓬",
-      detail: `異붿젙媛源뚯? ${upsideRate.toFixed(1)}%`,
+      icon: "↗️",
+      label: "상승 여력 있음",
+      detail: `추정가까지 ${upsideRate.toFixed(1)}%`,
       tone: "positive" as SummaryTone,
     };
   }
 
   if (progress >= 97 && progress <= 103) {
     return {
-      icon: "?좑툘",
-      label: "異붿젙媛 洹쇱젒",
-      detail: `?꾨떖瑜?${progress.toFixed(1)}%`,
+      icon: "⚠️",
+      label: "추정가 근접",
+      detail: `도달률 ${progress.toFixed(1)}%`,
       tone: "neutral" as SummaryTone,
     };
   }
 
   if (upsideRate < -3) {
     return {
-      icon: "?뵽",
-      label: "異붿젙媛 珥덇낵",
-      detail: `珥덇낵 ${Math.abs(upsideRate).toFixed(1)}%`,
+      icon: "↘️",
+      label: "추정가 초과",
+      detail: `초과 ${Math.abs(upsideRate).toFixed(1)}%`,
       tone: "negative" as SummaryTone,
     };
   }
 
   return {
-    icon: "??,
-    label: "?덉륫 以묐┰",
-    detail: `愿대━ ${upsideRate.toFixed(1)}%`,
+    icon: "➖",
+    label: "추정 중립",
+    detail: `괴리율 ${upsideRate.toFixed(1)}%`,
     tone: "neutral" as SummaryTone,
   };
 }
 
 function makeOverallSummary(chartLabel: string, predictionLabel: string) {
-  if (chartLabel.includes("怨쇱뿴") && predictionLabel.includes("?곸듅 ?щ젰")) {
+  if (chartLabel.includes("과열") && predictionLabel.includes("상승 여력")) {
     return {
-      icon: "?좑툘",
-      title: "?곸듅 ?щ젰 ?덉쓬 쨌 ?④린 怨쇱뿴 二쇱쓽",
-      shortDetail: "異붽꺽 留ㅼ닔 ?좎쨷",
+      icon: "⚠️",
+      title: "상승 여력 있음 · 단기 과열 주의",
+      shortDetail: "추격 매수 신중",
       detail:
-        "?덉륫???щ젰? ?⑥븘 ?덉?留?李⑦듃???④린 怨쇱뿴 ?좏샇瑜??④퍡 蹂댁뿬以띾땲?? ?곸듅 ?먮쫫? ?좎??섎릺 異붽꺽 留ㅼ닔???좎쨷???뺤씤?섎뒗 援ш컙?낅땲??",
+        "추정가 기준 여력은 남아 있지만 차트는 단기 과열 신호를 함께 보여줍니다. 상승 흐름은 유지하되 추격 매수는 신중히 확인하는 구간입니다.",
       tone: "neutral" as SummaryTone,
     };
   }
 
-  if (chartLabel.includes("怨쇱뿴") && predictionLabel.includes("洹쇱젒")) {
+  if (chartLabel.includes("과열") && predictionLabel.includes("근접")) {
     return {
-      icon: "?좑툘",
-      title: "異붿젙媛 洹쇱젒 쨌 ?④린 怨쇱뿴 二쇱쓽",
-      shortDetail: "蹂?숈꽦 ?뺤씤",
+      icon: "⚠️",
+      title: "추정가 근접 · 단기 과열 주의",
+      shortDetail: "변동성 확인",
       detail:
-        "?꾩옱媛??異붿젙 二쇨???媛源뚯슦硫?李⑦듃???④린 怨쇱뿴 ?좏샇媛 ?덉뒿?덈떎. 異붽? ?곸듅蹂대떎 蹂?숈꽦 ?뺣? ?щ?瑜?癒쇱? ?뺤씤?댁빞 ?⑸땲??",
+        "현재가가 추정가와 가까우며 차트에 단기 과열 신호가 있습니다. 추가 상승보다 변동성 확대 가능성을 먼저 확인해야 합니다.",
       tone: "negative" as SummaryTone,
     };
   }
 
-  if (chartLabel.includes("?곸듅") && predictionLabel.includes("?곸듅 ?щ젰")) {
+  if (chartLabel.includes("상승") && predictionLabel.includes("상승 여력")) {
     return {
-      icon: "?윟",
-      title: "?곸듅 異붿꽭 쨌 ?곸듅 ?щ젰",
-      shortDetail: "?먮쫫 ?묓샇",
+      icon: "↗️",
+      title: "상승 추세 · 상승 여력",
+      shortDetail: "흐름 양호",
       detail:
-        "李⑦듃 ?먮쫫怨?異붿젙 二쇨? 湲곗???紐⑤몢 ?고샇?곸엯?덈떎. ?ㅻ쭔 ?ㅼ젣 ?먮떒? ?섍툒怨??꾪뿕 湲곗??좎쓣 ?④퍡 ?뺤씤?댁빞 ?⑸땲??",
+        "차트 흐름과 추정가 기준이 모두 우호적입니다. 다만 실제 판단은 수급과 위험 기준선을 함께 확인해야 합니다.",
       tone: "positive" as SummaryTone,
     };
   }
 
-  if (chartLabel.includes("?쎌꽭")) {
+  if (chartLabel.includes("약세")) {
     return {
-      icon: "?뵽",
-      title: "異붿꽭 ?쎌꽭 ?뺤씤",
-      shortDetail: "諛섎벑 ?뺤씤 ?꾩슂",
+      icon: "↘️",
+      title: "추세 약세 확인",
+      shortDetail: "반등 확인 필요",
       detail:
-        "?꾩옱 李⑦듃 ?먮쫫???쏀빐 ?④린 諛섎벑 ?щ?? ?섍툒 媛쒖꽑 ?щ?瑜??④퍡 ?뺤씤?댁빞 ?⑸땲??",
+        "현재 차트 흐름이 약해 단기 반등 여부와 수급 개선 여부를 함께 확인해야 합니다.",
       tone: "negative" as SummaryTone,
     };
   }
 
   return {
-    icon: "??,
-    title: "諛⑺뼢???뺤씤 ?꾩슂",
-    shortDetail: "?쇱“ 援ш컙",
+    icon: "➖",
+    title: "방향성 확인 필요",
+    shortDetail: "혼조 구간",
     detail:
-      "李⑦듃? 異붿젙 二쇨? 湲곗????쒕졆?섍쾶 ??諛⑺뼢?쇰줈 ?쇱튂?섏? ?딆븘 異붽? ?뺤씤???꾩슂??援ш컙?낅땲??",
+      "차트와 추정가 기준이 선명하게 한 방향으로 일치하지 않아 추가 확인이 필요한 구간입니다.",
     tone: "neutral" as SummaryTone,
   };
-}
-
-function makeAbcEstimate(data: StockResponse | null): AbcEstimate {
-  const range = data?.score?.targetPrice?.technicalTargetRange;
-  const basis = data?.score?.targetPrice?.targetBasis;
-  const valuationRange = data?.score?.targetPrice?.valuationTargetRange ?? null;
-  const technicalTarget = getTechnicalBasisPrice(basis, range?.baseTarget);
-  const valuationTarget = valuationRange?.valuationTarget ?? null;
-  const consensusTarget = data?.score?.targetPrice?.consensusTarget ?? null;
-
-  return calculateAbcEstimate({
-    technicalTarget,
-    valuationTarget,
-    consensusTarget,
-  });
-}
-
-function calculateAbcEstimate({
-  technicalTarget,
-  valuationTarget,
-  consensusTarget,
-}: {
-  technicalTarget?: number | null;
-  valuationTarget?: number | null;
-  consensusTarget?: number | null;
-}): AbcEstimate {
-  const hasTechnical =
-    technicalTarget != null && Number.isFinite(technicalTarget);
-  const hasValuation =
-    valuationTarget != null && Number.isFinite(valuationTarget);
-  const hasConsensus =
-    consensusTarget != null && Number.isFinite(consensusTarget);
-
-  if (!hasTechnical && !hasValuation && !hasConsensus) {
-    return {
-      value: null,
-      technicalWeight: null,
-      valuationWeight: null,
-      consensusWeight: null,
-      description: "A/B/C 湲곗?媛 ?湲?,
-    };
-  }
-
-  if (hasConsensus) {
-    const weights = normalizeWeights({
-      technicalWeight: hasTechnical ? 0.4 : 0,
-      valuationWeight: hasValuation ? 0.35 : 0,
-      consensusWeight: 0.25,
-    });
-
-    const value =
-      (technicalTarget ?? 0) * weights.technicalWeight +
-      (valuationTarget ?? 0) * weights.valuationWeight +
-      (consensusTarget ?? 0) * weights.consensusWeight;
-
-    return {
-      value: roundPrice(value),
-      ...weights,
-      description: "A 40% 쨌 B 35% 쨌 C 25% 湲곗?",
-    };
-  }
-
-  const weights = normalizeWeights({
-    technicalWeight: hasTechnical ? 0.6 : 0,
-    valuationWeight: hasValuation ? 0.4 : 0,
-    consensusWeight: 0,
-  });
-
-  const value =
-    (technicalTarget ?? 0) * weights.technicalWeight +
-    (valuationTarget ?? 0) * weights.valuationWeight;
-
-  return {
-    value: roundPrice(value),
-    ...weights,
-    description: "A 60% 쨌 B 40% 湲곗?",
-  };
-}
-
-function normalizeWeights({
-  technicalWeight,
-  valuationWeight,
-  consensusWeight,
-}: {
-  technicalWeight: number;
-  valuationWeight: number;
-  consensusWeight: number;
-}) {
-  const total = technicalWeight + valuationWeight + consensusWeight;
-
-  if (total <= 0) {
-    return {
-      technicalWeight: 0,
-      valuationWeight: 0,
-      consensusWeight: 0,
-    };
-  }
-
-  return {
-    technicalWeight: technicalWeight / total,
-    valuationWeight: valuationWeight / total,
-    consensusWeight: consensusWeight / total,
-  };
-}
-
-function getTechnicalBasisPrice(
-  basis?: NonNullable<StockResponse["score"]>["targetPrice"]["targetBasis"],
-  fallback?: number | null,
-) {
-  const technicalCandidate = basis?.candidates.find((candidate) =>
-    candidate.label.includes("湲곗닠"),
-  );
-
-  return technicalCandidate?.value ?? fallback ?? null;
-}
-
-function makeTechnicalBasisText(
-  basis?: NonNullable<StockResponse["score"]>["targetPrice"]["targetBasis"],
-) {
-  if (!basis) return "李⑦듃 湲곕컲 湲곗?媛 ?湲?;
-
-  const technicalCandidate = basis.candidates.find((candidate) =>
-    candidate.label.includes("湲곗닠"),
-  );
-
-  if (technicalCandidate) {
-    return `湲곗닠 ?꾨낫 諛섏쁺 鍮꾩쨷 ${formatWeight(technicalCandidate.weight)}`;
-  }
-
-  return "理쒓렐 怨좎젏쨌蹂쇰┛?諛대뱶쨌蹂?숈꽦 湲곕컲";
-}
-
-function makeValuationText(
-  valuationRange?: NonNullable<StockResponse["score"]>["targetPrice"]["valuationTargetRange"] | null,
-) {
-  if (!valuationRange?.valuationTarget) {
-    return "EPS/BPS ?먮뒗 PER/PBR ?곗씠??遺議?;
-  }
-
-  const parts = [];
-
-  if (valuationRange.epsTarget != null) {
-    parts.push("EPS 湲곗? ?ы븿");
-  }
-
-  if (valuationRange.bpsTarget != null) {
-    parts.push("BPS 湲곗? ?ы븿");
-  }
-
-  return parts.length > 0 ? parts.join(" 쨌 ") : "?ㅼ쟻쨌諛몃쪟 湲곗?";
-}
-
-function formatAbcWeights(estimate: AbcEstimate) {
-  const parts = [];
-
-  if (estimate.technicalWeight != null && estimate.technicalWeight > 0) {
-    parts.push(`A ${formatWeight(estimate.technicalWeight)}`);
-  }
-
-  if (estimate.valuationWeight != null && estimate.valuationWeight > 0) {
-    parts.push(`B ${formatWeight(estimate.valuationWeight)}`);
-  }
-
-  if (estimate.consensusWeight != null && estimate.consensusWeight > 0) {
-    parts.push(`C ${formatWeight(estimate.consensusWeight)}`);
-  }
-
-  return parts.length > 0 ? parts.join(" 쨌 ") : "媛以묒튂 ?湲?;
-}
-
-function percentChange(target: number, current: number) {
-  if (!Number.isFinite(target) || !Number.isFinite(current) || current === 0) {
-    return null;
-  }
-
-  return ((target - current) / current) * 100;
-}
-
-function roundPrice(value: number) {
-  if (!Number.isFinite(value)) return null;
-
-  if (value >= 100_000) return Math.round(value / 10) * 10;
-  if (value >= 10_000) return Math.round(value / 5) * 5;
-  return Math.round(value);
 }
 
 function makeTodayKey() {
@@ -924,22 +896,22 @@ function writeDailyTargetSnapshot(key: string, snapshot: DailyTargetSnapshot) {
   try {
     window.localStorage.setItem(key, JSON.stringify(snapshot));
   } catch {
-    // localStorage ??μ씠 ?ㅽ뙣?대룄 ?붾㈃ 議고쉶??怨꾩냽 吏꾪뻾?⑸땲??
+    // localStorage 저장이 실패해도 화면 조회는 계속 진행합니다.
   }
 }
 
 function formatDailyTargetSuffix(snapshot?: DailyTargetSnapshot | null) {
-  if (!snapshot) return "(?뱀씪 湲곗? 異붿젙 二쇨? ?곗씠???놁쓬)";
+  if (!snapshot) return "(당일 기준 추정가 데이터 없음)";
 
-  return `(?뱀씪 湲곗? 異붿젙 二쇨? ${formatNumber(snapshot.targetPrice)})`;
+  return `(당일 기준 ${formatNumber(snapshot.targetPrice)})`;
 }
 
 function formatDailyTargetSource(snapshot?: DailyTargetSnapshot | null) {
-  if (!snapshot) return "?뱀씪 湲곗? 異붿젙 二쇨? ?湲?;
+  if (!snapshot) return "당일 기준 추정가 대기";
 
-  if (snapshot.source === "manual") return "吏곸젒 ?낅젰 湲곗?";
-  if (snapshot.source === "current-query") return "?꾩옱 議고쉶 異붿젙 二쇨? ???湲곗?";
-  return "?ㅻ뒛 泥?議고쉶 湲곗?";
+  if (snapshot.source === "manual") return "직접 입력 기준";
+  if (snapshot.source === "current-query") return "현재 조회 추정가 저장 기준";
+  return "오늘 첫 조회 기준";
 }
 
 function formatManualTargetInput(value: string) {
@@ -974,22 +946,17 @@ function parseManualTargetInput(value: string) {
 }
 
 function formatTargetProgress(value?: number | null) {
-  if (value == null || Number.isNaN(value)) return "?곗씠???놁쓬";
+  if (value == null || Number.isNaN(value)) return "데이터 없음";
   return `${value.toFixed(1)}%`;
 }
 
 function formatUpside(value?: number | null) {
-  if (value == null || Number.isNaN(value)) return "?곗씠???놁쓬";
+  if (value == null || Number.isNaN(value)) return "데이터 없음";
   return `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
-function formatWeight(value?: number | null) {
-  if (value == null || Number.isNaN(value)) return "?곗씠???놁쓬";
-  return `${(value * 100).toFixed(1)}%`;
-}
-
 function formatDateTime(value?: string | null) {
-  if (!value) return "?????;
+  if (!value) return "저장 전";
 
   const date = new Date(value);
 
@@ -1004,3 +971,79 @@ function formatDateTime(value?: string | null) {
   }).format(date);
 }
 
+function makeConsensusStorageKey(symbol?: string | null, name?: string | null) {
+  const normalizedSymbol = (symbol || "").trim().toUpperCase();
+
+  if (normalizedSymbol) {
+    return `${CONSENSUS_STORAGE_PREFIX}:${normalizedSymbol}`;
+  }
+
+  const normalizedName = (name || "").trim();
+
+  if (normalizedName) {
+    return `${CONSENSUS_STORAGE_PREFIX}:NAME:${normalizedName}`;
+  }
+
+  return `${CONSENSUS_STORAGE_PREFIX}:CURRENT`;
+}
+
+function readConsensus(key: string): ConsensusData | null {
+  if (!key || typeof window === "undefined") return null;
+
+  try {
+    const raw = window.localStorage.getItem(key);
+
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as ConsensusData;
+
+    if (!parsed || typeof parsed !== "object") return null;
+
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function getNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function calculateAdjustmentAmount(basisAverage: number | null, percent: number) {
+  if (basisAverage == null || !Number.isFinite(basisAverage)) return null;
+
+  return roundPrice((basisAverage * percent) / 100);
+}
+
+function getPerAdjustment(per?: number | null) {
+  if (per == null || !Number.isFinite(per) || per <= 0) return 1;
+  if (per <= 10) return 1.08;
+  if (per <= 20) return 1;
+  if (per <= 30) return 0.92;
+  if (per <= 40) return 0.84;
+  return 0.75;
+}
+
+function getPbrAdjustment(pbr?: number | null) {
+  if (pbr == null || !Number.isFinite(pbr) || pbr <= 0) return 1;
+  if (pbr <= 1) return 1.08;
+  if (pbr <= 2) return 1;
+  if (pbr <= 3) return 0.92;
+  if (pbr <= 5) return 0.85;
+  return 0.75;
+}
+
+function clampValuationTarget(target: number, currentPrice: number) {
+  const lower = currentPrice * 0.8;
+  const upper = currentPrice * 1.35;
+
+  return roundPrice(Math.max(lower, Math.min(target, upper)));
+}
+
+function roundPrice(value: number) {
+  if (!Number.isFinite(value)) return null;
+
+  if (value >= 100_000) return Math.round(value / 10) * 10;
+  if (value >= 10_000) return Math.round(value / 5) * 5;
+  return Math.round(value);
+}

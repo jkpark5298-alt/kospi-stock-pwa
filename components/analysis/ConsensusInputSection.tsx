@@ -1,209 +1,158 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import * as XLSX from "xlsx";
 
-type ConsensusTarget = {
-  symbol: string;
-  name: string | null;
+type ConsensusSource = "naver" | "fnguide" | "manual" | "report";
+
+type ConsensusData = {
+  averageTargetPrice: number | null;
+  highTargetPrice: number | null;
+  lowTargetPrice: number | null;
+  investmentOpinion: string;
+  analystCount: number | null;
+  source: ConsensusSource;
   baseDate: string;
-  averageTarget: number | null;
-  highTarget: number | null;
-  lowTarget: number | null;
-  opinion: string | null;
-  brokerCount: number | null;
-  reportCount: number | null;
-  source: string | null;
-  memo: string | null;
-  uploadedFileName?: string | null;
-  updatedAt?: string | null;
-};
-
-type ConsensusUploadRow = {
-  symbol: string;
-  name: string | null;
-  baseDate: string;
-  averageTarget: number | null;
-  highTarget: number | null;
-  lowTarget: number | null;
-  opinion: string | null;
-  brokerCount: number | null;
-  reportCount: number | null;
-  source: string | null;
-  memo: string | null;
-};
-
-type ConsensusApiResponse = {
-  ok: boolean;
-  data?: ConsensusTarget | null;
-  rows?: ConsensusTarget[];
-  count?: number;
-  error?: string;
-  message?: string;
+  rawText: string;
+  savedAt: string;
 };
 
 type Props = {
   symbol?: string | null;
   name?: string | null;
   appTargetPrice?: number | null;
-  onConsensusUpdated?: () => void | Promise<void>;
 };
 
-const REQUIRED_HEADERS = ["종목코드", "기준일", "평균목표가"];
-const EXCEL_HEADERS = [
-  "종목코드",
-  "종목명",
-  "기준일",
-  "평균목표가",
-  "최고목표가",
-  "최저목표가",
-  "투자의견",
-  "참여증권사수",
-  "리포트수",
-  "출처",
-  "메모",
-];
+const CONSENSUS_STORAGE_PREFIX = "kospi-consensus-data";
+
+const EMPTY_CONSENSUS: ConsensusData = {
+  averageTargetPrice: null,
+  highTargetPrice: null,
+  lowTargetPrice: null,
+  investmentOpinion: "",
+  analystCount: null,
+  source: "naver",
+  baseDate: "",
+  rawText: "",
+  savedAt: "",
+};
 
 export default function ConsensusInputSection({
   symbol,
   name,
   appTargetPrice,
-  onConsensusUpdated,
 }: Props) {
-  const normalizedSymbol = useMemo(() => normalizeSymbol(symbol), [symbol]);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [latestConsensus, setLatestConsensus] = useState<ConsensusTarget | null>(null);
-  const [uploadPreview, setUploadPreview] = useState<ConsensusUploadRow[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const storageKey = useMemo(() => makeStorageKey(symbol, name), [symbol, name]);
+  const [rawText, setRawText] = useState("");
+  const [consensus, setConsensus] = useState<ConsensusData>(EMPTY_CONSENSUS);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchLatestConsensus();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [normalizedSymbol]);
+    if (typeof window === "undefined") {
+      setRawText("");
+      setConsensus(EMPTY_CONSENSUS);
+      setSavedAt(null);
+      return;
+    }
+
+    const saved = readConsensus(storageKey);
+
+    if (saved) {
+      setConsensus(saved);
+      setRawText(saved.rawText || "");
+      setSavedAt(saved.savedAt || null);
+      return;
+    }
+
+    setRawText("");
+    setConsensus(EMPTY_CONSENSUS);
+    setSavedAt(null);
+  }, [storageKey]);
 
   const comparison = makeConsensusComparison(
     appTargetPrice,
-    latestConsensus?.averageTarget,
-    latestConsensus?.highTarget,
-    latestConsensus?.lowTarget,
+    consensus.averageTargetPrice,
+    consensus.highTargetPrice,
+    consensus.lowTargetPrice,
   );
 
-  async function fetchLatestConsensus() {
-    if (!normalizedSymbol) {
-      setLatestConsensus(null);
-      return;
-    }
+  const hasConsensus =
+    consensus.averageTargetPrice != null ||
+    consensus.highTargetPrice != null ||
+    consensus.lowTargetPrice != null ||
+    consensus.analystCount != null ||
+    Boolean(consensus.investmentOpinion);
 
-    try {
-      const response = await fetch(
-        `/api/consensus?symbol=${encodeURIComponent(normalizedSymbol)}`,
-        { cache: "no-store" },
-      );
-      const payload = (await response.json()) as ConsensusApiResponse;
+  const displayName = name || symbol || "현재 종목";
 
-      if (payload.ok && payload.data) {
-        setLatestConsensus(payload.data);
-      } else {
-        setLatestConsensus(null);
-      }
-    } catch {
-      setLatestConsensus(null);
-    }
+  function handleParse() {
+    const parsed = parseConsensusText(rawText);
+
+    setConsensus((prev) => ({
+      ...prev,
+      ...parsed,
+      rawText,
+    }));
   }
 
-  async function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0] ?? null;
-    setSelectedFile(file);
-    setMessage(null);
-    setError(null);
+  function handleSave() {
+    if (typeof window === "undefined") return;
 
-    if (!file) {
-      setUploadPreview([]);
-      return;
-    }
+    const next: ConsensusData = {
+      ...consensus,
+      rawText,
+      savedAt: new Date().toISOString(),
+    };
 
-    try {
-      const rows = await parseConsensusExcel(file);
-      setUploadPreview(rows);
-      setMessage(`${rows.length.toLocaleString("ko-KR")}개 행을 읽었습니다. 저장 버튼을 누르면 Supabase에 반영됩니다.`);
-    } catch (parseError) {
-      setUploadPreview([]);
-      setError(parseError instanceof Error ? parseError.message : "엑셀 파일을 읽지 못했습니다.");
-    }
+    window.localStorage.setItem(storageKey, JSON.stringify(next));
+    setConsensus(next);
+    setSavedAt(next.savedAt);
   }
 
-  async function handleUpload() {
-    if (!selectedFile || uploadPreview.length === 0) {
-      setError("먼저 컨센서스 엑셀 파일을 선택해 주세요.");
-      return;
+  function handleClear() {
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(storageKey);
     }
 
-    setLoading(true);
-    setError(null);
-    setMessage(null);
-
-    try {
-      const response = await fetch("/api/consensus", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          fileName: selectedFile.name,
-          rows: uploadPreview,
-        }),
-      });
-      const payload = (await response.json()) as ConsensusApiResponse;
-
-      if (!response.ok || !payload.ok) {
-        throw new Error(payload.error || payload.message || "컨센서스 저장에 실패했습니다.");
-      }
-
-      setMessage(`Supabase 저장 완료: ${payload.count ?? uploadPreview.length}건`);
-      await fetchLatestConsensus();
-      await onConsensusUpdated?.();
-    } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : "컨센서스 저장에 실패했습니다.");
-    } finally {
-      setLoading(false);
-    }
+    setRawText("");
+    setConsensus(EMPTY_CONSENSUS);
+    setSavedAt(null);
   }
 
   return (
     <section className="score-section">
       <div className="card">
         <div className="target-basis-header">
-          <span>컨센서스 기준가 입력 방식</span>
-          <strong>{latestConsensus?.averageTarget ? "Supabase 반영 중" : "컨센서스 대기"}</strong>
+          <span>컨센서스 기준가 산정 방식</span>
+          <strong>{hasConsensus ? "컨센서스 반영 가능" : "컨센서스 대기"}</strong>
         </div>
 
         <p className="target-basis-summary">
-          컨센서스는 한글 엑셀 양식으로 입력한 뒤 Supabase에 저장합니다. 현재 종목과
-          종목코드가 일치하는 최신 기준일의 평균목표가가 C. 컨센서스 기준가로 자동 반영됩니다.
+          네이버증권, FnGuide, 리포트 목표가의 평균·최고·최저 목표가를
+          참고해 외부 시장 기대치를 확인합니다. 컨센서스 기준가는 앱 모델
+          추정가가 시장 기대치보다 보수적인지, 과도하게 높은지 비교하는 보조
+          기준입니다.
         </p>
 
         <div className="summary-grid summary-grid-four" style={{ marginTop: 16 }}>
           <ConsensusMetricCard
-            title="평균목표가"
-            value={formatPrice(latestConsensus?.averageTarget)}
-            subText="C 기준가"
+            title="평균 목표가"
+            value={formatPrice(consensus.averageTargetPrice)}
+            subText="컨센서스 기준"
           />
           <ConsensusMetricCard
-            title="최고목표가"
-            value={formatPrice(latestConsensus?.highTarget)}
-            subText="공격 범위 참고"
+            title="최고 목표가"
+            value={formatPrice(consensus.highTargetPrice)}
+            subText="공격적 전망"
           />
           <ConsensusMetricCard
-            title="최저목표가"
-            value={formatPrice(latestConsensus?.lowTarget)}
-            subText="보수 범위 참고"
+            title="최저 목표가"
+            value={formatPrice(consensus.lowTargetPrice)}
+            subText="보수적 전망"
           />
           <ConsensusMetricCard
-            title="참여증권사수"
-            value={formatCount(latestConsensus?.brokerCount)}
-            subText={latestConsensus?.opinion || "투자의견 없음"}
+            title="참여 증권사"
+            value={formatCount(consensus.analystCount)}
+            subText={consensus.investmentOpinion || "투자의견 없음"}
           />
         </div>
 
@@ -212,89 +161,150 @@ export default function ConsensusInputSection({
             <span>앱 추정가 vs 컨센서스</span>
             <strong>{comparison.title}</strong>
           </div>
+
           <p className="target-basis-summary">{comparison.description}</p>
+
           <div className="target-basis-adjustments">
-            <p>현재 종목: {name || symbol || "데이터 없음"}</p>
             <p>앱 추정가: {formatPrice(appTargetPrice)}</p>
-            <p>컨센서스 평균: {formatPrice(latestConsensus?.averageTarget)}</p>
+            <p>컨센서스 평균: {formatPrice(consensus.averageTargetPrice)}</p>
             <p>차이: {comparison.gapText}</p>
-            <p>기준일: {latestConsensus?.baseDate || "데이터 없음"}</p>
-            <p>출처: {latestConsensus?.source || "데이터 없음"}</p>
+            <p>저장 시각: {formatDateTime(savedAt)}</p>
           </div>
         </div>
 
         <div className="target-basis-box" style={{ marginTop: 16 }}>
           <div className="target-basis-header">
-            <span>컨센서스 엑셀 업로드</span>
-            <strong>{selectedFile?.name || "파일 선택 대기"}</strong>
+            <span>컨센서스 원문 입력/저장</span>
+            <strong>{displayName}</strong>
           </div>
 
           <p className="target-basis-summary">
-            엑셀 시트명은 “컨센서스”를 권장합니다. 컬럼명은 종목코드, 종목명, 기준일,
-            평균목표가, 최고목표가, 최저목표가, 투자의견, 참여증권사수, 리포트수, 출처, 메모입니다.
+            네이버증권, FnGuide, 리포트 화면에서 컨센서스 관련 텍스트를
+            복사해 붙여넣으면 평균 목표가, 최고·최저 목표가, 투자의견, 참여
+            증권사 수를 최대한 읽어 저장합니다.
           </p>
 
-          <div style={{ display: "grid", gap: 12, marginTop: 14 }}>
-            <input
+          <div
+            style={{
+              display: "grid",
+              gap: 12,
+              marginTop: 14,
+            }}
+          >
+            <textarea
               className="form-control"
-              type="file"
-              accept=".xlsx,.xls"
-              onChange={handleFileChange}
+              value={rawText}
+              onChange={(event) => setRawText(event.target.value)}
+              placeholder={`예시)
+평균 목표가 296,000
+최고 목표가 330,000
+최저 목표가 250,000
+투자의견 BUY
+참여 18개 증권사`}
+              rows={7}
+              style={{
+                width: "100%",
+                resize: "vertical",
+                minHeight: 140,
+                lineHeight: 1.5,
+              }}
             />
 
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                flexWrap: "wrap",
+              }}
+            >
               <button
                 className="button primary-button"
                 type="button"
-                onClick={handleUpload}
-                disabled={loading || uploadPreview.length === 0}
+                onClick={handleParse}
               >
-                {loading ? "저장 중" : "Supabase에 저장"}
+                컨센서스 읽기
               </button>
               <button
                 className="button secondary-button"
                 type="button"
-                onClick={fetchLatestConsensus}
-                disabled={!normalizedSymbol || loading}
+                onClick={handleSave}
               >
-                현재 종목 컨센서스 새로고침
+                저장
+              </button>
+              <button
+                className="button secondary-button"
+                type="button"
+                onClick={handleClear}
+                disabled={!rawText && !hasConsensus && !savedAt}
+              >
+                삭제
               </button>
             </div>
           </div>
-
-          {message ? <p className="status-message info-message" style={{ marginTop: 12 }}>{message}</p> : null}
-          {error ? <p className="status-message error-message" style={{ marginTop: 12 }}>{error}</p> : null}
         </div>
 
-        <div className="target-basis-box" style={{ marginTop: 16 }}>
-          <div className="target-basis-header">
-            <span>엑셀 양식</span>
-            <strong>{EXCEL_HEADERS.join(" · ")}</strong>
-          </div>
-          <p className="target-basis-summary">
-            목표가는 296000 또는 296,000처럼 입력할 수 있고, 화면에는 296,000원 형식으로 표시됩니다.
-          </p>
-        </div>
+        <div
+          style={{
+            display: "grid",
+            gap: 10,
+            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+            marginTop: 16,
+          }}
+        >
+          <label className="metric-row" style={{ display: "grid", gap: 6 }}>
+            <span>출처</span>
+            <select
+              className="form-control"
+              value={consensus.source}
+              onChange={(event) =>
+                setConsensus((prev) => ({
+                  ...prev,
+                  source: event.target.value as ConsensusSource,
+                }))
+              }
+            >
+              <option value="naver">네이버증권</option>
+              <option value="fnguide">FnGuide</option>
+              <option value="report">리포트</option>
+              <option value="manual">수동</option>
+            </select>
+          </label>
 
-        {uploadPreview.length > 0 ? (
-          <div className="target-basis-box" style={{ marginTop: 16 }}>
-            <div className="target-basis-header">
-              <span>업로드 미리보기</span>
-              <strong>{uploadPreview.length.toLocaleString("ko-KR")}건</strong>
-            </div>
-            <div className="target-basis-adjustments">
-              {uploadPreview.slice(0, 5).map((row) => (
-                <p key={`${row.symbol}-${row.baseDate}`}>
-                  {row.symbol} · {row.name || "종목명 없음"} · {row.baseDate} · 평균 {formatPrice(row.averageTarget)}
-                </p>
-              ))}
-              {uploadPreview.length > 5 ? <p>외 {uploadPreview.length - 5}건</p> : null}
-            </div>
-          </div>
-        ) : null}
+          <label className="metric-row" style={{ display: "grid", gap: 6 }}>
+            <span>기준일</span>
+            <input
+              className="form-control"
+              value={consensus.baseDate}
+              onChange={(event) =>
+                setConsensus((prev) => ({
+                  ...prev,
+                  baseDate: event.target.value,
+                }))
+              }
+              placeholder="예: 2026-05-11"
+            />
+          </label>
+
+          <label className="metric-row" style={{ display: "grid", gap: 6 }}>
+            <span>투자의견</span>
+            <input
+              className="form-control"
+              value={consensus.investmentOpinion}
+              onChange={(event) =>
+                setConsensus((prev) => ({
+                  ...prev,
+                  investmentOpinion: event.target.value,
+                }))
+              }
+              placeholder="예: BUY / 매수 / 중립"
+            />
+          </label>
+        </div>
 
         <p className="notice-text" style={{ marginTop: 14 }}>
-          저장 기준은 종목코드 + 기준일입니다. 같은 종목코드와 기준일을 다시 올리면 기존 값이 업데이트됩니다.
+          이 데이터는 자동 크롤링이 아니라 사용자가 복사해 붙여넣은 텍스트를
+          파싱해 저장하는 방식입니다. 종목 코드가 없을 때도 임시 저장키로
+          저장되며, 종목 조회 후에는 종목별 저장키로 관리됩니다.
         </p>
       </div>
     </section>
@@ -319,89 +329,158 @@ function ConsensusMetricCard({
   );
 }
 
-async function parseConsensusExcel(file: File): Promise<ConsensusUploadRow[]> {
-  const arrayBuffer = await file.arrayBuffer();
-  const workbook = XLSX.read(arrayBuffer, { type: "array", cellDates: true });
-  const sheetName = workbook.SheetNames.find((item) => item.trim() === "컨센서스") ?? workbook.SheetNames[0];
+function parseConsensusText(text: string): Partial<ConsensusData> {
+  const averageTargetPrice =
+    findPriceByLabels(text, [
+      "평균 목표가",
+      "평균목표가",
+      "목표주가 평균",
+      "컨센서스 평균",
+      "평균",
+      "consensus",
+      "average",
+    ]) ?? findFirstPrice(text);
 
-  if (!sheetName) {
-    throw new Error("엑셀 파일에 시트가 없습니다.");
-  }
+  const highTargetPrice = findPriceByLabels(text, [
+    "최고 목표가",
+    "최고목표가",
+    "상단",
+    "최고",
+    "highest",
+    "high",
+  ]);
 
-  const sheet = workbook.Sheets[sheetName];
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
-    defval: "",
-    raw: true,
-  });
+  const lowTargetPrice = findPriceByLabels(text, [
+    "최저 목표가",
+    "최저목표가",
+    "하단",
+    "최저",
+    "lowest",
+    "low",
+  ]);
 
-  if (rows.length === 0) {
-    throw new Error("읽을 데이터가 없습니다.");
-  }
-
-  const headers = Object.keys(rows[0] || {}).map((item) => item.trim());
-  const missingHeaders = REQUIRED_HEADERS.filter((header) => !headers.includes(header));
-
-  if (missingHeaders.length > 0) {
-    throw new Error(`필수 컬럼이 없습니다: ${missingHeaders.join(", ")}`);
-  }
-
-  const parsedRows = rows
-    .map(mapExcelRow)
-    .filter((row): row is ConsensusUploadRow => Boolean(row));
-
-  if (parsedRows.length === 0) {
-    throw new Error("저장 가능한 컨센서스 행이 없습니다.");
-  }
-
-  return parsedRows;
-}
-
-function mapExcelRow(row: Record<string, unknown>): ConsensusUploadRow | null {
-  const symbol = normalizeSymbol(row["종목코드"]);
-  const baseDate = parseDateValue(row["기준일"]);
-  const averageTarget = parseNumber(row["평균목표가"]);
-
-  if (!symbol || !baseDate || averageTarget == null) return null;
+  const analystCount = findAnalystCount(text);
+  const investmentOpinion = findOpinion(text);
+  const baseDate = findDate(text);
 
   return {
-    symbol,
-    name: parseText(row["종목명"]),
+    averageTargetPrice,
+    highTargetPrice,
+    lowTargetPrice,
+    analystCount,
+    investmentOpinion,
     baseDate,
-    averageTarget,
-    highTarget: parseNumber(row["최고목표가"]),
-    lowTarget: parseNumber(row["최저목표가"]),
-    opinion: parseText(row["투자의견"]),
-    brokerCount: parseInteger(row["참여증권사수"]),
-    reportCount: parseInteger(row["리포트수"]),
-    source: parseText(row["출처"]),
-    memo: parseText(row["메모"]),
   };
+}
+
+function findPriceByLabels(text: string, labels: string[]) {
+  const normalized = text.replace(/\s+/g, " ");
+
+  for (const label of labels) {
+    const escaped = escapeRegExp(label);
+    const regex = new RegExp(`${escaped}[^0-9]{0,20}([0-9][0-9,\\.]{2,})`, "i");
+    const match = normalized.match(regex);
+    const parsed = parsePrice(match?.[1]);
+
+    if (parsed != null) return parsed;
+  }
+
+  return null;
+}
+
+function findFirstPrice(text: string) {
+  const match = text.match(/([0-9][0-9,]{3,})\s*원?/);
+  return parsePrice(match?.[1]);
+}
+
+function findAnalystCount(text: string) {
+  const patterns = [
+    /([0-9]{1,2})\s*개\s*증권사/,
+    /([0-9]{1,2})\s*명/,
+    /참여[^0-9]{0,10}([0-9]{1,2})/,
+    /증권사[^0-9]{0,10}([0-9]{1,2})/,
+    /analyst[^0-9]{0,10}([0-9]{1,2})/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+
+    if (match?.[1]) {
+      const parsed = Number(match[1]);
+
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+
+  return null;
+}
+
+function findOpinion(text: string) {
+  const opinionKeywords = [
+    "Strong Buy",
+    "BUY",
+    "Buy",
+    "매수",
+    "중립",
+    "보유",
+    "Hold",
+    "Sell",
+    "매도",
+  ];
+
+  for (const keyword of opinionKeywords) {
+    if (text.toLowerCase().includes(keyword.toLowerCase())) {
+      return keyword;
+    }
+  }
+
+  return "";
+}
+
+function findDate(text: string) {
+  const match =
+    text.match(/20[0-9]{2}[-./][0-9]{1,2}[-./][0-9]{1,2}/) ??
+    text.match(/20[0-9]{2}년\s*[0-9]{1,2}월\s*[0-9]{1,2}일/);
+
+  return match?.[0] ?? "";
+}
+
+function parsePrice(value?: string | null) {
+  if (!value) return null;
+
+  const parsed = Number(value.replace(/,/g, ""));
+
+  if (!Number.isFinite(parsed)) return null;
+
+  return Math.round(parsed);
 }
 
 function makeConsensusComparison(
   appTargetPrice?: number | null,
-  averageTarget?: number | null,
-  highTarget?: number | null,
-  lowTarget?: number | null,
+  averageTargetPrice?: number | null,
+  highTargetPrice?: number | null,
+  lowTargetPrice?: number | null,
 ) {
-  if (!appTargetPrice || !averageTarget) {
+  if (!appTargetPrice || !averageTargetPrice) {
     return {
       title: "컨센서스 대기",
-      description: "앱 추정가와 컨센서스 평균목표가가 모두 있어야 비교할 수 있습니다.",
+      description:
+        "앱 추정가와 컨센서스 평균 목표가가 모두 있어야 비교할 수 있습니다.",
       gapText: "데이터 없음",
     };
   }
 
-  const gapRate = ((averageTarget - appTargetPrice) / appTargetPrice) * 100;
+  const gapRate = ((averageTargetPrice - appTargetPrice) / appTargetPrice) * 100;
   const rangeRate =
-    highTarget && lowTarget && averageTarget > 0
-      ? ((highTarget - lowTarget) / averageTarget) * 100
+    highTargetPrice && lowTargetPrice && averageTargetPrice > 0
+      ? ((highTargetPrice - lowTargetPrice) / averageTargetPrice) * 100
       : null;
 
   if (gapRate >= 3) {
     return {
       title: "앱 추정가가 보수적",
-      description: "컨센서스 평균목표가가 앱 추정가보다 높습니다. 시장 기대치는 앱 추정가보다 우호적인 편입니다.",
+      description:
+        "컨센서스 평균 목표가가 앱 추정가보다 높습니다. 시장 기대치는 앱 추정가보다 우호적으로 볼 수 있습니다.",
       gapText: `+${gapRate.toFixed(2)}%`,
     };
   }
@@ -409,72 +488,90 @@ function makeConsensusComparison(
   if (gapRate <= -3) {
     return {
       title: "앱 추정가 과대 여부 확인",
-      description: "앱 추정가가 컨센서스 평균보다 높습니다. 과대 추정 가능성과 보수 조정 필요성을 확인해야 합니다.",
+      description:
+        "앱 추정가가 컨센서스 평균보다 높습니다. 과대 추정 가능성과 보수 조정 필요성을 확인해야 합니다.",
       gapText: `${gapRate.toFixed(2)}%`,
     };
   }
 
   return {
-    title: rangeRate != null && rangeRate >= 25 ? "평균 근접 · 의견 차이 있음" : "컨센서스와 근접",
+    title:
+      rangeRate != null && rangeRate >= 25
+        ? "평균은 근접 · 의견 차이 큼"
+        : "컨센서스와 근접",
     description:
       rangeRate != null && rangeRate >= 25
         ? "앱 추정가와 컨센서스 평균은 비슷하지만 최고·최저 목표가 차이가 커 시장 의견 차이가 있는 편입니다."
-        : "앱 추정가와 컨센서스 평균목표가가 비교적 가까운 편입니다.",
+        : "앱 추정가와 컨센서스 평균 목표가가 비교적 가까운 편입니다.",
     gapText: `${gapRate >= 0 ? "+" : ""}${gapRate.toFixed(2)}%`,
   };
 }
 
-function parseDateValue(value: unknown) {
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return value.toISOString().slice(0, 10);
+function readConsensus(key: string): ConsensusData | null {
+  if (!key || typeof window === "undefined") return null;
+
+  try {
+    const raw = window.localStorage.getItem(key);
+
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as ConsensusData;
+
+    if (!parsed || typeof parsed !== "object") return null;
+
+    return {
+      ...EMPTY_CONSENSUS,
+      ...parsed,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function makeStorageKey(symbol?: string | null, name?: string | null) {
+  const normalizedSymbol = (symbol || "").trim().toUpperCase();
+
+  if (normalizedSymbol) {
+    return `${CONSENSUS_STORAGE_PREFIX}:${normalizedSymbol}`;
   }
 
-  if (typeof value === "number" && Number.isFinite(value)) {
-    const parsed = XLSX.SSF.parse_date_code(value);
+  const normalizedName = (name || "").trim();
 
-    if (parsed) {
-      return `${parsed.y}-${String(parsed.m).padStart(2, "0")}-${String(parsed.d).padStart(2, "0")}`;
-    }
+  if (normalizedName) {
+    return `${CONSENSUS_STORAGE_PREFIX}:NAME:${normalizedName}`;
   }
 
-  const text = String(value ?? "").trim();
-  const normalized = text.replace(/[./]/g, "-");
-  const match = normalized.match(/^(20\d{2})-(\d{1,2})-(\d{1,2})$/);
-
-  if (!match) return "";
-
-  return `${match[1]}-${match[2].padStart(2, "0")}-${match[3].padStart(2, "0")}`;
-}
-
-function parseNumber(value: unknown) {
-  if (value == null || value === "") return null;
-
-  const cleaned = String(value).replaceAll(",", "").replace(/[^0-9.-]/g, "").trim();
-  const numeric = Number(cleaned);
-
-  return Number.isFinite(numeric) ? Math.round(numeric) : null;
-}
-
-function parseInteger(value: unknown) {
-  const numeric = parseNumber(value);
-  return numeric == null ? null : Math.trunc(numeric);
-}
-
-function parseText(value: unknown) {
-  const text = String(value ?? "").trim();
-  return text || null;
-}
-
-function normalizeSymbol(value?: unknown) {
-  return String(value ?? "").trim().toUpperCase();
+  return `${CONSENSUS_STORAGE_PREFIX}:CURRENT`;
 }
 
 function formatPrice(value?: number | null) {
   if (value == null || Number.isNaN(value)) return "데이터 없음";
+
   return `${new Intl.NumberFormat("ko-KR").format(value)}원`;
 }
 
 function formatCount(value?: number | null) {
   if (value == null || Number.isNaN(value)) return "데이터 없음";
-  return `${new Intl.NumberFormat("ko-KR").format(value)}개`;
+
+  return `${value}개`;
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return "저장 전";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return value;
+
+  return new Intl.DateTimeFormat("ko-KR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

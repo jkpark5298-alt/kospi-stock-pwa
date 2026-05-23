@@ -209,22 +209,6 @@ export type TargetBasis = {
   adjustments: string[];
 };
 
-export type ConsensusTarget = {
-  symbol: string;
-  name: string | null;
-  baseDate: string;
-  averageTarget: number | null;
-  highTarget: number | null;
-  lowTarget: number | null;
-  opinion: string | null;
-  brokerCount: number | null;
-  reportCount: number | null;
-  source: string | null;
-  memo: string | null;
-  uploadedFileName?: string | null;
-  updatedAt?: string | null;
-};
-
 export type ValuationTargetRange = {
   epsTarget: number | null;
   bpsTarget: number | null;
@@ -269,7 +253,7 @@ export type CompositeScore = {
     technicalTargetRange: TargetPriceRange | null;
     targetBasis: TargetBasis | null;
     supplyAdjustedTarget: number | null;
-    consensusTarget: number | null;
+    consensusTarget: null;
     riskLine: number | null;
     valuationTargetRange?: ValuationTargetRange | null;
     finalTargetRange?: TargetPriceRange | null;
@@ -310,7 +294,6 @@ export type StockResponse = {
   earningsGrowth?: EarningsGrowthData;
   supply?: SupplyData;
   score?: CompositeScore;
-  consensus?: ConsensusTarget | null;
   quant?: QuantModelResult;
   cached?: boolean;
   cacheSource?: string;
@@ -328,4 +311,3 @@ export type StockResponse = {
     source?: string;
   };
 };
-
