@@ -762,7 +762,11 @@ export default function HomePage() {
   function handleSelectWatchlist(item: string) {
     setSymbol(item);
     fetchStock(item, range);
-  }
+  }  const kisUsedCalls = Math.max(0, 100 - kisRemainingCalls);
+  const kisUsageTone =
+    kisRemainingCalls <= 0 ? "danger" : kisRemainingCalls <= 30 ? "warning" : "normal";
+
+
 
   const chartData = data?.chartData ?? [];
 
@@ -820,6 +824,24 @@ export default function HomePage() {
               >
                 관심종목 저장
               </button>
+            </div>
+
+                        <div className={`top-kis-usage-card kis-usage-${kisUsageTone}`}>
+              <div>
+                <span>KIS API 잔여 호출</span>
+                <strong>
+                  {kisSyncCode
+                    ? `${kisRemainingCalls} / 100회 남음`
+                    : "동기화 코드 필요"}
+                </strong>
+                <em>
+                  {kisSyncCode
+                    ? `오늘 사용 ${kisUsedCalls}회 · 동기화 코드: ${kisSyncCode}`
+                    : "예측 대시보드에서 동기화 코드를 저장하면 호출 수를 표시합니다."}
+                </em>
+              </div>
+              {kisUsageLoading ? <small>조회 중...</small> : null}
+              {kisUsageError ? <small>{kisUsageError}</small> : null}
             </div>
 
             <StockIdentity data={data} inputSymbol={symbol} />
