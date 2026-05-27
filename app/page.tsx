@@ -1289,40 +1289,31 @@ function SectionGroup({
   description: string;
   children: ReactNode;
 }) {
+  const isDetail = eyebrow.toUpperCase().startsWith("DETAIL");
+
+  if (isDetail) {
+    return (
+      <details className="section-group detail-accordion">
+        <summary className="section-heading detail-accordion-summary">
+          <div>
+            <p className="eyebrow">{eyebrow}</p>
+            <h2>{title}</h2>
+            <p>{description}</p>
+          </div>
+          <span className="detail-accordion-action">세부 보기</span>
+        </summary>
+
+        <div className="detail-accordion-content">{children}</div>
+      </details>
+    );
+  }
+
   return (
-    <section
-      style={{
-        display: "grid",
-        gap: 16,
-        marginTop: 28,
-      }}
-    >
-      <div
-        className="card"
-        style={{
-          padding: 20,
-          border: "1px solid #dbe7ff",
-          background:
-            "linear-gradient(135deg, rgba(239,246,255,0.9), rgba(255,255,255,0.95))",
-        }}
-      >
-        <p
-          className="eyebrow"
-          style={{
-            marginBottom: 6,
-          }}
-        >
-          {eyebrow}
-        </p>
-        <h2
-          className="section-title"
-          style={{
-            marginBottom: 8,
-          }}
-        >
-          {title}
-        </h2>
-        <p className="notice-text">{description}</p>
+    <section className="section-group">
+      <div className="section-heading">
+        <p className="eyebrow">{eyebrow}</p>
+        <h2>{title}</h2>
+        <p>{description}</p>
       </div>
 
       {children}
