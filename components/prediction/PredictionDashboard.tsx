@@ -65,6 +65,7 @@ export default function PredictionDashboard({
   );
   const overallStats = calculatePredictionStats(symbolRecords);
   const preview = createPredictionPreview(data);
+  const dailyPredictionRows = buildDailyPredictionRows(symbolRecords, data);
   const latestClose = getLatestClose(data?.chartData);
   const priceGap =
     data?.currentPrice != null && latestClose != null
@@ -227,34 +228,28 @@ export default function PredictionDashboard({
             <thead>
               <tr>
                 <th>예측일</th>
-                <th>구간</th>
                 <th>당시가</th>
-                <th>예상가</th>
-                <th>실제가</th>
-                <th>오차율</th>
-                <th>결과</th>
+                <th>5일 예상가</th>
+                <th>20일 예상가</th>
+                <th>60일 예상가</th>
+                <th>검증 상태</th>
               </tr>
             </thead>
             <tbody>
-              {buildPredictionRows(symbolRecords)
+              {dailyPredictionRows
                 .slice(0, 12)
                 .map((row) => (
                   <tr key={row.id}>
                     <td>{formatDateTimeLabel(row.predictedAt)}</td>
-                    <td>{row.horizonLabel}</td>
                     <td>{formatPrice(row.currentPrice)}</td>
-                    <td>{formatPrice(row.expectedPrice)}</td>
-                    <td>
-                      {row.actualPrice == null
-                        ? "대기중"
-                        : formatPrice(row.actualPrice)}
-                    </td>
-                    <td>{formatErrorRate(row.errorRate)}</td>
+                    <td>{formatPredictionCell(row.results["5d"])}</td>
+                    <td>{formatPredictionCell(row.results["20d"])}</td>
+                    <td>{formatPredictionCell(row.results["60d"])}</td>
                     <td>
                       <span
-                        className={`prediction-result ${getPredictionResultTone(row.directionHit)}`}
+                        className={`prediction-result ${getDailyPredictionTone(row.results)}`}
                       >
-                        {formatPredictionResult(row.directionHit)}
+                        {formatDailyPredictionResult(row.results)}
                       </span>
                     </td>
                   </tr>
@@ -264,7 +259,7 @@ export default function PredictionDashboard({
 
           {symbolRecords.length === 0 ? (
             <p className="muted-text prediction-empty-text">
-              아직 저장된 예측 기록이 없습니다. 분석 결과가 표시되면 현재 예측값을 저장해 주세요.
+              아직 저장된 예측 기록은 없습니다. 위 표는 현재 분석값 미리보기이며, 저장 버튼을 누르면 Supabase 기록으로 남습니다.
             </p>
           ) : null}
         </div>
@@ -391,6 +386,69 @@ function calculatePredictionStats(
       : null,
     avgErrorRate: avgErrorRate == null ? null : Number(avgErrorRate.toFixed(2)),
   };
+}
+
+function buildDailyPredictionRows(
+  records: PredictionRecord[],
+  data: StockResponse | null,
+) {
+  const savedRows = records.map((record) => ({
+    id: record.id,
+    predictedAt: record.predictedAt,
+    currentPrice: record.currentPrice,
+    results: record.results,
+    isPreview: false,
+  }));
+
+  if (savedRows.length > 0) return savedRows;
+
+  const previewRow = buildPreviewPredictionRow(data);
+  return previewRow ? [previewRow] : [];
+}
+
+function buildPreviewPredictionRow(data: StockResponse | null) {
+  if (!data?.symbol || data.currentPrice == null) return null;
+
+  const preview = createPredictionPreview(data);
+
+  return {
+    id: `preview-${data.symbol}`,
+    predictedAt: new Date().toISOString(),
+    currentPrice: data.currentPrice,
+    results: preview.results,
+    isPreview: true,
+  };
+}
+
+function formatPredictionCell(result?: PredictionResult | null) {
+  if (!result) return "데이터 없음";
+  const expectedPrice = formatPrice(result.expectedPrice);
+
+  if (result.actualPrice == null) {
+    return `${expectedPrice} / 대기`;
+  }
+
+  return `${expectedPrice} / 실제 ${formatPrice(result.actualPrice)} / 오차 ${formatErrorRate(result.errorRate)}`;
+}
+
+function getDailyPredictionTone(results: Record<PredictionHorizon, PredictionResult>) {
+  const values = PREDICTION_HORIZONS.map((item) => results[item.key]).filter(Boolean);
+  const verified = values.filter((result) => result.directionHit != null);
+
+  if (!verified.length) return "waiting";
+
+  const hitCount = verified.filter((result) => result.directionHit).length;
+  return hitCount >= Math.ceil(verified.length / 2) ? "hit" : "miss";
+}
+
+function formatDailyPredictionResult(results: Record<PredictionHorizon, PredictionResult>) {
+  const values = PREDICTION_HORIZONS.map((item) => results[item.key]).filter(Boolean);
+  const verified = values.filter((result) => result.directionHit != null);
+
+  if (!verified.length) return "대기";
+
+  const hitCount = verified.filter((result) => result.directionHit).length;
+  return `검증 ${verified.length}개 · 적중 ${hitCount}개`;
 }
 
 function buildPredictionRows(records: PredictionRecord[]) {

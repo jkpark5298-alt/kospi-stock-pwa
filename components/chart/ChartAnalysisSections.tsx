@@ -31,8 +31,28 @@ export default function ChartAnalysisSections({ data, rows }: Props) {
     latestRow?.bbLower,
   );
 
-  return (
+    const technicalSummary = makeTechnicalSummary(data, latestRow, bbStatus, obvTrend);
+return (
     <>
+      <section className="data-section">
+        <Card>
+          <SectionTitleSmall>기술적 기준 종합 해석</SectionTitleSmall>
+          <div className="target-basis-header">
+            <span>차트 기준 결론</span>
+            <strong>{technicalSummary.overall}</strong>
+          </div>
+          <p className="target-basis-summary" style={{ marginTop: 12 }}>
+            {technicalSummary.summary}
+          </p>
+          <div className="metric-list" style={{ marginTop: 12 }}>
+            <MetricRow label="RSI14" value={formatNumber(latestRow?.rsi14)} />
+            <MetricRow label="MACD" value={formatNumber(latestRow?.macd)} />
+            <MetricRow label="볼린저밴드" value={bbStatus} />
+            <MetricRow label="OBV 추세" value={obvTrend} />
+          </div>
+        </Card>
+      </section>
+
       <section className="chart-stack">
         <Card className="chart-card">
           <ChartHeader
@@ -162,6 +182,39 @@ export default function ChartAnalysisSections({ data, rows }: Props) {
       </section>
     </>
   );
+}
+
+function makeTechnicalSummary(
+  data: StockResponse | null,
+  latestRow: ChartRow | null,
+  bbStatus: string,
+  obvTrend: string,
+) {
+  const signal = data?.signalSummary || "데이터 없음";
+  const rsi = typeof latestRow?.rsi14 === "number" ? latestRow.rsi14 : null;
+  const macd = typeof latestRow?.macd === "number" ? latestRow.macd : null;
+  const signalLine = typeof latestRow?.signal === "number" ? latestRow.signal : null;
+
+  const rsiText =
+    rsi == null
+      ? "RSI 데이터는 아직 부족합니다."
+      : rsi >= 70
+        ? "RSI가 70 이상으로 단기 과열 여부를 확인해야 합니다."
+        : rsi <= 30
+          ? "RSI가 30 이하로 단기 과매도 구간을 참고할 수 있습니다."
+          : "RSI는 중립권에 있어 과열·과매도 신호는 제한적입니다.";
+
+  const macdText =
+    macd == null || signalLine == null
+      ? "MACD 데이터는 아직 부족합니다."
+      : macd >= signalLine
+        ? "MACD가 Signal보다 높아 단기 흐름은 상대적으로 우호적입니다."
+        : "MACD가 Signal보다 낮아 단기 모멘텀 약화 가능성을 확인해야 합니다.";
+
+  return {
+    overall: signal,
+    summary: `기술적 기준은 현재가, 이동평균, RSI, MACD, 볼린저밴드, OBV를 묶어 본 차트 중심 해석입니다. ${rsiText} ${macdText} 볼린저밴드는 ${bbStatus}, OBV 흐름은 ${obvTrend}로 확인됩니다.`,
+  };
 }
 
 function Card({

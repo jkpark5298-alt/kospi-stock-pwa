@@ -286,13 +286,7 @@ export default function CurrentStockSummaryCard({ data }: Props) {
           label="추정가 도달률"
           value={formatTargetProgress(targetProgress)}
         />
-        <MetricRow
-          label="당일 기준 도달률"
-          value={`${formatTargetProgress(dailyTargetProgress)} · ${formatSignedNumber(
-            dailyUpsidePrice,
-          )} / ${formatUpside(dailyUpsidePercent)}`}
-        />
-        <MetricRow
+<MetricRow
           label="위험 기준선"
           value={`${formatNumber(summaryRange?.riskLine)} / ${formatUpside(
             summaryRange?.riskDownsidePercent,
@@ -320,134 +314,9 @@ export default function CurrentStockSummaryCard({ data }: Props) {
         />
       </div>
 
-      <div className="target-basis-box" style={{ marginTop: 16 }}>
-        <div className="target-basis-header">
-          <span>종합 해석</span>
-          <strong>{quickSummary.overall}</strong>
-        </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-            gap: 10,
-            marginTop: 12,
-          }}
-        >
-          {quickSummary.cards.map((card) => (
-            <div className="target-metric-card" key={card.title}>
-              <span>
-                {card.icon} {card.title}
-              </span>
-              <strong className={card.tone}>{card.label}</strong>
-              <em className={card.tone}>{card.detail}</em>
-            </div>
-          ))}
-        </div>
 
-        <p className="target-basis-summary" style={{ marginTop: 12 }}>
-          {quickSummary.summary}
-        </p>
-      </div>
 
-      <div className="target-basis-box" style={{ marginTop: 16 }}>
-        <div className="target-basis-header">
-          <span>기술적 분석 요약</span>
-          <strong>{data?.signalSummary || "데이터 없음"}</strong>
-        </div>
-        <p className="target-basis-summary">
-          기술적 분석은 이동평균, RSI, MACD, 볼린저밴드 등 차트 지표를
-          바탕으로 현재 주가 흐름과 매수·매도 참고 구간을 요약한 신호입니다.
-          실제 판단은 추정가 산정, 수급, 실적, 공시, 시장 상황을 함께 확인해야 합니다.
-        </p>
-
-        <div className="target-basis-adjustments" style={{ marginTop: 12 }}>
-          <p>
-            <strong>상승 강세</strong> · 상승 흐름 우위, 단기 과열 여부 확인
-          </p>
-          <p>
-            <strong>중립</strong> · 방향성 확인 필요, 관망 구간
-          </p>
-          <p>
-            <strong>약세</strong> · 하락 압력 우위, 반등 확인 필요
-          </p>
-          <p>
-            <strong>단기 과열</strong> · 추격 매수 신중, 변동성 확인
-          </p>
-          <p>
-            <strong>조정 후 반등</strong> · 매수 관심 구간 가능성
-          </p>
-        </div>
-      </div>
-
-      <div className="target-basis-box" style={{ marginTop: 16 }}>
-        <div className="target-basis-header">
-          <span>당일 기준 추정가 설정</span>
-          <strong>{formatDailyTargetSource(dailyTarget)}</strong>
-        </div>
-
-        <p className="target-basis-summary">
-          당일 기준 추정가: {formatNumber(dailyTarget?.targetPrice)} · 저장
-          기준가: {formatNumber(dailyTarget?.basisPrice)} · 저장 시각:{" "}
-          {formatDateTime(dailyTarget?.savedAt)}
-        </p>
-
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            flexWrap: "wrap",
-            alignItems: "center",
-            marginTop: 12,
-          }}
-        >
-          <input
-            className="form-control"
-            value={manualTargetInput}
-            inputMode="decimal"
-            onChange={(event) =>
-              setManualTargetInput(formatManualTargetInput(event.target.value))
-            }
-            placeholder="직접 입력 예: 288,000"
-            style={{ maxWidth: 220 }}
-          />
-          <button
-            className="button secondary-button"
-            type="button"
-            onClick={handleSaveManualDailyTarget}
-            disabled={!summaryRange}
-          >
-            직접 입력 저장
-          </button>
-          <button
-            className="button secondary-button"
-            type="button"
-            onClick={handleSaveCurrentAsDailyTarget}
-            disabled={!summaryRange}
-          >
-            현재 조회 추정가로 저장
-          </button>
-          <button
-            className="button secondary-button"
-            type="button"
-            onClick={handleResetDailyTarget}
-            disabled={!summaryRange}
-          >
-            오늘 기준 초기화
-          </button>
-        </div>
-
-        <div className="target-basis-adjustments">
-          <p>
-            첫 조회 시 당일 기준 추정가가 자동 저장됩니다. 이후에는 직접
-            입력하거나 현재 조회 추정가로 다시 저장할 수 있습니다.
-          </p>
-          <p>
-            추정가는 조회할 때마다 바뀔 수 있고, 당일 기준 추정가는 같은 날짜의
-            평가 기준으로 유지됩니다.
-          </p>
-        </div>
-      </div>
 
       <p className="notice-text">
         추정가 산정 방식은 Summary의 별도 영역에서 하나로 확인합니다. 이 요약
@@ -949,6 +818,25 @@ function parseManualTargetInput(value: string) {
   const parsed = Number(value.replace(/[\s,]/g, ""));
 
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatDailyTargetComparison(
+  dailyTarget: DailyTargetSnapshot | null,
+  summaryRange: SummaryRange | null,
+  dailyTargetProgress?: number | null,
+) {
+  if (!dailyTarget || !summaryRange) return "데이터 없음";
+
+  const gap = summaryRange.currentPrice - dailyTarget.targetPrice;
+  const direction =
+    gap > 0 ? "추정가보다 높음" : gap < 0 ? "추정가보다 낮음" : "추정가와 동일";
+  const absoluteGap = Math.abs(gap);
+
+  return `${formatTargetProgress(dailyTargetProgress)} · 기준 ${formatNumber(
+    dailyTarget.targetPrice,
+  )} / 현재 ${formatNumber(summaryRange.currentPrice)} / ${formatNumber(
+    absoluteGap,
+  )}원 ${direction}`;
 }
 
 function formatTargetProgress(value?: number | null) {

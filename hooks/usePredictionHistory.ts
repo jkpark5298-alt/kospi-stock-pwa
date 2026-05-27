@@ -47,6 +47,40 @@ function addDays(date: Date, days: number) {
   return nextDate;
 }
 
+function makePredictionDayKey(value?: string | null) {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return new Date().toISOString().slice(0, 10);
+  const koreaTime = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+  return koreaTime.toISOString().slice(0, 10);
+}
+
+function makeDailyPredictionId(syncCode: string, symbol: string, dayKey: string) {
+  const safeSyncCode = syncCode.trim().replace(/[^a-zA-Z0-9_-]/g, "-");
+  const safeSymbol = normalizeSymbol(symbol).replace(/[^A-Z0-9._-]/g, "-");
+  return `${safeSyncCode}-${safeSymbol}-${dayKey}`;
+}
+
+function mergeDailyPredictionRecords(records: PredictionRecord[]) {
+  const map = new Map<string, PredictionRecord>();
+
+  for (const record of records) {
+    const key = [
+      record.syncCode,
+      normalizeSymbol(record.symbol),
+      makePredictionDayKey(record.predictedAt),
+    ].join("|");
+
+    const previous = map.get(key);
+    if (!previous || new Date(record.predictedAt).getTime() >= new Date(previous.predictedAt).getTime()) {
+      map.set(key, record);
+    }
+  }
+
+  return Array.from(map.values()).sort(
+    (a, b) => new Date(b.predictedAt).getTime() - new Date(a.predictedAt).getTime(),
+  );
+}
+
 function roundPrice(value: number | null) {
   if (value == null || !Number.isFinite(value)) return null;
 
@@ -115,10 +149,11 @@ function createPredictionRecord(
   const preview = createPredictionPreview(data);
 
   return {
-    id:
-      typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    id: makeDailyPredictionId(
+      syncCode,
+      normalizeSymbol(data.symbol),
+      makePredictionDayKey(new Date().toISOString()),
+    ),
     syncCode,
     symbol: normalizeSymbol(data.symbol),
     name: data.name || "",
@@ -225,7 +260,7 @@ export function usePredictionHistory(syncCode: string) {
         const json = await requestPredictions(normalizedSyncCode, {
           symbol,
         });
-        const nextRecords = json.records || [];
+        const nextRecords = mergeDailyPredictionRecords(json.records || []);
         setRecords(nextRecords);
         return nextRecords;
       } catch (requestError) {
@@ -262,7 +297,7 @@ export function usePredictionHistory(syncCode: string) {
         record,
       });
       const savedRecord = json.record || record;
-      setRecords((prev) => [savedRecord, ...prev]);
+      setRecords((prev) => mergeDailyPredictionRecords([savedRecord, ...prev]));
       return savedRecord;
     } catch (requestError) {
       const message =
