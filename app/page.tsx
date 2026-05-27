@@ -1278,6 +1278,12 @@ function SectionTitleSmall({ children }: { children: ReactNode }) {
   return <h3 className="section-title small">{children}</h3>;
 }
 
+function getDetailIdFromEyebrow(eyebrow: string) {
+  const matched = String(eyebrow ?? "").match(/DETAIL\s*(\d+)/i);
+
+  return matched ? `detail-${matched[1]}` : null;
+}
+
 function SectionGroup({
   eyebrow,
   title,
@@ -1290,10 +1296,11 @@ function SectionGroup({
   children: ReactNode;
 }) {
   const isDetail = eyebrow.toUpperCase().startsWith("DETAIL");
+  const detailId = getDetailIdFromEyebrow(eyebrow);
 
   if (isDetail) {
     return (
-      <details className="section-group detail-accordion">
+      <details className="section-group detail-accordion" data-detail-id={detailId ?? undefined} data-detail-title={title}>
         <summary className="section-heading detail-accordion-summary">
           <div>
             <p className="eyebrow">{eyebrow}</p>
