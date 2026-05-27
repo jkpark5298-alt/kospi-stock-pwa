@@ -253,7 +253,7 @@ export type CompositeScore = {
     technicalTargetRange: TargetPriceRange | null;
     targetBasis: TargetBasis | null;
     supplyAdjustedTarget: number | null;
-    consensusTarget: null;
+    consensusTarget: number | null;
     riskLine: number | null;
     valuationTargetRange?: ValuationTargetRange | null;
     finalTargetRange?: TargetPriceRange | null;

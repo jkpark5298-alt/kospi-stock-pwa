@@ -82,6 +82,29 @@ type KisFundamentalsPayload = {
   error?: string;
 };
 
+type ConsensusApiRecord = {
+  symbol?: string | null;
+  name?: string | null;
+  baseDate?: string | null;
+  averageTarget?: number | null;
+  highTarget?: number | null;
+  lowTarget?: number | null;
+  opinion?: string | null;
+  brokerCount?: number | null;
+  reportCount?: number | null;
+  source?: string | null;
+  memo?: string | null;
+  updatedAt?: string | null;
+  createdAt?: string | null;
+};
+
+type ConsensusApiPayload = {
+  ok?: boolean;
+  record?: ConsensusApiRecord | null;
+  error?: string;
+};
+
+
 type EarningsGrowthSource = "none" | "manual" | "kis" | "dart" | "consensus";
 
 type EarningsGrowthMode = "auto" | "manual";
@@ -244,7 +267,7 @@ type CompositeScore = {
     technicalTargetRange: TargetPriceRange | null;
     targetBasis: TargetBasis | null;
     supplyAdjustedTarget: number | null;
-    consensusTarget: null;
+    consensusTarget: number | null;
     riskLine: number | null;
     valuationTargetRange?: ValuationTargetRange | null;
     finalTargetRange?: TargetPriceRange | null;
@@ -582,10 +605,12 @@ export default function HomePage() {
         return;
       }
 
-      const enrichedJson = await refreshKisFundamentalsAfterAnalyze(
+      let enrichedJson = await refreshKisFundamentalsAfterAnalyze(
         json,
         finalSymbol,
       );
+
+      enrichedJson = await refreshConsensusAfterAnalyze(enrichedJson, finalSymbol);
 
       const restored = getStoredManualEarnings(
         enrichedJson.symbol,
@@ -920,7 +945,13 @@ export default function HomePage() {
           <ConsensusInputSection
             symbol={data?.symbol}
             name={data?.name}
-            appTargetPrice={data?.score?.targetPrice?.technicalTargetRange?.baseTarget}
+            appTargetPrice={
+              data?.score?.targetPrice?.finalTargetRange?.baseTarget ??
+              data?.score?.targetPrice?.technicalTargetRange?.baseTarget
+            }
+                      currentPrice={data?.currentPrice}
+            targetPrice={data?.score?.targetPrice}
+            fundamentals={data?.fundamentals}
           />
         </SectionGroup>
 
@@ -963,6 +994,46 @@ export default function HomePage() {
       </div>
     </main>
   );
+}
+
+
+async function refreshConsensusAfterAnalyze(
+  stock: StockResponse,
+  requestedSymbol: string,
+): Promise<StockResponse> {
+  const targetSymbol = stock.symbol || stock.rawSymbol || requestedSymbol;
+
+  if (!targetSymbol || typeof window === "undefined") {
+    return stock;
+  }
+
+  try {
+    const response = await fetch(
+      `/api/consensus?symbol=${encodeURIComponent(targetSymbol)}`,
+      { cache: "no-store" },
+    );
+    const payload = (await response.json()) as ConsensusApiPayload;
+    const consensusTarget = toNullableNumber(payload.record?.averageTarget);
+
+    if (!response.ok || !payload.ok || consensusTarget == null || consensusTarget <= 0) {
+      return stock;
+    }
+
+    return {
+      ...stock,
+      score: stock.score
+        ? {
+            ...stock.score,
+            targetPrice: {
+              ...stock.score.targetPrice,
+              consensusTarget,
+            },
+          }
+        : stock.score,
+    };
+  } catch {
+    return stock;
+  }
 }
 
 async function refreshKisFundamentalsAfterAnalyze(

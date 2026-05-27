@@ -151,7 +151,13 @@ export default function CurrentStockSummaryCard({ data }: Props) {
     writeDailyTargetSnapshot(dailyTargetKey, next);
     setDailyTarget(next);
     setManualTargetInput(formatManualTargetInput(String(next.targetPrice)));
-  }, [dailyTargetKey, data?.symbol, summaryRange, todayKey]);
+  }, [
+    dailyTargetKey,
+    data?.symbol,
+    summaryRange?.baseTarget,
+    summaryRange?.currentPrice,
+    todayKey,
+  ]);
 
   const targetProgress =
     summaryRange && summaryRange.baseTarget > 0

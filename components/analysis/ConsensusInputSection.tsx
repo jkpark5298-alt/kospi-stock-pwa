@@ -53,6 +53,9 @@ type Props = {
   symbol?: string | null;
   name?: string | null;
   appTargetPrice?: number | null;
+  currentPrice?: number | null;
+  targetPrice?: any | null;
+  fundamentals?: any | null;
 };
 
 const CONSENSUS_STORAGE_PREFIX = "kospi-consensus-data";
@@ -75,6 +78,9 @@ export default function ConsensusInputSection({
   symbol,
   name,
   appTargetPrice,
+  currentPrice,
+  targetPrice,
+  fundamentals,
 }: Props) {
   const storageKey = useMemo(() => makeStorageKey(symbol, name), [symbol, name]);
   const normalizedSymbol = useMemo(() => normalizeSymbol(symbol), [symbol]);
@@ -116,8 +122,16 @@ export default function ConsensusInputSection({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [normalizedSymbol]);
 
+  const computedAppTargetPrice =
+    calculateSummaryAppTargetPrice({
+      currentPrice,
+      targetPrice,
+      fundamentals,
+      consensusAverageTargetPrice: consensus.averageTargetPrice,
+    }) ?? appTargetPrice;
+
   const comparison = makeConsensusComparison(
-    appTargetPrice,
+    computedAppTargetPrice,
     consensus.averageTargetPrice,
     consensus.highTargetPrice,
     consensus.lowTargetPrice,
@@ -442,7 +456,7 @@ export default function ConsensusInputSection({
           <p className="target-basis-summary">{comparison.description}</p>
 
           <div className="target-basis-adjustments">
-            <p>앱 추정가: {formatPrice(appTargetPrice)}</p>
+            <p>앱 추정가: {formatPrice(computedAppTargetPrice)}</p>
             <p>컨센서스 평균: {formatPrice(consensus.averageTargetPrice)}</p>
             <p>차이: {comparison.gapText}</p>
             <p>저장 시각: {formatDateTime(savedAt)}</p>
@@ -808,6 +822,153 @@ function parsePrice(value?: string | null) {
   if (!Number.isFinite(parsed)) return null;
 
   return Math.round(parsed);
+}
+
+function calculateSummaryAppTargetPrice({
+  currentPrice,
+  targetPrice,
+  fundamentals,
+  consensusAverageTargetPrice,
+}: {
+  currentPrice?: number | null;
+  targetPrice?: any | null;
+  fundamentals?: any | null;
+  consensusAverageTargetPrice?: number | null;
+}) {
+  const range = targetPrice?.finalTargetRange ?? targetPrice?.technicalTargetRange ?? null;
+  const baseCurrentPrice = getEstimateNumber(currentPrice) ?? getEstimateNumber(range?.currentPrice) ?? null;
+  const technicalTarget = getConsensusTechnicalTarget(targetPrice);
+  const valuationTarget =
+    getEstimateNumber(targetPrice?.valuationTargetRange?.valuationTarget) ??
+    calculateConsensusValuationTarget(baseCurrentPrice, fundamentals);
+  const consensusTarget =
+    getEstimateNumber(targetPrice?.consensusTarget) ?? getEstimateNumber(consensusAverageTargetPrice);
+
+  return calculateConsensusEstimate({
+    technicalTarget,
+    valuationTarget,
+    consensusTarget,
+    targetPrice,
+  });
+}
+
+function calculateConsensusEstimate({
+  technicalTarget,
+  valuationTarget,
+  consensusTarget,
+  targetPrice,
+}: {
+  technicalTarget?: number | null;
+  valuationTarget?: number | null;
+  consensusTarget?: number | null;
+  targetPrice?: any | null;
+}) {
+  const hasTechnical = technicalTarget != null && Number.isFinite(technicalTarget);
+  const hasValuation = valuationTarget != null && Number.isFinite(valuationTarget);
+  const hasConsensus = consensusTarget != null && Number.isFinite(consensusTarget);
+
+  if (!hasTechnical && !hasValuation && !hasConsensus) return null;
+
+  const rawWeights = hasConsensus
+    ? {
+        technical: hasTechnical ? 0.4 : 0,
+        valuation: hasValuation ? 0.35 : 0,
+        consensus: 0.25,
+      }
+    : {
+        technical: hasTechnical ? 0.6 : 0,
+        valuation: hasValuation ? 0.4 : 0,
+        consensus: 0,
+      };
+
+  const totalWeight = rawWeights.technical + rawWeights.valuation + rawWeights.consensus;
+
+  const weights = {
+    technical: totalWeight > 0 ? rawWeights.technical / totalWeight : 0,
+    valuation: totalWeight > 0 ? rawWeights.valuation / totalWeight : 0,
+    consensus: totalWeight > 0 ? rawWeights.consensus / totalWeight : 0,
+  };
+
+  const basisAverage = roundConsensusPrice(
+    (technicalTarget ?? 0) * weights.technical +
+      (valuationTarget ?? 0) * weights.valuation +
+      (consensusTarget ?? 0) * weights.consensus,
+  );
+
+  const selectedMode = String(targetPrice?.selectedTargetMode ?? "");
+  const targetModes = Array.isArray(targetPrice?.targetModes) ? targetPrice.targetModes : [];
+  const modeResult =
+    targetModes.find((mode: any) => String(mode?.mode ?? "") === selectedMode) ??
+    targetModes[0] ??
+    null;
+  const quantAdjustment = modeResult?.quantAdjustment ?? {};
+  const quantPercent = getEstimateNumber(quantAdjustment.baseAdjustmentPercent) ?? 0;
+  const supplyPercent = getEstimateNumber(quantAdjustment.positiveAdjustmentPercent) ?? 0;
+  const riskPercent = getEstimateNumber(quantAdjustment.riskAdjustmentPercent) ?? 0;
+
+  const quantAmount = calculateConsensusAdjustmentAmount(basisAverage, quantPercent);
+  const supplyAmount = calculateConsensusAdjustmentAmount(basisAverage, supplyPercent);
+  const riskAmount = calculateConsensusAdjustmentAmount(basisAverage, riskPercent);
+  const totalAmount =
+    quantAmount != null && supplyAmount != null && riskAmount != null
+      ? roundConsensusPrice(quantAmount + supplyAmount + riskAmount)
+      : null;
+
+  return basisAverage != null && totalAmount != null ? roundConsensusPrice(basisAverage + totalAmount) : null;
+}
+
+function getConsensusTechnicalTarget(targetPrice?: any | null) {
+  const candidates = targetPrice?.targetBasis?.candidates;
+
+  if (Array.isArray(candidates)) {
+    const technicalCandidate = candidates.find((candidate: any) =>
+      String(candidate?.label ?? "").includes("기술"),
+    );
+
+    const value = getEstimateNumber(technicalCandidate?.value);
+    if (value != null) return value;
+  }
+
+  return getEstimateNumber(targetPrice?.technicalTargetRange?.baseTarget);
+}
+
+function calculateConsensusValuationTarget(currentPrice?: number | null, fundamentals?: any | null) {
+  if (!currentPrice || !fundamentals) return null;
+
+  const eps = getEstimateNumber(fundamentals.eps);
+  const per = getEstimateNumber(fundamentals.per);
+
+  return eps != null && eps > 0 && per != null && per > 0
+    ? roundConsensusPrice(eps * per * getConsensusPerAdjustment(per))
+    : null;
+}
+
+function getConsensusPerAdjustment(per: number) {
+  if (per <= 8) return 1.08;
+  if (per <= 15) return 1;
+  if (per <= 25) return 0.94;
+  return 0.88;
+}
+
+function calculateConsensusAdjustmentAmount(base?: number | null, percent?: number | null) {
+  if (base == null || percent == null || !Number.isFinite(base) || !Number.isFinite(percent)) return null;
+  return roundConsensusPrice(base * (percent / 100));
+}
+
+function roundConsensusPrice(value?: number | null) {
+  if (value == null || !Number.isFinite(value)) return null;
+  return Math.round(value / 10) * 10;
+}
+
+function getEstimateNumber(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+
+  if (typeof value === "string") {
+    const parsed = Number(value.replace(/,/g, "").trim());
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
 }
 
 function makeConsensusComparison(
