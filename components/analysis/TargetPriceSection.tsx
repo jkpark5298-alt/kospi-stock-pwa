@@ -58,10 +58,10 @@ export default function TargetPriceSection({ score, lastFetchedAt }: Props) {
       <Card>
         <div className="target-header">
           <div>
-            <SectionTitleSmall>참고 범위</SectionTitleSmall>
+            <SectionTitleSmall>추정가 참고</SectionTitleSmall>
             <p className="target-subtitle">
-              기준 범위는 Summary의 2안 추정가 산정 방식과 같은 계산식으로
-              맞춥니다. 보수·공격 범위와 위험 기준선은 매수·보유 판단을 돕는
+              추정가는 Summary의 2안 추정가 산정 방식과 같은 계산식으로
+              맞춥니다. 최저·최고 추정가와 위험 기준선은 매수·보유 판단을 돕는
               참고 구간입니다.
             </p>
           </div>
@@ -85,19 +85,19 @@ export default function TargetPriceSection({ score, lastFetchedAt }: Props) {
             tone="neutral"
           />
           <TargetMetricCard
-            title="보수 범위"
+            title="최저 추정가"
             value={formatNumber(range?.conservativeTarget)}
             subText={`현재가 대비 ${formatUpside(range?.conservativeUpsidePercent)}`}
             tone={getTargetTone(range?.conservativeUpsidePercent)}
           />
           <TargetMetricCard
-            title="기준 범위"
+            title="추정가"
             value={formatNumber(range?.baseTarget)}
             subText={`현재가 대비 ${formatUpside(range?.baseUpsidePercent)}`}
             tone={getTargetTone(range?.baseUpsidePercent)}
           />
           <TargetMetricCard
-            title="공격 범위"
+            title="최고 추정가"
             value={formatNumber(range?.aggressiveTarget)}
             subText={`현재가 대비 ${formatUpside(range?.aggressiveUpsidePercent)}`}
             tone={getTargetTone(range?.aggressiveUpsidePercent)}
@@ -105,13 +105,13 @@ export default function TargetPriceSection({ score, lastFetchedAt }: Props) {
           <TargetMetricCard
             title="도달률"
             value={formatTargetProgress(targetProgress)}
-            subText="현재가 / 기준 범위"
+            subText="현재가 / 추정가"
             tone={getTargetProgressTone(targetProgress)}
           />
           <TargetMetricCard
             title="남은 차이"
             value={formatSignedNumber(upsidePrice)}
-            subText={`기준 범위와 현재가 차이 ${formatUpside(range?.baseUpsidePercent)}`}
+            subText={`추정가와 현재가 차이 ${formatUpside(range?.baseUpsidePercent)}`}
             tone={getTargetTone(upsidePrice)}
           />
           <TargetMetricCard
@@ -129,7 +129,7 @@ export default function TargetPriceSection({ score, lastFetchedAt }: Props) {
 
         <p className="notice-text">
           추정가 숫자는 Summary의 2안 산정 방식과 같은 기준으로 표시합니다.
-          이 참고 범위는 매수·보유 판단을 돕기 위한 보조 구간입니다.
+          이 추정가 참고 구간은 매수·보유 판단을 돕기 위한 보조 구간입니다.
         </p>
       </Card>
     </section>
@@ -151,7 +151,7 @@ function TargetBasisMeta({
     <div className="target-basis-box" style={{ marginBottom: 16 }}>
       <div className="target-basis-header">
         <span>기준 정보</span>
-        <strong>{hasRange ? "현재 조회 시점 기준" : "참고 범위 대기"}</strong>
+        <strong>{hasRange ? "현재 조회 시점 기준" : "추정가 대기"}</strong>
       </div>
       <p className="target-basis-summary">
         조회 시각: {formatDateTime(lastFetchedAt)} · 기준 현재가:{" "}
@@ -318,9 +318,18 @@ function makeReferenceRange(
     1.35,
   );
 
-  const conservativeTarget =
+  const calculatedConservativeTarget =
     roundPrice(baseTarget * conservativeRatio) ?? baseTarget;
-  const aggressiveTarget = roundPrice(baseTarget * aggressiveRatio) ?? baseTarget;
+  const calculatedAggressiveTarget = roundPrice(baseTarget * aggressiveRatio) ?? baseTarget;
+
+  const conservativeTarget = Math.min(
+    calculatedConservativeTarget,
+    roundPrice(baseTarget * 0.95) ?? baseTarget,
+  );
+  const aggressiveTarget = Math.max(
+    calculatedAggressiveTarget,
+    roundPrice(baseTarget * 1.05) ?? baseTarget,
+  );
 
   const riskLine =
     getNumber(sourceRange?.riskLine) ?? roundPrice(currentPrice * 0.9) ?? currentPrice;
@@ -387,7 +396,7 @@ function calculateUpsidePercent(target: number, currentPrice: number) {
 
 function makeTargetComment(range?: ReferenceRange | null) {
   if (!range) {
-    return "분석 실행 후 참고 범위가 표시됩니다.";
+    return "분석 실행 후 추정가가 표시됩니다.";
   }
 
   const targetProgress =
@@ -395,15 +404,15 @@ function makeTargetComment(range?: ReferenceRange | null) {
   const upsidePrice = range.baseTarget - range.currentPrice;
 
   if (targetProgress != null && targetProgress >= 105) {
-    return `현재가가 기준 범위를 ${formatTargetProgress(
+    return `현재가가 추정가를 ${formatTargetProgress(
       targetProgress,
-    )} 수준으로 초과했습니다. 기준 범위 대비 ${formatSignedNumber(
+    )} 수준으로 초과했습니다. 추정가 대비 ${formatSignedNumber(
       upsidePrice,
     )} 차이로, 과열과 위험 기준선을 먼저 확인하는 것이 좋습니다.`;
   }
 
   if (targetProgress != null && targetProgress >= 97) {
-    return `현재가가 기준 범위의 ${formatTargetProgress(
+    return `현재가가 추정가의 ${formatTargetProgress(
       targetProgress,
     )} 수준입니다. 남은 차이는 ${formatSignedNumber(
       upsidePrice,
@@ -411,16 +420,16 @@ function makeTargetComment(range?: ReferenceRange | null) {
   }
 
   if (range.baseUpsidePercent > 0) {
-    return `기준 범위까지 ${formatUpside(
+    return `추정가까지 ${formatUpside(
       range.baseUpsidePercent,
     )}의 여력이 있습니다. 단, 위험 기준선과 Detail 4~5의 수급·위험 분석을 함께 확인해야 합니다.`;
   }
 
   if (range.baseUpsidePercent < 0) {
-    return "현재가가 기준 범위를 초과하고 있습니다. 단기 과열 여부와 위험 기준선을 먼저 확인하는 것이 좋습니다.";
+    return "현재가가 추정가를 초과하고 있습니다. 단기 과열 여부와 위험 기준선을 먼저 확인하는 것이 좋습니다.";
   }
 
-  return "현재가와 기준 범위가 가까운 수준입니다. 추가 판단은 Detail 영역의 기준가·수급·위험 분석을 함께 확인하세요.";
+  return "현재가와 추정가가 가까운 수준입니다. 추가 판단은 Detail 영역의 기준가·수급·위험 분석을 함께 확인하세요.";
 }
 
 function formatWeights(
