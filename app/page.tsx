@@ -917,103 +917,124 @@ export default function HomePage() {
           </section>
 
           <SummaryAbcOverviewSection data={data} />
-          <TargetPriceSection score={data?.score} lastFetchedAt={lastFetchedAt} />
+
+        {/* 추정가 세부 분석 확인 */}
+        <section className="detail-simple-panel" aria-label="추정가 세부 분석 확인">
+          <div className="detail-simple-heading">
+            <strong>추정가 세부 분석 확인</strong>
+          </div>
+
+          <div className="detail-simple-grid">
+            <SectionGroup
+                                  eyebrow="DETAIL 1"
+                                  title="A. 기술적 분석"
+                                  description=""
+                                >
+                                  <DetailCalculationEvidence kind="technical" data={data} />
+                        
+                                  <ChartAnalysisSections data={data} rows={chartData} />
+                        
+                                </SectionGroup>
+
+            <SectionGroup
+                                  eyebrow="DETAIL 2"
+                                  title="B. 실적 분석"
+                                  description=""
+                                >
+                                  <DetailCalculationEvidence kind="valuation" data={data} />
+                        
+                                  <ValuationBasisExplanation data={data} />
+                        
+                                  <FundamentalSnapshotSection
+                                    symbol={data?.symbol}
+                                    name={data?.name}
+                                    valuationTarget={data?.score?.targetPrice?.valuationTargetRange?.valuationTarget}
+                                    data={data}
+                                    lastFetchedAt={lastFetchedAt}
+                                  />
+                        
+                                  <EarningsGrowthSection
+                                    earningsGrowth={data?.earningsGrowth}
+                                    earningsGrowthMode={earningsGrowthMode}
+                                    manualInput={manualEarningsGrowth}
+                                    manualInputSavedAt={manualEarningsSavedAt}
+                                    onModeChange={handleEarningsGrowthModeChange}
+                                    onManualInputChange={setManualEarningsGrowth}
+                                    onSaveManualInput={handleSaveManualEarningsGrowth}
+                                    onApplyManualInput={handleApplyManualEarningsGrowth}
+                                    onClearManualInput={handleClearManualEarningsGrowth}
+                                  />
+                                </SectionGroup>
+
+            <SectionGroup
+                                  eyebrow="DETAIL 3"
+                                  title="C. 컨센서스"
+                                  description=""
+                                >
+                                  <DetailCalculationEvidence kind="consensus" data={data} />
+                        
+                                  <ConsensusInputSection
+                                    symbol={data?.symbol}
+                                    name={data?.name}
+                                    appTargetPrice={
+                                      data?.score?.targetPrice?.finalTargetRange?.baseTarget ??
+                                      data?.score?.targetPrice?.technicalTargetRange?.baseTarget
+                                    }
+                                              currentPrice={data?.currentPrice}
+                                    targetPrice={data?.score?.targetPrice}
+                                    fundamentals={data?.fundamentals}
+                                  />
+                                </SectionGroup>
+
+            <SectionGroup
+                                  eyebrow="DETAIL 4"
+                                  title="D. 수급 보정"
+                                  description=""
+                                >
+                                  <DetailCalculationEvidence kind="positive" data={data} />
+                        
+                                  <SupplyAnalysisSection data={data} />
+                                </SectionGroup>
+
+            <SectionGroup
+                                  eyebrow="DETAIL 5"
+                                  title="E. 위험 보정"
+                                  description=""
+                                >
+                                  <DetailCalculationEvidence kind="risk" data={data} />
+                        
+                                  <RiskAnalysisSection data={data} />
+                        
+                                  <DisclosureSection symbol={data?.symbol} name={data?.name} />
+                        
+                                  <PredictionDashboard
+                                    data={data}
+                                    records={predictionRecords}
+                                    predictionLoading={predictionLoading}
+                                    predictionError={predictionError}
+                                    lastFetchedAt={lastFetchedAt}
+                                    kisRemainingCalls={kisRemainingCalls}
+                                    kisSyncCode={kisSyncCode}
+                                    kisSyncInput={kisSyncInput}
+                                    kisUsageLoading={kisUsageLoading}
+                                    kisUsageError={kisUsageError}
+                                    onKisSyncInputChange={setKisSyncInput}
+                                    onSaveKisSyncCode={saveKisSyncCode}
+                                    onSavePrediction={handleSavePrediction}
+                                    onVerifyPredictions={handleVerifyPredictions}
+                                    onClearCurrentSymbol={handleClearCurrentSymbolPredictions}
+                                    onClearAll={handleClearAllPredictions}
+                                  />
+                                </SectionGroup>
+          </div>
+        </section>
+
+<TargetPriceSection score={data?.score} lastFetchedAt={lastFetchedAt} />
 
           <CompositeScoreSection score={data?.score} />
         </SectionGroup>
 
-        <SectionGroup
-          eyebrow="DETAIL 1"
-          title="A. 기술적 기준가 내용 및 분석"
-          description="현재가, 이동평균, RSI, MACD, 볼린저밴드, 거래량, 변동성, 퀀트 모델 일부를 묶어 기술적 기준가를 확인합니다."
-        >
-          <ChartAnalysisSections data={data} rows={chartData} />
-
-        </SectionGroup>
-
-        <SectionGroup
-          eyebrow="DETAIL 2"
-          title="B. 실적·밸류 기준가 내용 및 분석"
-          description="한투 재무 데이터, EPS, BPS, PER, PBR, 시가총액, 실적성장분석, 영업이익·순이익·EPS 성장률, KIS 재무·밸류 보조평가를 묶어 실적·밸류 기준가를 확인합니다."
-        >
-          <ValuationBasisExplanation data={data} />
-
-          <FundamentalSnapshotSection
-            symbol={data?.symbol}
-            name={data?.name}
-            valuationTarget={data?.score?.targetPrice?.valuationTargetRange?.valuationTarget}
-            data={data}
-            lastFetchedAt={lastFetchedAt}
-          />
-
-          <EarningsGrowthSection
-            earningsGrowth={data?.earningsGrowth}
-            earningsGrowthMode={earningsGrowthMode}
-            manualInput={manualEarningsGrowth}
-            manualInputSavedAt={manualEarningsSavedAt}
-            onModeChange={handleEarningsGrowthModeChange}
-            onManualInputChange={setManualEarningsGrowth}
-            onSaveManualInput={handleSaveManualEarningsGrowth}
-            onApplyManualInput={handleApplyManualEarningsGrowth}
-            onClearManualInput={handleClearManualEarningsGrowth}
-          />
-        </SectionGroup>
-
-        <SectionGroup
-          eyebrow="DETAIL 3"
-          title="C. 컨센서스 기준가 내용 및 분석"
-          description="네이버증권, FnGuide, 리포트 목표가, 평균·최고·최저 목표가, 투자의견, 참여 증권사 수를 묶어 컨센서스 기준가를 확인합니다."
-        >
-          <ConsensusInputSection
-            symbol={data?.symbol}
-            name={data?.name}
-            appTargetPrice={
-              data?.score?.targetPrice?.finalTargetRange?.baseTarget ??
-              data?.score?.targetPrice?.technicalTargetRange?.baseTarget
-            }
-                      currentPrice={data?.currentPrice}
-            targetPrice={data?.score?.targetPrice}
-            fundamentals={data?.fundamentals}
-          />
-        </SectionGroup>
-
-        <SectionGroup
-          eyebrow="DETAIL 4"
-          title="수급 및 분석"
-          description="외국인 순매수, 기관 순매수, 외국인+기관 5일·20일 흐름, 연속 순매수 여부, 외국인 보유율을 수급 관점에서 확인합니다."
-        >
-          <SupplyAnalysisSection data={data} />
-        </SectionGroup>
-
-        <SectionGroup
-          eyebrow="DETAIL 5"
-          title="위험 및 검증 분석"
-          description="위험 기준선, 단기 과열, 52주 고가 근접, 공시 리스크, 예측 저장·검증 결과를 묶어 확인합니다."
-        >
-          <RiskAnalysisSection data={data} />
-
-          <DisclosureSection symbol={data?.symbol} name={data?.name} />
-
-          <PredictionDashboard
-            data={data}
-            records={predictionRecords}
-            predictionLoading={predictionLoading}
-            predictionError={predictionError}
-            lastFetchedAt={lastFetchedAt}
-            kisRemainingCalls={kisRemainingCalls}
-            kisSyncCode={kisSyncCode}
-            kisSyncInput={kisSyncInput}
-            kisUsageLoading={kisUsageLoading}
-            kisUsageError={kisUsageError}
-            onKisSyncInputChange={setKisSyncInput}
-            onSaveKisSyncCode={saveKisSyncCode}
-            onSavePrediction={handleSavePrediction}
-            onVerifyPredictions={handleVerifyPredictions}
-            onClearCurrentSymbol={handleClearCurrentSymbolPredictions}
-            onClearAll={handleClearAllPredictions}
-          />
-        </SectionGroup>
-      </div>
+</div>
     </main>
   );
 }
@@ -1276,6 +1297,243 @@ function SectionTitle({ children }: { children: ReactNode }) {
 
 function SectionTitleSmall({ children }: { children: ReactNode }) {
   return <h3 className="section-title small">{children}</h3>;
+}
+
+type DetailCalculationKind = "technical" | "valuation" | "consensus" | "positive" | "risk";
+
+function DetailCalculationEvidence({
+  kind,
+  data,
+}: {
+  kind: DetailCalculationKind;
+  data?: any;
+}) {
+  const targetPrice = data?.score?.targetPrice;
+  const currentPrice = pickDetailNumber(data?.currentPrice, data?.price, data?.close);
+
+  const technicalTarget = pickDetailNumber(
+    targetPrice?.technicalTargetRange?.baseTarget,
+    targetPrice?.technicalTargetRange?.technicalTarget,
+    targetPrice?.technicalTarget,
+  );
+
+  const valuationTarget = pickDetailNumber(
+    targetPrice?.valuationTargetRange?.valuationTarget,
+    targetPrice?.valuationTargetRange?.baseTarget,
+    targetPrice?.valuationTarget,
+  );
+
+  const consensusTarget = pickDetailNumber(
+    targetPrice?.consensusTargetRange?.consensusTarget,
+    targetPrice?.consensusTargetRange?.averageTarget,
+    targetPrice?.consensusTarget,
+  );
+
+  const basisAverage =
+    pickDetailNumber(targetPrice?.basisAverage, targetPrice?.finalTargetRange?.baseTarget) ??
+    calculateWeightedBasis(technicalTarget, valuationTarget, consensusTarget);
+
+  const positivePercent =
+    pickDetailNumber(targetPrice?.positiveSignalAdjustmentPercent, targetPrice?.supplyAdjustmentPercent) ?? 1.5;
+
+  const riskPercent = pickDetailNumber(targetPrice?.riskAdjustmentPercent) ?? -5;
+
+  const positiveAmount =
+    basisAverage != null ? Math.round(basisAverage * (positivePercent / 100)) : null;
+  const riskAmount =
+    basisAverage != null ? Math.round(basisAverage * (riskPercent / 100)) : null;
+
+  const detail = buildDetailCalculationEvidence({
+    kind,
+    currentPrice,
+    technicalTarget,
+    valuationTarget,
+    consensusTarget,
+    basisAverage,
+    positivePercent,
+    positiveAmount,
+    riskPercent,
+    riskAmount,
+  });
+
+  return (
+    <div className="target-basis-box" style={{ marginBottom: 18 }}>
+      <div className="target-basis-header">
+        <span>{detail.label}</span>
+        <strong>{detail.value}</strong>
+      </div>
+
+      <p className="target-basis-summary">{detail.summary}</p>
+
+      <div className="summary-grid summary-grid-four" style={{ marginTop: 12 }}>
+        {detail.items.map((item) => (
+          <div className="target-metric-card" key={item.title}>
+            <span>{item.title}</span>
+            <strong>{item.value}</strong>
+            <em>{item.description}</em>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function buildDetailCalculationEvidence({
+  kind,
+  currentPrice,
+  technicalTarget,
+  valuationTarget,
+  consensusTarget,
+  basisAverage,
+  positivePercent,
+  positiveAmount,
+  riskPercent,
+  riskAmount,
+}: {
+  kind: DetailCalculationKind;
+  currentPrice: number | null;
+  technicalTarget: number | null;
+  valuationTarget: number | null;
+  consensusTarget: number | null;
+  basisAverage: number | null;
+  positivePercent: number;
+  positiveAmount: number | null;
+  riskPercent: number;
+  riskAmount: number | null;
+}) {
+  if (kind === "technical") {
+    return {
+      label: "DETAIL 1 계산 근거",
+      value: formatDetailWon(technicalTarget),
+      summary:
+        "A. 기본 기술적 추정가는 현재가와 차트 지표를 묶어 산정한 가격 기준입니다. 아래 값은 계산 구조를 빠르게 확인하기 위한 요약입니다.",
+      items: [
+        { title: "현재 표시 기준가", value: formatDetailWon(technicalTarget), description: "차트·기술 지표 기반 산정값" },
+        { title: "기준 현재가", value: formatDetailWon(currentPrice), description: "분석 조회 시점 현재가" },
+        { title: "계산 구조", value: "차트 신호 → 가격 환산", description: "이동평균, RSI, MACD, 볼린저밴드, OBV, 변동성 반영" },
+        { title: "확인 위치", value: "차트 기준 결론", description: "아래 기술적 기준 종합 해석과 주가 차트에서 세부 근거 확인" },
+      ],
+    };
+  }
+
+  if (kind === "valuation") {
+    return {
+      label: "DETAIL 2 계산 근거",
+      value: formatDetailWon(valuationTarget),
+      summary:
+        "B. 실적·밸류 기준가는 EPS 기준가와 BPS 기준가를 중심으로 PER/PBR 부담과 실적 성장률을 함께 반영해 산정합니다.",
+      items: [
+        { title: "현재 표시 기준가", value: formatDetailWon(valuationTarget), description: "EPS/PER + BPS/PBR 기반" },
+        { title: "계산 구조", value: "EPS 기준 + BPS 기준", description: "이익가치와 자산가치를 함께 확인" },
+        { title: "보정 요소", value: "PER/PBR 부담", description: "밸류 부담이 높으면 기준가를 보수적으로 해석" },
+        { title: "확인 위치", value: "실적·밸류 기준가 분석", description: "아래 EPS, BPS, PER, PBR 근거에서 확인" },
+      ],
+    };
+  }
+
+  if (kind === "consensus") {
+    return {
+      label: "DETAIL 3 계산 근거",
+      value: formatDetailWon(consensusTarget),
+      summary:
+        "C. 컨센서스 기준가는 증권사 목표가 데이터를 기준으로 평균 목표가, 최고·최저 목표가, 투자의견, 참여 증권사 수를 함께 확인합니다.",
+      items: [
+        { title: "현재 표시 기준가", value: formatDetailWon(consensusTarget), description: "평균 목표가 중심" },
+        { title: "계산 구조", value: "평균 목표가", description: "증권사 리포트 목표가 취합" },
+        { title: "신뢰 확인", value: "참여 증권사 수", description: "참여 수가 적으면 참고 수준으로 해석" },
+        { title: "확인 위치", value: "컨센서스 입력·저장", description: "아래 평균·최고·최저 목표가와 투자의견에서 확인" },
+      ],
+    };
+  }
+
+  if (kind === "positive") {
+    return {
+      label: "DETAIL 4 계산식",
+      value: formatDetailSignedAmount(positiveAmount),
+      summary:
+        "긍정 신호 보정은 수급만 보는 값이 아니라 수급, 모멘텀·추세, 거래량·거래대금의 긍정 신호를 합산한 보정입니다.",
+      items: [
+        { title: "기준가 가중평균", value: formatDetailWon(basisAverage), description: "A/B/C 기준가 가중평균" },
+        { title: "보정률", value: formatDetailPercent(positivePercent), description: "긍정 신호 합산 보정률" },
+        { title: "계산식", value: makeDetailFormula(basisAverage, positivePercent, positiveAmount), description: "기준가 가중평균 × 보정률" },
+        { title: "보정금액", value: formatDetailSignedAmount(positiveAmount), description: "기술적 추정가에 가산" },
+      ],
+    };
+  }
+
+  return {
+    label: "DETAIL 5 계산식",
+    value: formatDetailSignedAmount(riskAmount),
+    summary:
+      "위험 보정은 과열, 변동성, 52주 고가 근접, 추정가 도달률, PER/PBR 부담 등을 반영해 기술적 추정가를 보수적으로 조정합니다.",
+    items: [
+      { title: "기준가 가중평균", value: formatDetailWon(basisAverage), description: "A/B/C 기준가 가중평균" },
+      { title: "보정률", value: formatDetailPercent(riskPercent), description: "위험 신호 합산 보정률" },
+      { title: "계산식", value: makeDetailFormula(basisAverage, riskPercent, riskAmount), description: "기준가 가중평균 × 보정률" },
+      { title: "보정금액", value: formatDetailSignedAmount(riskAmount), description: "기술적 추정가에서 차감" },
+    ],
+  };
+}
+
+function calculateWeightedBasis(
+  technicalTarget: number | null,
+  valuationTarget: number | null,
+  consensusTarget: number | null,
+) {
+  const hasTechnical = technicalTarget != null;
+  const hasValuation = valuationTarget != null;
+  const hasConsensus = consensusTarget != null;
+
+  if (!hasTechnical && !hasValuation && !hasConsensus) return null;
+
+  const weights = hasConsensus
+    ? { technical: hasTechnical ? 0.4 : 0, valuation: hasValuation ? 0.35 : 0, consensus: 0.25 }
+    : { technical: hasTechnical ? 0.6 : 0, valuation: hasValuation ? 0.4 : 0, consensus: 0 };
+
+  const totalWeight = weights.technical + weights.valuation + weights.consensus;
+
+  if (totalWeight <= 0) return null;
+
+  return Math.round(
+    ((technicalTarget ?? 0) * weights.technical +
+      (valuationTarget ?? 0) * weights.valuation +
+      (consensusTarget ?? 0) * weights.consensus) /
+      totalWeight,
+  );
+}
+
+function pickDetailNumber(...values: any[]) {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+  }
+
+  return null;
+}
+
+function formatDetailWon(value: number | null) {
+  if (value == null) return "확인 필요";
+  return `${Math.round(value).toLocaleString("ko-KR")}원`;
+}
+
+function formatDetailSignedAmount(value: number | null) {
+  if (value == null) return "확인 필요";
+  const rounded = Math.round(value);
+  const sign = rounded > 0 ? "+" : "";
+  return `${sign}${rounded.toLocaleString("ko-KR")}원`;
+}
+
+function formatDetailPercent(value: number) {
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${value.toFixed(2)}%`;
+}
+
+function makeDetailFormula(
+  basisAverage: number | null,
+  percent: number,
+  amount: number | null,
+) {
+  if (basisAverage == null || amount == null) return "계산값 확인 필요";
+  return `${formatDetailWon(basisAverage)} × ${formatDetailPercent(percent)} = ${formatDetailSignedAmount(amount)}`;
 }
 
 function getDetailIdFromEyebrow(eyebrow: string) {

@@ -1677,3 +1677,229 @@ button:disabled {
     padding: 0 20px 24px;
   }
 }
+
+
+/* Detail compact panel v39 */
+.detail-compact-panel {
+  margin: 22px 0;
+}
+
+.detail-compact-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+  color: #64748b;
+  font-weight: 900;
+}
+
+.detail-compact-heading span {
+  font-size: 0.88rem;
+}
+
+.detail-compact-heading strong {
+  color: #0f172a;
+  font-size: 0.95rem;
+}
+
+.detail-compact-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.detail-compact-grid .section-group.detail-accordion {
+  margin: 0;
+}
+
+.detail-compact-grid .section-group.detail-accordion[open] {
+  grid-column: 1 / -1;
+}
+
+.detail-compact-grid .section-group.detail-accordion > summary {
+  min-height: 88px;
+  border-radius: 22px;
+}
+
+.detail-compact-grid .section-group.detail-accordion > summary::after {
+  content: "세부보기";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 78px;
+  height: 34px;
+  margin-left: auto;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.28);
+  color: #047857;
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.detail-compact-grid .section-group.detail-accordion[open] > summary::after {
+  content: "닫기";
+}
+
+@media (max-width: 960px) {
+  .detail-compact-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .detail-compact-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+/* Detail simple panel v40 */
+.detail-simple-panel {
+  margin: 22px 0 28px;
+}
+
+.detail-simple-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.detail-simple-heading strong {
+  color: #0f172a;
+  font-size: 1.05rem;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+}
+
+.detail-simple-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.detail-simple-grid .section-group.detail-accordion {
+  margin: 0;
+}
+
+.detail-simple-grid .section-group.detail-accordion[open] {
+  grid-column: 1 / -1;
+}
+
+.detail-simple-grid .section-group.detail-accordion > summary {
+  min-height: 64px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.detail-simple-grid .section-group.detail-accordion:not([open]) > summary {
+  cursor: pointer;
+}
+
+.detail-simple-grid .section-group.detail-accordion > summary p,
+.detail-simple-grid .section-group.detail-accordion > summary .section-description,
+.detail-simple-grid .section-group.detail-accordion:not([open]) .section-description,
+.detail-simple-grid .section-group.detail-accordion:not([open]) p {
+  display: none !important;
+}
+
+.detail-simple-grid .section-group.detail-accordion > summary h1,
+.detail-simple-grid .section-group.detail-accordion > summary h2,
+.detail-simple-grid .section-group.detail-accordion > summary h3,
+.detail-simple-grid .section-group.detail-accordion > summary strong {
+  margin: 0;
+  font-size: 1.08rem !important;
+  line-height: 1.2 !important;
+  letter-spacing: -0.03em;
+  white-space: normal;
+}
+
+.detail-simple-grid .section-group.detail-accordion > summary button,
+.detail-simple-grid .section-group.detail-accordion > summary .button,
+.detail-simple-grid .section-group.detail-accordion > summary [class*="button"] {
+  display: none !important;
+}
+
+.detail-simple-grid .section-group.detail-accordion > summary::after {
+  content: "세부보기";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 76px;
+  height: 32px;
+  margin-left: auto;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.28);
+  color: #047857;
+  font-size: 0.82rem;
+  font-weight: 900;
+  flex: 0 0 auto;
+}
+
+.detail-simple-grid .section-group.detail-accordion[open] > summary::after {
+  content: "닫기";
+}
+
+@media (max-width: 960px) {
+  .detail-simple-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .detail-simple-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+/* Detail simple panel v40 override */
+.detail-simple-grid .section-group.detail-accordion:not([open]) {
+  overflow: hidden;
+}
+
+
+/* Detail simple panel v41 single button override */
+.detail-simple-grid .section-group.detail-accordion > summary button,
+.detail-simple-grid .section-group.detail-accordion > summary a,
+.detail-simple-grid .section-group.detail-accordion > summary [role="button"],
+.detail-simple-grid .section-group.detail-accordion > summary .section-action,
+.detail-simple-grid .section-group.detail-accordion > summary .section-toggle,
+.detail-simple-grid .section-group.detail-accordion > summary .detail-toggle,
+.detail-simple-grid .section-group.detail-accordion > summary .button,
+.detail-simple-grid .section-group.detail-accordion > summary [class*="btn"],
+.detail-simple-grid .section-group.detail-accordion > summary [class*="button"],
+.detail-simple-grid .section-group.detail-accordion > summary [class*="Button"],
+.detail-simple-grid .section-group.detail-accordion > summary [class*="action"],
+.detail-simple-grid .section-group.detail-accordion > summary [class*="Action"],
+.detail-simple-grid .section-group.detail-accordion > summary [class*="toggle"],
+.detail-simple-grid .section-group.detail-accordion > summary [class*="Toggle"] {
+  display: none !important;
+}
+
+.detail-simple-grid .section-group.detail-accordion > summary::after {
+  content: "세부보기" !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  min-width: 76px;
+  height: 32px;
+  margin-left: auto;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.28);
+  color: #047857;
+  font-size: 0.82rem;
+  font-weight: 900;
+  flex: 0 0 auto;
+}
+
+.detail-simple-grid .section-group.detail-accordion[open] > summary::after {
+  content: "닫기" !important;
+}
