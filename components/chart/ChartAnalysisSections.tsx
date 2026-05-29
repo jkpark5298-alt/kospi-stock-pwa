@@ -2,6 +2,7 @@
 
 import { useMemo, type ReactNode } from "react";
 import type { ChartRow, StockResponse } from "../../types/stock";
+import { calculateTechnicalStrategy } from "../../lib/technicalStrategy";
 
 type LineSpec = {
   key: keyof ChartRow;
@@ -32,11 +33,101 @@ export default function ChartAnalysisSections({ data, rows }: Props) {
   );
 
     const technicalSummary = makeTechnicalSummary(data, latestRow, bbStatus, obvTrend);
+  const technicalStrategy = useMemo(() => calculateTechnicalStrategy(rows), [rows]);
 return (
     <>
       <section className="data-section">
         <Card>
           <SectionTitleSmall>기술적 기준 종합 해석</SectionTitleSmall>
+          <div className="target-basis-box" style={{ marginTop: 14 }}>
+            <div className="target-basis-header">
+              <span>기술전략 종합판정</span>
+              <strong>{technicalStrategy.summary}</strong>
+            </div>
+
+            <div className="summary-grid summary-grid-four" style={{ marginTop: 12 }}>
+              <div className="mini-stat">
+                <span>장세</span>
+                <strong>{technicalStrategy.regimeLabel}</strong>
+                <small>{technicalStrategy.regimeDescription}</small>
+              </div>
+
+              <div className="mini-stat">
+                <span>최종 점수</span>
+                <strong>{technicalStrategy.finalScore}점</strong>
+                <small>
+                  공통 {technicalStrategy.commonScore}점 · 장세 {technicalStrategy.regimeBonus >= 0 ? "+" : ""}
+                  {technicalStrategy.regimeBonus}점 · 위험 -{technicalStrategy.riskPenalty}점
+                </small>
+              </div>
+
+              <div className="mini-stat">
+                <span>점수 해석</span>
+                <strong>{technicalStrategy.actionLabel}</strong>
+                <small>{technicalStrategy.actionDescription}</small>
+              </div>
+
+              <div className="mini-stat">
+                <span>신뢰도</span>
+                <strong>{technicalStrategy.priceRange.confidence}</strong>
+                <small>{technicalStrategy.priceRange.summary}</small>
+              </div>
+            </div>
+
+            <div className="target-basis-adjustments" style={{ marginTop: 12 }}>
+              <p>
+                하단 추정가: {formatStrategyPrice(technicalStrategy.priceRange.lowerPrice)}
+                {" / "}
+                기준 추정가: {formatStrategyPrice(technicalStrategy.priceRange.basePrice)}
+                {" / "}
+                상단 추정가: {formatStrategyPrice(technicalStrategy.priceRange.upperPrice)}
+              </p>
+              <p>하단 근거: {technicalStrategy.priceRange.lowerBasis.join(" · ") || "데이터 대기"}</p>
+              <p>기준 근거: {technicalStrategy.priceRange.baseBasis.join(" · ") || "데이터 대기"}</p>
+              <p>상단 근거: {technicalStrategy.priceRange.upperBasis.join(" · ") || "데이터 대기"}</p>
+            </div>
+
+            <div className="target-basis-box" style={{ marginTop: 12 }}>
+              <div className="target-basis-header">
+                <span>매매 시그널</span>
+                <strong>
+                  {technicalStrategy.tradeSignals.filter((signal) => signal.active).length
+                    ? "활성 신호 있음"
+                    : "관망 우선"}
+                </strong>
+              </div>
+
+              <div className="target-basis-adjustments">
+                {technicalStrategy.tradeSignals.map((signal) => (
+                  <p key={signal.type}>
+                    {signal.label}: {signal.active ? "활성" : "비활성"}
+                    {" · "}
+                    강도 {signal.strength}
+                    {" · "}
+                    기준가 {formatStrategyPrice(signal.price)}
+                    {" · "}
+                    {signal.reason}
+                  </p>
+                ))}
+              </div>
+            </div>
+
+            <div className="target-basis-box" style={{ marginTop: 12 }}>
+              <div className="target-basis-header">
+                <span>지표별 점수표</span>
+                <strong>TABLE 기준</strong>
+              </div>
+
+              <div className="target-basis-adjustments">
+                {technicalStrategy.rows.map((row) => (
+                  <p key={row.key}>
+                    {row.label}: {row.score}/{row.maxScore}점 · {row.status} · {row.reason}
+                  </p>
+                ))}
+              </div>
+            </div>
+          </div>
+
           <div className="target-basis-header">
             <span>차트 기준 결론</span>
             <strong>{technicalSummary.overall}</strong>
@@ -867,4 +958,14 @@ function Th({ children }: { children: ReactNode }) {
 
 function Td({ children }: { children: ReactNode }) {
   return <td>{children}</td>;
+}
+
+function formatStrategyPrice(value?: number | null) {
+  if (value == null || Number.isNaN(value)) return "데이터 없음";
+
+  return (
+    new Intl.NumberFormat("ko-KR", {
+      maximumFractionDigits: 0,
+    }).format(value) + "원"
+  );
 }
