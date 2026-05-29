@@ -10,6 +10,18 @@ type LineSpec = {
   dashed?: boolean;
 };
 
+type PriceTrendLine = {
+  key: "pivotResistance" | "pivotSupport" | "linearRegression";
+  label: string;
+  color: string;
+  startIndex: number;
+  endIndex: number;
+  startValue: number;
+  endValue: number;
+  dashed?: boolean;
+};
+
+
 type Props = {
   data: StockResponse | null;
   rows: ChartRow[];
@@ -392,7 +404,8 @@ function SupplyJudgement({ title, value }: { title: string; value: string }) {
 }
 
 function PriceChart({ rows }: { rows: ChartRow[] }) {
-  return (
+  const priceTrendLines = useMemo(() => buildPriceTrendLines(rows), [rows]);
+return (
     <div className="chart-inner">
       <Legend
         items={[
@@ -412,6 +425,7 @@ function PriceChart({ rows }: { rows: ChartRow[] }) {
           { key: "bbUpper", color: "#94a3b8", dashed: true },
           { key: "bbLower", color: "#94a3b8", dashed: true },
         ]}
+        trendLines={priceTrendLines}
         showDates
       />
     </div>
@@ -634,10 +648,12 @@ function MultiLineChart({
   rows,
   lines,
   showDates = false,
+  trendLines = [],
 }: {
   rows: ChartRow[];
   lines: LineSpec[];
   showDates?: boolean;
+  trendLines?: PriceTrendLine[];
 }) {
   const filtered = rows.filter((r) =>
     lines.some(
@@ -659,8 +675,13 @@ function MultiLineChart({
       .filter((v): v is number => typeof v === "number" && !Number.isNaN(v)),
   );
 
-  const min = Math.min(...values);
-  const max = Math.max(...values);
+  const trendLineValues = trendLines.flatMap((line) => [line.startValue, line.endValue]);
+  const allValues = [...values, ...trendLineValues].filter(
+    (value): value is number => typeof value === "number" && !Number.isNaN(value),
+  );
+
+  const min = Math.min(...allValues);
+  const max = Math.max(...allValues);
   const range = max - min || 1;
 
   const linePaths = lines.map(({ key, color, dashed }) => {
@@ -702,7 +723,33 @@ function MultiLineChart({
           strokeDasharray={line.dashed ? "7 6" : undefined}
         />
       ))}
-      {showDates ? (
+            {trendLines.map((line) => {
+        const denominator = Math.max(filtered.length - 1, 1);
+        const x1 =
+          filtered.length === 1
+            ? width / 2
+            : pad.left + (line.startIndex / denominator) * (width - pad.left - pad.right);
+        const x2 =
+          filtered.length === 1
+            ? width / 2
+            : pad.left + (line.endIndex / denominator) * (width - pad.left - pad.right);
+        const y1 = pad.top + plotHeight - ((line.startValue - min) / range) * plotHeight;
+        const y2 = pad.top + plotHeight - ((line.endValue - min) / range) * plotHeight;
+
+        return (
+          <path
+            key={line.key}
+            d={`M ${x1} ${y1} L ${x2} ${y2}`}
+            fill="none"
+            stroke={line.color}
+            strokeWidth="2.5"
+            strokeDasharray={line.dashed ? "7 6" : "4 5"}
+            opacity="0.9"
+          />
+        );
+      })}
+
+{showDates ? (
         <DateLabels
           rows={filtered}
           width={width}
@@ -853,6 +900,152 @@ function isValidPoint(point: {
   v: number | null | undefined;
 }): point is { x: number; y: number; v: number } {
   return typeof point.v === "number" && !Number.isNaN(point.v);
+}
+
+
+function buildPriceTrendLines(rows: ChartRow[]): PriceTrendLine[] {
+  const sorted = [...rows].sort((a, b) => a.date.localeCompare(b.date));
+  const recentStart = Math.max(0, sorted.length - 60);
+  const recentRows = sorted.slice(recentStart);
+
+  if (recentRows.length < 10) return [];
+
+  const lines: PriceTrendLine[] = [];
+
+  const resistance = buildPivotLine({
+    rows: recentRows,
+    absoluteOffset: recentStart,
+    key: "high",
+    type: "pivotResistance",
+    label: "Resistance",
+    color: "#dc2626",
+    pickHigh: true,
+  });
+
+  if (resistance) lines.push(resistance);
+
+  const support = buildPivotLine({
+    rows: recentRows,
+    absoluteOffset: recentStart,
+    key: "low",
+    type: "pivotSupport",
+    label: "Support",
+    color: "#16a34a",
+    pickHigh: false,
+  });
+
+  if (support) lines.push(support);
+
+  const regression = buildLinearRegressionLine(recentRows, recentStart);
+
+  if (regression) lines.push(regression);
+
+  return lines;
+}
+
+function buildPivotLine({
+  rows,
+  absoluteOffset,
+  key,
+  type,
+  label,
+  color,
+  pickHigh,
+}: {
+  rows: ChartRow[];
+  absoluteOffset: number;
+  key: "high" | "low";
+  type: PriceTrendLine["key"];
+  label: string;
+  color: string;
+  pickHigh: boolean;
+}): PriceTrendLine | null {
+  const pivots: Array<{ index: number; value: number }> = [];
+
+  for (let i = 2; i < rows.length - 2; i += 1) {
+    const value = rows[i]?.[key];
+
+    if (typeof value !== "number" || Number.isNaN(value)) continue;
+
+    const neighbors = [
+      rows[i - 2]?.[key],
+      rows[i - 1]?.[key],
+      rows[i + 1]?.[key],
+      rows[i + 2]?.[key],
+    ].filter((item): item is number => typeof item === "number" && !Number.isNaN(item));
+
+    if (neighbors.length < 4) continue;
+
+    const isPivot = pickHigh
+      ? neighbors.every((neighbor) => value >= neighbor)
+      : neighbors.every((neighbor) => value <= neighbor);
+
+    if (isPivot) {
+      pivots.push({ index: absoluteOffset + i, value });
+    }
+  }
+
+  const selected = pivots.slice(-4);
+
+  if (selected.length < 2) return null;
+
+  const first = selected[0];
+  const last = selected[selected.length - 1];
+
+  if (!first || !last || first.index === last.index) return null;
+
+  return {
+    key: type,
+    label,
+    color,
+    startIndex: first.index,
+    endIndex: last.index,
+    startValue: first.value,
+    endValue: last.value,
+    dashed: true,
+  };
+}
+
+function buildLinearRegressionLine(rows: ChartRow[], absoluteOffset: number): PriceTrendLine | null {
+  const points = rows
+    .map((row, index) => ({
+      x: index,
+      y: row.close,
+    }))
+    .filter((point): point is { x: number; y: number } => {
+      return typeof point.y === "number" && !Number.isNaN(point.y);
+    });
+
+  if (points.length < 10) return null;
+
+  const n = points.length;
+  const sumX = points.reduce((sum, point) => sum + point.x, 0);
+  const sumY = points.reduce((sum, point) => sum + point.y, 0);
+  const sumXY = points.reduce((sum, point) => sum + point.x * point.y, 0);
+  const sumXX = points.reduce((sum, point) => sum + point.x * point.x, 0);
+
+  const denominator = n * sumXX - sumX * sumX;
+
+  if (denominator === 0) return null;
+
+  const slope = (n * sumXY - sumX * sumY) / denominator;
+  const intercept = (sumY - slope * sumX) / n;
+
+  const first = points[0];
+  const last = points[points.length - 1];
+
+  if (!first || !last) return null;
+
+  return {
+    key: "linearRegression",
+    label: slope >= 0 ? "Regression Up" : "Regression Down",
+    color: "#7c3aed",
+    startIndex: absoluteOffset + first.x,
+    endIndex: absoluteOffset + last.x,
+    startValue: intercept + slope * first.x,
+    endValue: intercept + slope * last.x,
+    dashed: false,
+  };
 }
 
 function buildVolumeProfile(rows: ChartRow[], bucketCount: number) {
