@@ -506,6 +506,10 @@ function pickNumber(row: Record<string, unknown>, keys: string[]) {
       continue;
     }
 
+    if (typeof value !== "string" && typeof value !== "number") {
+      continue;
+    }
+
     const parsed = toNumberOrNull(value);
     if (parsed != null) return parsed;
   }

@@ -394,7 +394,11 @@ function calculateEstimate({
     targetModes.find((mode) => String(mode?.mode ?? "") === selectedMode) ??
     targetModes[0] ??
     null;
-  const quantAdjustment = modeResult?.quantAdjustment ?? {};
+  const quantAdjustment = (modeResult?.quantAdjustment ?? {}) as {
+    baseAdjustmentPercent?: unknown;
+    positiveAdjustmentPercent?: unknown;
+    riskAdjustmentPercent?: unknown;
+  };
   const quantPercent = getNumber(quantAdjustment.baseAdjustmentPercent) ?? 0;
   const supplyPercent = getNumber(quantAdjustment.positiveAdjustmentPercent) ?? 0;
   const riskPercent = getNumber(quantAdjustment.riskAdjustmentPercent) ?? 0;
