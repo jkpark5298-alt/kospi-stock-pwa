@@ -10,6 +10,7 @@ import {
   INDICATOR_SCORE_TABLE,
   INTERPRETATION_TABLE,
   PRICE_RANGE_TABLE,
+  TRADE_SIGNAL_TABLE,
   REGIME_BONUS_TABLE,
   REGIME_RULES,
   RISK_PENALTY_TABLE,
@@ -443,6 +444,159 @@ function calculateTechnicalPriceRange({
   };
 }
 
+
+function calculateTradeSignals({
+  latest,
+  regime,
+  finalScore,
+  priceRange,
+}: {
+  latest: ChartRow;
+  regime: MarketRegime;
+  finalScore: number;
+  priceRange: ReturnType<typeof calculateTechnicalPriceRange>;
+}) {
+  const currentPrice = priceRange.currentPrice;
+  const lowerPrice = priceRange.lowerPrice;
+  const basePrice = priceRange.basePrice;
+  const upperPrice = priceRange.upperPrice;
+
+  const rsi = latest.rsi14;
+  const macd = latest.macd;
+  const signal = latest.signal;
+  const close = latest.close;
+  const bbUpper = latest.bbUpper;
+  const bbLower = latest.bbLower;
+
+  const hasPrice = isNumber(currentPrice) && currentPrice > 0;
+  const macdPositive = isNumber(macd) && isNumber(signal) && macd > signal;
+  const macdNegative = isNumber(macd) && isNumber(signal) && macd < signal;
+  const rsiHealthy = isNumber(rsi) && rsi >= 45 && rsi <= 68;
+  const rsiOverheated = isNumber(rsi) && rsi >= 70;
+  const rsiWeak = isNumber(rsi) && rsi < 40;
+
+  const nearBase =
+    hasPrice &&
+    isNumber(basePrice) &&
+    currentPrice <= basePrice * 1.01 &&
+    currentPrice >= basePrice * 0.94;
+
+  const nearLower =
+    hasPrice &&
+    isNumber(lowerPrice) &&
+    currentPrice <= lowerPrice * 1.03 &&
+    currentPrice >= lowerPrice * 0.98;
+
+  const belowLower =
+    hasPrice &&
+    isNumber(lowerPrice) &&
+    currentPrice < lowerPrice * 0.985;
+
+  const nearUpper =
+    hasPrice &&
+    isNumber(upperPrice) &&
+    currentPrice >= upperPrice * 0.97;
+
+  const aboveUpper =
+    hasPrice &&
+    isNumber(upperPrice) &&
+    currentPrice > upperPrice;
+
+  const bollingerUpperRisk =
+    isNumber(close) &&
+    isNumber(bbUpper) &&
+    isNumber(bbLower) &&
+    bbUpper > bbLower &&
+    (close - bbLower) / (bbUpper - bbLower) >= 0.9;
+
+  const entryActive =
+    hasPrice &&
+    regime === "uptrend" &&
+    finalScore >= 65 &&
+    nearBase &&
+    macdPositive &&
+    !rsiOverheated;
+
+  const scaleBuyActive =
+    hasPrice &&
+    finalScore >= 55 &&
+    (nearLower || nearBase) &&
+    !belowLower &&
+    !rsiOverheated;
+
+  const stopLossActive =
+    hasPrice &&
+    (belowLower || (regime === "downtrend" && finalScore < 45 && macdNegative));
+
+  const takeProfitActive =
+    hasPrice &&
+    (nearUpper || aboveUpper || rsiOverheated || bollingerUpperRisk);
+
+  const exitActive =
+    hasPrice &&
+    regime === "downtrend" &&
+    finalScore < 40 &&
+    (macdNegative || rsiWeak || belowLower);
+
+  return [
+    {
+      type: "entry" as const,
+      label: TRADE_SIGNAL_TABLE.entry.label,
+      active: entryActive,
+      strength: entryActive && finalScore >= 75 ? "strong" as const : entryActive ? "normal" as const : "none" as const,
+      price: basePrice,
+      condition: "상승 장세 + 65점 이상 + 기준가 근처 + MACD 우호 + RSI 비과열",
+      reason: entryActive
+        ? "장세와 점수가 우호적이고 기준 추정가 근처라 진입 후보로 볼 수 있습니다."
+        : "진입 조건이 모두 충족되지는 않았습니다.",
+    },
+    {
+      type: "scaleBuy" as const,
+      label: TRADE_SIGNAL_TABLE.scaleBuy.label,
+      active: scaleBuyActive,
+      strength: scaleBuyActive && nearLower ? "strong" as const : scaleBuyActive ? "normal" as const : "none" as const,
+      price: lowerPrice,
+      condition: "55점 이상 + 하단/기준 추정가 근처 + 하단 이탈 아님 + RSI 비과열",
+      reason: scaleBuyActive
+        ? "상승 근거는 있으나 가격 부담을 줄이기 위해 분할매수 구간으로 볼 수 있습니다."
+        : "분할매수 조건이 충분하지 않습니다.",
+    },
+    {
+      type: "stopLoss" as const,
+      label: TRADE_SIGNAL_TABLE.stopLoss.label,
+      active: stopLossActive,
+      strength: stopLossActive && belowLower ? "strong" as const : stopLossActive ? "watch" as const : "none" as const,
+      price: lowerPrice,
+      condition: "하단 추정가 이탈 또는 하락 장세 + 약한 점수 + MACD 약세",
+      reason: stopLossActive
+        ? "하단 방어선 이탈 또는 약세 신호가 있어 손절 기준을 확인해야 합니다."
+        : "현재는 손절 조건이 직접적으로 발생하지 않았습니다.",
+    },
+    {
+      type: "takeProfit" as const,
+      label: TRADE_SIGNAL_TABLE.takeProfit.label,
+      active: takeProfitActive,
+      strength: aboveUpper ? "strong" as const : takeProfitActive ? "watch" as const : "none" as const,
+      price: upperPrice,
+      condition: "상단 추정가 근접/돌파 또는 RSI 과열 또는 볼린저밴드 상단 과열",
+      reason: takeProfitActive
+        ? "상단권 또는 과열 신호가 있어 일부 익절을 검토할 수 있습니다."
+        : "익절 조건은 아직 강하지 않습니다.",
+    },
+    {
+      type: "exit" as const,
+      label: TRADE_SIGNAL_TABLE.exit.label,
+      active: exitActive,
+      strength: exitActive && belowLower ? "strong" as const : exitActive ? "watch" as const : "none" as const,
+      price: lowerPrice,
+      condition: "하락 장세 + 40점 미만 + MACD/RSI 약세 또는 하단 이탈",
+      reason: exitActive
+        ? "하락 장세와 약한 점수가 겹쳐 청산 또는 비중 축소를 검토해야 합니다."
+        : "청산 조건이 직접적으로 발생하지 않았습니다.",
+    },
+  ];
+}
+
 function getInterpretation(score: number): StrategyInterpretationRule {
   return (
     INTERPRETATION_TABLE.find((rule) => score >= rule.min && score <= rule.max) ??
@@ -481,6 +635,7 @@ export function calculateTechnicalStrategy(rows: ChartRow[]): TechnicalStrategyR
         confidence: "low",
         summary: "차트 데이터가 부족합니다.",
       },
+      tradeSignals: [],
       summary: "차트 데이터가 부족합니다.",
     };
   }
@@ -509,6 +664,12 @@ export function calculateTechnicalStrategy(rows: ChartRow[]): TechnicalStrategyR
     regime,
     finalScore,
   });
+  const tradeSignals = calculateTradeSignals({
+    latest,
+    regime,
+    finalScore,
+    priceRange,
+  });
 
   return {
     available: true,
@@ -526,6 +687,7 @@ export function calculateTechnicalStrategy(rows: ChartRow[]): TechnicalStrategyR
     riskPenalties,
     latest,
     priceRange,
+    tradeSignals,
     summary: `${regimeRule.label} / ${finalScore}점 / ${interpretation.label} / ${priceRange.summary}`,
   };
 }

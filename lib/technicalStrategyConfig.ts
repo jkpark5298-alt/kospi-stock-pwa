@@ -145,3 +145,26 @@ export const PRICE_RANGE_TABLE: Record<
     maxUpperCapPercent: 8,
   },
 };
+
+export const TRADE_SIGNAL_TABLE = {
+  entry: {
+    label: "진입",
+    description: "장세와 점수가 우호적이고 현재가가 기준 추정가 아래 또는 근처일 때 검토합니다.",
+  },
+  scaleBuy: {
+    label: "분할매수",
+    description: "상승 근거는 있으나 과열 또는 가격 부담이 있어 나눠서 접근합니다.",
+  },
+  stopLoss: {
+    label: "손절",
+    description: "하단 추정가 또는 주요 방어선을 이탈하면 손실 제한을 검토합니다.",
+  },
+  takeProfit: {
+    label: "익절",
+    description: "상단 추정가 근처에서는 일부 수익 실현을 검토합니다.",
+  },
+  exit: {
+    label: "청산",
+    description: "하락 장세와 약한 점수가 겹치면 보유 비중 축소 또는 청산을 검토합니다.",
+  },
+} as const;

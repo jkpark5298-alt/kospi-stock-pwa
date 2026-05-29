@@ -56,6 +56,26 @@ export type TechnicalStrategyPriceRange = {
   summary: string;
 };
 
+
+export type TradeSignalType =
+  | "entry"
+  | "scaleBuy"
+  | "stopLoss"
+  | "takeProfit"
+  | "exit";
+
+export type TradeSignalStrength = "strong" | "normal" | "watch" | "none";
+
+export type TechnicalTradeSignal = {
+  type: TradeSignalType;
+  label: string;
+  active: boolean;
+  strength: TradeSignalStrength;
+  price: number | null;
+  condition: string;
+  reason: string;
+};
+
 export type TechnicalStrategyResult = {
   available: boolean;
   regime: MarketRegime;
@@ -72,5 +92,6 @@ export type TechnicalStrategyResult = {
   riskPenalties: StrategyRiskPenalty[];
   latest: ChartRow | null;
   priceRange: TechnicalStrategyPriceRange;
+  tradeSignals: TechnicalTradeSignal[];
   summary: string;
 };
