@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { ChartRow, StockResponse } from "../../types/stock";
 import { calculateTechnicalStrategy } from "../../lib/technicalStrategy";
 
@@ -46,97 +46,241 @@ export default function ChartAnalysisSections({ data, rows }: Props) {
 
     const technicalSummary = makeTechnicalSummary(data, latestRow, bbStatus, obvTrend);
   const technicalStrategy = useMemo(() => calculateTechnicalStrategy(rows), [rows]);
+  const [activeTechnicalPanel, setActiveTechnicalPanel] = useState<"market" | "score" | "interpretation" | "price" | "signal">("market");
 return (
     <>
       <section className="data-section">
         <Card>
           <SectionTitleSmall>기술적 기준 종합 해석</SectionTitleSmall>
-          <div className="target-basis-box" style={{ marginTop: 14 }}>
-            <div className="target-basis-header">
-              <span>기술전략 종합판정</span>
-              <strong>{technicalStrategy.summary}</strong>
-            </div>
 
-            <div className="summary-grid summary-grid-four" style={{ marginTop: 12 }}>
-              <div className="mini-stat">
-                <span>장세</span>
-                <strong>{technicalStrategy.regimeLabel}</strong>
-                <small>{technicalStrategy.regimeDescription}</small>
-              </div>
-
-              <div className="mini-stat">
-                <span>최종 점수</span>
-                <strong>{technicalStrategy.finalScore}점</strong>
-                <small>
-                  공통 {technicalStrategy.commonScore}점 · 장세 {technicalStrategy.regimeBonus >= 0 ? "+" : ""}
-                  {technicalStrategy.regimeBonus}점 · 위험 -{technicalStrategy.riskPenalty}점
-                </small>
-              </div>
-
-              <div className="mini-stat">
-                <span>점수 해석</span>
-                <strong>{technicalStrategy.actionLabel}</strong>
-                <small>{technicalStrategy.actionDescription}</small>
-              </div>
-
-              <div className="mini-stat">
-                <span>신뢰도</span>
-                <strong>{technicalStrategy.priceRange.confidence}</strong>
-                <small>{technicalStrategy.priceRange.summary}</small>
-              </div>
-            </div>
-
-            <div className="target-basis-adjustments" style={{ marginTop: 12 }}>
-              <p>
-                하단 추정가: {formatStrategyPrice(technicalStrategy.priceRange.lowerPrice)}
-                {" / "}
-                기준 추정가: {formatStrategyPrice(technicalStrategy.priceRange.basePrice)}
-                {" / "}
-                상단 추정가: {formatStrategyPrice(technicalStrategy.priceRange.upperPrice)}
-              </p>
-              <p>하단 근거: {technicalStrategy.priceRange.lowerBasis.join(" · ") || "데이터 대기"}</p>
-              <p>기준 근거: {technicalStrategy.priceRange.baseBasis.join(" · ") || "데이터 대기"}</p>
-              <p>상단 근거: {technicalStrategy.priceRange.upperBasis.join(" · ") || "데이터 대기"}</p>
-            </div>
-
-            <div className="target-basis-box" style={{ marginTop: 12 }}>
-              <div className="target-basis-header">
-                <span>매매 시그널</span>
-                <strong>
-                  {technicalStrategy.tradeSignals.filter((signal) => signal.active).length
-                    ? "활성 신호 있음"
-                    : "관망 우선"}
+          <div style={{ marginTop: 14, display: "grid", gap: 14 }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+                gap: 12,
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setActiveTechnicalPanel("market")}
+                style={{
+                  textAlign: "left",
+                  padding: 16,
+                  borderRadius: 18,
+                  border: activeTechnicalPanel === "market" ? "1px solid #ef4444" : "1px solid #e2e8f0",
+                  background: activeTechnicalPanel === "market" ? "#fff1f2" : "#fff",
+                  cursor: "pointer",
+                }}
+              >
+                <span style={{ fontSize: 12, fontWeight: 800, color: "#ef4444" }}>1 시장 설명</span>
+                <strong style={{ display: "block", marginTop: 10, fontSize: 24 }}>
+                  {technicalStrategy.regimeLabel}
                 </strong>
-              </div>
+                <small style={{ display: "block", marginTop: 8, color: "#64748b", lineHeight: 1.5 }}>
+                  상승 빨간색 · 횡보 노란색 · 하락 파란색
+                </small>
+              </button>
 
-              <div className="target-basis-adjustments">
-                {technicalStrategy.tradeSignals.map((signal) => (
-                  <p key={signal.type}>
-                    {signal.label}: {signal.active ? "활성" : "비활성"}
-                    {" · "}
-                    강도 {signal.strength}
-                    {" · "}
-                    기준가 {formatStrategyPrice(signal.price)}
-                    {" · "}
-                    {signal.reason}
-                  </p>
-                ))}
-              </div>
+              <button
+                type="button"
+                onClick={() => setActiveTechnicalPanel("score")}
+                style={{
+                  textAlign: "left",
+                  padding: 16,
+                  borderRadius: 18,
+                  border: activeTechnicalPanel === "score" ? "1px solid #10b981" : "1px solid #e2e8f0",
+                  background: activeTechnicalPanel === "score" ? "#ecfdf5" : "#fff",
+                  cursor: "pointer",
+                }}
+              >
+                <span style={{ fontSize: 12, fontWeight: 800, color: "#059669" }}>2 점수</span>
+                <strong style={{ display: "block", marginTop: 10, fontSize: 30, color: "#059669" }}>
+                  {technicalStrategy.finalScore}점
+                </strong>
+                <small style={{ display: "block", marginTop: 8, color: "#64748b", lineHeight: 1.5 }}>
+                  누르면 점수표 표시
+                </small>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTechnicalPanel("interpretation")}
+                style={{
+                  textAlign: "left",
+                  padding: 16,
+                  borderRadius: 18,
+                  border: activeTechnicalPanel === "interpretation" ? "1px solid #2563eb" : "1px solid #e2e8f0",
+                  background: activeTechnicalPanel === "interpretation" ? "#eff6ff" : "#fff",
+                  cursor: "pointer",
+                }}
+              >
+                <span style={{ fontSize: 12, fontWeight: 800, color: "#2563eb" }}>3 점수 해석</span>
+                <strong style={{ display: "block", marginTop: 10, fontSize: 24, color: "#1d4ed8" }}>
+                  {technicalStrategy.actionLabel}
+                </strong>
+                <small style={{ display: "block", marginTop: 8, color: "#64748b", lineHeight: 1.5 }}>
+                  매수 · 관망 · 회피 · 보유 의미
+                </small>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTechnicalPanel("price")}
+                style={{
+                  textAlign: "left",
+                  padding: 16,
+                  borderRadius: 18,
+                  border: activeTechnicalPanel === "price" ? "1px solid #ec4899" : "1px solid #e2e8f0",
+                  background: activeTechnicalPanel === "price" ? "#fdf2f8" : "#fff",
+                  cursor: "pointer",
+                }}
+              >
+                <span style={{ fontSize: 12, fontWeight: 800, color: "#db2777" }}>4 추정가</span>
+                <strong style={{ display: "block", marginTop: 10, fontSize: 22, color: "#be185d" }}>
+                  기준 {formatStrategyPrice(technicalStrategy.priceRange.basePrice)}
+                </strong>
+                <small style={{ display: "block", marginTop: 8, color: "#64748b", lineHeight: 1.5 }}>
+                  하단~상단 범위의 대표 추정가
+                </small>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTechnicalPanel("signal")}
+                style={{
+                  textAlign: "left",
+                  padding: 16,
+                  borderRadius: 18,
+                  border: activeTechnicalPanel === "signal" ? "1px solid #7c3aed" : "1px solid #e2e8f0",
+                  background: activeTechnicalPanel === "signal" ? "#f5f3ff" : "#fff",
+                  cursor: "pointer",
+                }}
+              >
+                <span style={{ fontSize: 12, fontWeight: 800, color: "#7c3aed" }}>5 시그널</span>
+                <strong style={{ display: "block", marginTop: 10, fontSize: 24, color: "#5b21b6" }}>
+                  {technicalStrategy.tradeSignals.some((signal) => signal.active) ? "활성 신호" : "관망 우선"}
+                </strong>
+                <small style={{ display: "block", marginTop: 8, color: "#64748b", lineHeight: 1.5 }}>
+                  진입 · 분할매수 · 손절 · 익절 · 청산
+                </small>
+              </button>
             </div>
 
-            <div className="target-basis-box" style={{ marginTop: 12 }}>
-              <div className="target-basis-header">
-                <span>지표별 점수표</span>
-                <strong>TABLE 기준</strong>
-              </div>
+            <div
+              style={{
+                border: "1px solid #e2e8f0",
+                borderRadius: 18,
+                padding: 18,
+                background: "#fff",
+              }}
+            >
+              {activeTechnicalPanel === "market" ? (
+                <div>
+                  <div className="target-basis-header">
+                    <span>시장 설명</span>
+                    <strong>{technicalStrategy.regimeLabel}</strong>
+                  </div>
+                  <div className="target-basis-adjustments" style={{ marginTop: 12 }}>
+                    <p>{technicalStrategy.regimeDescription}</p>
+                    <p>시장 상태를 누르면 그래프에서 빨간점·노란점·파란점으로 사유와 날짜, 숫자를 확인하는 구조입니다.</p>
+                  </div>
+                </div>
+              ) : null}
 
-              <div className="target-basis-adjustments">
-                {technicalStrategy.rows.map((row) => (
-                  <p key={row.key}>
-                    {row.label}: {row.score}/{row.maxScore}점 · {row.status} · {row.reason}
-                  </p>
-                ))}
-              </div>
+              {activeTechnicalPanel === "score" ? (
+                <div>
+                  <div className="target-basis-header">
+                    <span>점수표</span>
+                    <strong>TABLE 기준</strong>
+                  </div>
+                  <div className="target-basis-adjustments" style={{ marginTop: 12 }}>
+                    {technicalStrategy.rows.map((row) => (
+                      <p key={row.key}>
+                        {row.label}: {row.score}/{row.maxScore}점 · {row.status} · {row.reason}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {activeTechnicalPanel === "interpretation" ? (
+                <div>
+                  <div className="target-basis-header">
+                    <span>점수 해석</span>
+                    <strong>{technicalStrategy.actionLabel}</strong>
+                  </div>
+                  <div className="target-basis-adjustments" style={{ marginTop: 12 }}>
+                    <p>{technicalStrategy.actionDescription}</p>
+                    <p>현재 점수는 {technicalStrategy.finalScore}점입니다. 점수별 의미를 매수, 관망, 회피, 보유관리로 나눠 보여줍니다.</p>
+                  </div>
+                </div>
+              ) : null}
+
+              {activeTechnicalPanel === "price" ? (
+                <div>
+                  <div className="target-basis-header">
+                    <span>추정가 범위</span>
+                    <strong>기준 = 대표 추정가</strong>
+                  </div>
+
+                  <div className="summary-grid summary-grid-four" style={{ marginTop: 12 }}>
+                    <div className="mini-stat">
+                      <span>하단</span>
+                      <strong>{formatStrategyPrice(technicalStrategy.priceRange.lowerPrice)}</strong>
+                      <small>보수적 기준가</small>
+                    </div>
+                    <div className="mini-stat" style={{ borderColor: "#f9a8d4", background: "#fdf2f8" }}>
+                      <span>기준</span>
+                      <strong>{formatStrategyPrice(technicalStrategy.priceRange.basePrice)}</strong>
+                      <small>대표 추정가</small>
+                    </div>
+                    <div className="mini-stat">
+                      <span>상단</span>
+                      <strong>{formatStrategyPrice(technicalStrategy.priceRange.upperPrice)}</strong>
+                      <small>낙관적 기준가</small>
+                    </div>
+                    <div className="mini-stat">
+                      <span>의미</span>
+                      <strong>예상 범위</strong>
+                      <small>기준값은 하단~상단 범위의 중심 기준입니다.</small>
+                    </div>
+                  </div>
+
+                  <div className="target-basis-adjustments" style={{ marginTop: 12 }}>
+                    <p>하단 근거: {technicalStrategy.priceRange.lowerBasis.join(" · ") || "데이터 대기"}</p>
+                    <p>기준 근거: {technicalStrategy.priceRange.baseBasis.join(" · ") || "데이터 대기"}</p>
+                    <p>상단 근거: {technicalStrategy.priceRange.upperBasis.join(" · ") || "데이터 대기"}</p>
+                    <p>추정가 근거는 그래프에서 분홍색 점과 금액으로 표시하는 구조입니다.</p>
+                  </div>
+                </div>
+              ) : null}
+
+              {activeTechnicalPanel === "signal" ? (
+                <div>
+                  <div className="target-basis-header">
+                    <span>시그널</span>
+                    <strong>
+                      {technicalStrategy.tradeSignals.filter((signal) => signal.active).length
+                        ? "활성 신호 있음"
+                        : "관망 우선"}
+                    </strong>
+                  </div>
+                  <div className="target-basis-adjustments" style={{ marginTop: 12 }}>
+                    {technicalStrategy.tradeSignals.map((signal) => (
+                      <p key={signal.type}>
+                        {signal.label}: {signal.active ? "활성" : "비활성"}
+                        {" · "}
+                        강도 {signal.strength}
+                        {" · "}
+                        기준가 {formatStrategyPrice(signal.price)}
+                        {" · "}
+                        {signal.reason}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </div>
           </div>
 
