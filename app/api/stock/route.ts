@@ -203,6 +203,18 @@ const EMPTY_FUNDAMENTALS: FundamentalsData = {
   low52w: null,
 };
 
+const FUNDAMENTALS_CACHE_TTL_MS = 1000 * 60 * 60 * 24;
+
+const fundamentalsCache = new Map<
+  string,
+  {
+    data: FundamentalsData;
+    updatedAt: string;
+    expiresAt: number;
+  }
+>();
+
+
 
 function makeEarningsGrowthCacheKey(searchParams: URLSearchParams) {
   const manualKeys = [
@@ -383,6 +395,9 @@ export async function GET(req: NextRequest) {
     const timestamps: number[] = result?.timestamp || [];
     const quote = result?.indicators?.quote?.[0] || {};
     const adjclose = result?.indicators?.adjclose?.[0]?.adjclose || [];
+    const opensRaw: Array<number | null> = quote?.open || [];
+    const highsRaw: Array<number | null> = quote?.high || [];
+    const lowsRaw: Array<number | null> = quote?.low || [];
     const closesRaw: Array<number | null> = quote?.close || [];
     const volumesRaw: Array<number | null> = quote?.volume || [];
 
@@ -392,6 +407,9 @@ export async function GET(req: NextRequest) {
 
         return {
           date: new Date(ts * 1000).toISOString().slice(0, 10),
+          open: opensRaw[i] != null ? Number(opensRaw[i]) : null,
+          high: highsRaw[i] != null ? Number(highsRaw[i]) : null,
+          low: lowsRaw[i] != null ? Number(lowsRaw[i]) : null,
           close: close != null ? Number(close) : null,
           volume: volumesRaw[i] != null ? Number(volumesRaw[i]) : 0,
         };
@@ -399,6 +417,9 @@ export async function GET(req: NextRequest) {
       .filter((row) => row.close != null)
       .sort((a, b) => a.date.localeCompare(b.date)) as Array<{
       date: string;
+      open: number | null;
+      high: number | null;
+      low: number | null;
       close: number;
       volume: number;
     }>;
@@ -451,9 +472,9 @@ export async function GET(req: NextRequest) {
 
       return {
         date,
-        open: kisDaily?.open ?? null,
-        high: kisDaily?.high ?? null,
-        low: kisDaily?.low ?? null,
+        open: kisDaily?.open ?? chartRows[i]?.open ?? null,
+        high: kisDaily?.high ?? chartRows[i]?.high ?? null,
+        low: kisDaily?.low ?? chartRows[i]?.low ?? null,
         close: closes[i] ?? null,
         sma20: sma20[i] ?? null,
         sma60: sma60[i] ?? null,
@@ -713,10 +734,13 @@ async function getSupplyData(symbol: string): Promise<SupplyData> {
 }
 
 async function getFundamentalsData(symbol: string): Promise<FundamentalsData> {
+  const cacheKey = normalizeStockCode(symbol);
+  const cached = fundamentalsCache.get(cacheKey);
+
   try {
     const fundamentals = await getKisStockFundamentals(symbol);
 
-    return {
+    const data: FundamentalsData = {
       marketCap: fundamentals.marketCap,
       per: fundamentals.per,
       pbr: fundamentals.pbr,
@@ -728,8 +752,27 @@ async function getFundamentalsData(symbol: string): Promise<FundamentalsData> {
       high52w: fundamentals.high52w,
       low52w: fundamentals.low52w,
     };
+
+    const hasUsableValue = Object.values(data).some(
+      (value) => typeof value === "number" && Number.isFinite(value),
+    );
+
+    if (hasUsableValue) {
+      fundamentalsCache.set(cacheKey, {
+        data,
+        updatedAt: new Date().toISOString(),
+        expiresAt: Date.now() + FUNDAMENTALS_CACHE_TTL_MS,
+      });
+    }
+
+    return data;
   } catch (error) {
     console.warn("KIS fundamentals unavailable:", error);
+
+    if (cached) {
+      return cached.data;
+    }
+
     return EMPTY_FUNDAMENTALS;
   }
 }
