@@ -21,7 +21,10 @@ import { usePredictionHistory } from "../hooks/usePredictionHistory";
 
 type ChartRow = {
   date: string;
-  close: number | null;
+  
+  open?: number | null;
+  high?: number | null;
+  low?: number | null;close: number | null;
   sma20?: number | null;
   sma60?: number | null;
   rsi14?: number | null;
@@ -286,6 +289,15 @@ type CompositeScore = {
   };
 };
 
+type StockResponseMeta = {
+  cached?: boolean;
+  cacheSource?: string | null;
+  warning?: string | null;
+  updatedAt?: string | null;
+  range?: string | null;
+  source?: string | null;
+};
+
 type StockResponse = {
   ok?: boolean;
   symbol?: string;
@@ -312,6 +324,7 @@ type StockResponse = {
   cached?: boolean;
   cacheSource?: string;
   warning?: string;
+  meta?: StockResponseMeta;
   blocked?: boolean;
   error?: string;
   detail?: string;
@@ -1207,6 +1220,176 @@ function appendManualEarningsParams(
       params.set(key, trimmed);
     }
   });
+}
+
+function DataSourceBadge({ data }: { data: StockResponse | null }) {
+  if (!data) return null;
+
+  const meta = data.meta ?? {};
+  const source = meta.source ?? "";
+  const cached = Boolean(data.cached || meta.cached);
+  const cacheSource = data.cacheSource ?? meta.cacheSource ?? null;
+  const updatedAt = meta.updatedAt ?? null;
+
+  const chartRows = Array.isArray(data.chartData) ? data.chartData : [];
+  const latestRow = chartRows.length ? chartRows[chartRows.length - 1] : null;
+
+  const hasOhlc =
+    latestRow?.open != null &&
+    latestRow?.high != null &&
+    latestRow?.low != null &&
+    latestRow?.close != null;
+
+  const fundamentals = data.fundamentals as Record<string, unknown> | undefined;
+  const hasFundamentals = fundamentals
+    ? Object.values(fundamentals).some(
+        (value) => typeof value === "number" && Number.isFinite(value),
+      )
+    : false;
+
+  const priceSourceLabel = hasOhlc
+    ? source.includes("KIS daily")
+      ? "Yahoo 차트 + KIS 일봉 보강"
+      : source.includes("Yahoo")
+        ? "Yahoo 가격 데이터"
+        : "가격 데이터"
+    : "가격 데이터 확인 필요";
+
+  const valuationSourceLabel = hasFundamentals
+    ? "KIS fundamentals / 캐시 데이터"
+    : "데이터 없음";
+
+  const cacheLabel = cached
+    ? cacheSource
+      ? `캐시 사용: ${cacheSource}`
+      : "캐시 사용"
+    : "실시간 조회";
+
+  const updatedLabel = updatedAt
+    ? new Date(updatedAt).toLocaleString("ko-KR")
+    : "업데이트 시간 확인 중";
+
+  return (
+    <section
+      aria-label="데이터 출처"
+      style={{
+        margin: "12px 0 18px",
+        padding: "14px 16px",
+        borderRadius: 18,
+        border: "1px solid #e2e8f0",
+        background: "#ffffff",
+        boxShadow: "0 8px 24px rgba(15, 23, 42, 0.05)",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          flexWrap: "wrap",
+        }}
+      >
+        <div>
+          <strong style={{ display: "block", color: "#0f172a", fontSize: 15 }}>
+            데이터 출처
+          </strong>
+          <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: 13 }}>
+            KIS 호출 제한 시 가격 데이터는 Yahoo OHLC로 보완하고, 실적·밸류는 마지막 성공 캐시를 우선 사용합니다.
+          </p>
+        </div>
+
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            borderRadius: 999,
+            padding: "6px 10px",
+            fontSize: 12,
+            fontWeight: 800,
+            color: cached ? "#92400e" : "#166534",
+            background: cached ? "#fffbeb" : "#f0fdf4",
+            border: cached ? "1px solid #facc15" : "1px solid #bbf7d0",
+          }}
+        >
+          {cacheLabel}
+        </span>
+      </div>
+
+      <div
+        style={{
+          marginTop: 12,
+          display: "grid",
+          gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+          gap: 10,
+        }}
+      >
+        <div
+          style={{
+            padding: 12,
+            borderRadius: 14,
+            background: "#f8fafc",
+            border: "1px solid #e2e8f0",
+          }}
+        >
+          <span style={{ display: "block", color: "#64748b", fontSize: 12, fontWeight: 800 }}>
+            가격 데이터
+          </span>
+          <strong style={{ display: "block", marginTop: 4, color: "#0f172a", fontSize: 14 }}>
+            {priceSourceLabel}
+          </strong>
+          <small style={{ color: "#64748b" }}>
+            open/high/low/close/volume 기준
+          </small>
+        </div>
+
+        <div
+          style={{
+            padding: 12,
+            borderRadius: 14,
+            background: hasFundamentals ? "#f0fdf4" : "#f8fafc",
+            border: hasFundamentals ? "1px solid #bbf7d0" : "1px solid #e2e8f0",
+          }}
+        >
+          <span style={{ display: "block", color: "#64748b", fontSize: 12, fontWeight: 800 }}>
+            실적·밸류
+          </span>
+          <strong
+            style={{
+              display: "block",
+              marginTop: 4,
+              color: hasFundamentals ? "#166534" : "#64748b",
+              fontSize: 14,
+            }}
+          >
+            {valuationSourceLabel}
+          </strong>
+          <small style={{ color: "#64748b" }}>
+            PER/PBR/EPS/BPS 기준
+          </small>
+        </div>
+
+        <div
+          style={{
+            padding: 12,
+            borderRadius: 14,
+            background: "#f8fafc",
+            border: "1px solid #e2e8f0",
+          }}
+        >
+          <span style={{ display: "block", color: "#64748b", fontSize: 12, fontWeight: 800 }}>
+            업데이트
+          </span>
+          <strong style={{ display: "block", marginTop: 4, color: "#0f172a", fontSize: 14 }}>
+            {updatedLabel}
+          </strong>
+          <small style={{ color: "#64748b" }}>
+            분석 API 응답 기준
+          </small>
+        </div>
+      </div>
+    </section>
+  );
 }
 
 function StockIdentity({
