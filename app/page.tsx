@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import ChartAnalysisSections from "../components/chart/ChartAnalysisSections";
+import { calculateTechnicalStrategy } from "../lib/technicalStrategy";
 import CompositeScoreSection from "../components/analysis/CompositeScoreSection";
 import EarningsGrowthSection from "../components/analysis/EarningsGrowthSection";
 import TargetPriceSection from "../components/analysis/TargetPriceSection";
@@ -1029,7 +1030,7 @@ export default function HomePage() {
           </div>
         </section>
 
-<TargetPriceSection score={data?.score} lastFetchedAt={lastFetchedAt} />
+<TargetPriceSection score={data?.score} lastFetchedAt={lastFetchedAt} rows={chartData} />
 
           <CompositeScoreSection score={data?.score} />
         </SectionGroup>
@@ -1311,11 +1312,18 @@ function DetailCalculationEvidence({
   const targetPrice = data?.score?.targetPrice;
   const currentPrice = pickDetailNumber(data?.currentPrice, data?.price, data?.close);
 
-  const technicalTarget = pickDetailNumber(
-    targetPrice?.technicalTargetRange?.baseTarget,
-    targetPrice?.technicalTargetRange?.technicalTarget,
-    targetPrice?.technicalTarget,
+  const chartRowsForTechnicalDetail = Array.isArray(data?.chartData) ? data.chartData : [];
+  const technicalStrategyForDetail = calculateTechnicalStrategy(chartRowsForTechnicalDetail);
+  const technicalStrategyBasePrice = pickDetailNumber(
+    technicalStrategyForDetail.priceRange.basePrice,
   );
+  const technicalTarget =
+    technicalStrategyBasePrice ??
+    pickDetailNumber(
+      targetPrice?.technicalTargetRange?.baseTarget,
+      targetPrice?.technicalTargetRange?.technicalTarget,
+      targetPrice?.technicalTarget,
+    );
 
   const valuationTarget = pickDetailNumber(
     targetPrice?.valuationTargetRange?.valuationTarget,
@@ -1406,9 +1414,9 @@ function buildDetailCalculationEvidence({
       label: "DETAIL 1 계산 근거",
       value: formatDetailWon(technicalTarget),
       summary:
-        "A. 기본 기술적 추정가는 현재가와 차트 지표를 묶어 산정한 가격 기준입니다. 아래 값은 계산 구조를 빠르게 확인하기 위한 요약입니다.",
+        "A. 기본 기술적 추정가는 기술전략의 하단·기준·상단 중 기준값을 대표 기술적 추정가로 사용합니다. 아래 값은 계산 구조를 빠르게 확인하기 위한 요약입니다.",
       items: [
-        { title: "현재 표시 기준가", value: formatDetailWon(technicalTarget), description: "차트·기술 지표 기반 산정값" },
+        { title: "현재 표시 기준가", value: formatDetailWon(technicalTarget), description: "기술전략 기준값" },
         { title: "기준 현재가", value: formatDetailWon(currentPrice), description: "분석 조회 시점 현재가" },
         { title: "계산 구조", value: "차트 신호 → 가격 환산", description: "이동평균, RSI, MACD, 볼린저밴드, OBV, 변동성 반영" },
         { title: "확인 위치", value: "차트 기준 결론", description: "아래 기술적 기준 종합 해석과 주가 차트에서 세부 근거 확인" },

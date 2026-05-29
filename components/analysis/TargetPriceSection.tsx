@@ -1,11 +1,13 @@
-﻿"use client";
+"use client";
 
-import type { ReactNode } from "react";
-import type { CompositeScore } from "../../types/stock";
+import { useMemo, type ReactNode } from "react";
+import { calculateTechnicalStrategy } from "../../lib/technicalStrategy";
+import type { ChartRow, CompositeScore } from "../../types/stock";
 
 type Props = {
   score?: CompositeScore;
   lastFetchedAt?: string | null;
+  rows?: ChartRow[];
 };
 
 type TargetTone = "positive" | "negative" | "neutral";
@@ -36,12 +38,14 @@ type ReferenceRange = {
   riskDownsidePercent: number;
 };
 
-export default function TargetPriceSection({ score, lastFetchedAt }: Props) {
+export default function TargetPriceSection({ score, lastFetchedAt, rows = [] }: Props) {
   const sourceRange =
     score?.targetPrice?.finalTargetRange ??
     score?.targetPrice?.technicalTargetRange ??
     null;
-  const option2 = calculateOption2Estimate(score);
+  const technicalStrategy = useMemo(() => calculateTechnicalStrategy(rows), [rows]);
+  const technicalBasePrice = technicalStrategy.priceRange.basePrice;
+  const option2 = calculateOption2Estimate(score, technicalBasePrice);
   const range = makeReferenceRange(option2, sourceRange);
 
   const targetProgress =
@@ -58,9 +62,9 @@ export default function TargetPriceSection({ score, lastFetchedAt }: Props) {
       <Card>
         <div className="target-header">
           <div>
-            <SectionTitleSmall>추정가 참고</SectionTitleSmall>
+            <SectionTitleSmall>추정가 산정 방식</SectionTitleSmall>
             <p className="target-subtitle">
-              추정가는 Summary의 2안 추정가 산정 방식과 같은 계산식으로
+              A. 기본 기술적 추정가는 기술전략의 기준값을 대표 추정가로 사용하고,
               맞춥니다. 최저·최고 추정가와 위험 기준선은 매수·보유 판단을 돕는
               참고 구간입니다.
             </p>
@@ -195,13 +199,16 @@ function SectionTitleSmall({ children }: { children: ReactNode }) {
   return <h3 className="section-title small">{children}</h3>;
 }
 
-function calculateOption2Estimate(score?: CompositeScore): Option2Estimate {
+function calculateOption2Estimate(
+  score?: CompositeScore,
+  technicalBasePrice?: number | null,
+): Option2Estimate {
   const targetPrice = score?.targetPrice;
   const sourceRange =
     targetPrice?.finalTargetRange ?? targetPrice?.technicalTargetRange ?? null;
 
   const currentPrice = getNumber(sourceRange?.currentPrice);
-  const technicalTarget = getTechnicalTarget(targetPrice);
+  const technicalTarget = getNumber(technicalBasePrice) ?? getTechnicalTarget(targetPrice);
   const valuationTarget = getNumber(targetPrice?.valuationTargetRange?.valuationTarget);
   const consensusTarget = getNumber((targetPrice as any)?.consensusTarget);
 
@@ -355,6 +362,14 @@ function makeReferenceRange(
 }
 
 function getTechnicalTarget(targetPrice?: CompositeScore["targetPrice"]) {
+  const technicalRangeBase = getNumber(targetPrice?.technicalTargetRange?.baseTarget);
+
+  if (technicalRangeBase != null) return technicalRangeBase;
+
+  const finalRangeBase = getNumber(targetPrice?.finalTargetRange?.baseTarget);
+
+  if (finalRangeBase != null) return finalRangeBase;
+
   const candidates = targetPrice?.targetBasis?.candidates;
 
   if (Array.isArray(candidates)) {
@@ -367,7 +382,7 @@ function getTechnicalTarget(targetPrice?: CompositeScore["targetPrice"]) {
     if (value != null) return value;
   }
 
-  return getNumber(targetPrice?.technicalTargetRange?.baseTarget);
+  return null;
 }
 
 function calculateAdjustmentAmount(basisAverage: number | null, percent: number) {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { calculateTechnicalStrategy } from "../../lib/technicalStrategy";
 
 type ConsensusData = {
   averageTargetPrice?: number | null;
@@ -164,7 +165,11 @@ export default function SummaryAbcOverviewSection({ data }: Props) {
 
   const usableFundamentals = getUsableFundamentals(data?.fundamentals, kisFundamentals);
 
-  const technicalTarget = getTechnicalTarget(targetPrice, range);
+  const chartRows = Array.isArray(data?.chartData) ? data.chartData : [];
+  const technicalStrategy = useMemo(() => calculateTechnicalStrategy(chartRows), [chartRows]);
+  const technicalStrategyBasePrice = getNumber(technicalStrategy.priceRange.basePrice);
+  const technicalTarget =
+    technicalStrategyBasePrice ?? getTechnicalTarget(targetPrice, range);
   const valuationFallback = calculateValuationTargetRange(currentPrice, usableFundamentals);
   const valuationTarget =
     getNumber(valuationRange?.valuationTarget) ??
@@ -201,7 +206,7 @@ export default function SummaryAbcOverviewSection({ data }: Props) {
         </div>
 
         <p className="target-basis-summary">
-          추정가는 A/B/C 기준가의 가중평균에 퀀트·수급·위험 보정을 더해 계산합니다.
+          추정가는 A/B/C 기준가의 가중평균에 퀀트·수급·위험 보정을 더해 계산합니다. A값은 기술전략의 기준값을 대표 기술적 추정가로 사용합니다.
           컨센서스가 없으면 A/B 기준으로 가중치를 자동 재분배합니다.
         </p>
 
@@ -215,7 +220,7 @@ export default function SummaryAbcOverviewSection({ data }: Props) {
             <SummaryMetricCard
               title="A. 기본 기술적 추정가"
               value={formatPrice(technicalTarget)}
-              subText={`가중치 ${formatWeight(estimate.weights.technical)}`}
+              subText={`가중치 ${formatWeight(estimate.weights.technical)} · 기술전략 기준값`}
             />
             <SummaryMetricCard
               title="B. 실적·밸류 기준가"

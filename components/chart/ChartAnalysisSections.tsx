@@ -47,6 +47,83 @@ export default function ChartAnalysisSections({ data, rows }: Props) {
     const technicalSummary = makeTechnicalSummary(data, latestRow, bbStatus, obvTrend);
   const technicalStrategy = useMemo(() => calculateTechnicalStrategy(rows), [rows]);
   const [activeTechnicalPanel, setActiveTechnicalPanel] = useState<"market" | "score" | "interpretation" | "price" | "signal">("market");
+  const regimeLabel = technicalStrategy.regimeLabel ?? "";
+  const isSidewaysRegime = regimeLabel.includes("횡보");
+  const isDownRegime = regimeLabel.includes("하락");
+  const regimeColor = isDownRegime ? "#2563eb" : isSidewaysRegime ? "#d97706" : "#ef4444";
+  const regimeBackground = isDownRegime ? "#eff6ff" : isSidewaysRegime ? "#fffbeb" : "#fff1f2";
+  const regimeBorder = isDownRegime ? "#93c5fd" : isSidewaysRegime ? "#facc15" : "#fca5a5";
+  const regimeSimpleReason = isSidewaysRegime
+    ? "상승 근거와 상단 부담이 동시에 나타나는 구간입니다. 방향이 완전히 열린 상승장보다, 확인 후 분할 접근이 적합한 흐름입니다."
+    : isDownRegime
+      ? "가격이 주요 기준선 아래에 있거나 모멘텀이 약해 방어적 접근이 필요한 흐름입니다."
+      : "가격과 모멘텀이 우호적으로 움직이며 상승 방향성이 상대적으로 강한 흐름입니다.";
+
+  const latestTechnicalRow = rows.length ? (rows[rows.length - 1] as any) : {};
+  const latestTechnical = ((technicalStrategy as any).latest ?? {}) as any;
+
+  const pickTechnicalNumber = (...values: unknown[]) => {
+    for (const value of values) {
+      if (typeof value === "number" && Number.isFinite(value)) return value;
+      if (typeof value === "string" && value.trim()) {
+        const parsed = Number(value.replace(/,/g, ""));
+        if (Number.isFinite(parsed)) return parsed;
+      }
+    }
+
+    return null;
+  };
+
+  const formatTechnicalNumber = (value?: number | null, digits = 1) =>
+    value == null || !Number.isFinite(value)
+      ? "데이터 없음"
+      : new Intl.NumberFormat("ko-KR", { maximumFractionDigits: digits }).format(value);
+
+  const formatTechnicalPercent = (value?: number | null) =>
+    value == null || !Number.isFinite(value)
+      ? "데이터 없음"
+      : `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
+
+  const closeForReason = pickTechnicalNumber(
+    latestTechnical.close,
+    latestTechnical.currentPrice,
+    latestTechnicalRow.close,
+  );
+  const sma20ForReason = pickTechnicalNumber(latestTechnical.sma20, latestTechnicalRow.sma20);
+  const sma60ForReason = pickTechnicalNumber(latestTechnical.sma60, latestTechnicalRow.sma60);
+  const rsiForReason = pickTechnicalNumber(latestTechnical.rsi14, latestTechnical.rsi, latestTechnicalRow.rsi14, latestTechnicalRow.rsi);
+  const macdForReason = pickTechnicalNumber(latestTechnical.macd, latestTechnicalRow.macd);
+  const macdSignalForReason = pickTechnicalNumber(
+    latestTechnical.macdSignal,
+    latestTechnical.signal,
+    latestTechnicalRow.macdSignal,
+    latestTechnicalRow.signal,
+  );
+  const bbUpperForReason = pickTechnicalNumber(latestTechnical.bbUpper, latestTechnicalRow.bbUpper);
+  const bbLowerForReason = pickTechnicalNumber(latestTechnical.bbLower, latestTechnicalRow.bbLower);
+
+  const priceVsSma20Percent =
+    closeForReason != null && sma20ForReason != null && sma20ForReason !== 0
+      ? ((closeForReason - sma20ForReason) / sma20ForReason) * 100
+      : null;
+  const priceVsSma60Percent =
+    closeForReason != null && sma60ForReason != null && sma60ForReason !== 0
+      ? ((closeForReason - sma60ForReason) / sma60ForReason) * 100
+      : null;
+  const rsiToOverheatGap =
+    rsiForReason != null ? 70 - rsiForReason : null;
+  const macdSignalGap =
+    macdForReason != null && macdSignalForReason != null
+      ? macdForReason - macdSignalForReason
+      : null;
+  const bbUpperGapPercent =
+    closeForReason != null && bbUpperForReason != null && closeForReason !== 0
+      ? ((bbUpperForReason - closeForReason) / closeForReason) * 100
+      : null;
+  const bbLowerGapPercent =
+    closeForReason != null && bbLowerForReason != null && closeForReason !== 0
+      ? ((closeForReason - bbLowerForReason) / closeForReason) * 100
+      : null;
 return (
     <>
       <section className="data-section">
@@ -179,11 +256,111 @@ return (
                 <div>
                   <div className="target-basis-header">
                     <span>시장 설명</span>
-                    <strong>{technicalStrategy.regimeLabel}</strong>
+                    <strong style={{ color: regimeColor }}>{technicalStrategy.regimeLabel}</strong>
                   </div>
-                  <div className="target-basis-adjustments" style={{ marginTop: 12 }}>
-                    <p>{technicalStrategy.regimeDescription}</p>
-                    <p>시장 상태를 누르면 그래프에서 빨간점·노란점·파란점으로 사유와 날짜, 숫자를 확인하는 구조입니다.</p>
+
+                  <div
+                    style={{
+                      marginTop: 12,
+                      display: "grid",
+                      gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                      gap: 10,
+                    }}
+                  >
+                    <div
+                      className="mini-stat"
+                      style={{
+                        borderColor: priceVsSma20Percent != null && priceVsSma20Percent >= 0 ? "#fecaca" : "#bfdbfe",
+                        background: priceVsSma20Percent != null && priceVsSma20Percent >= 0 ? "#fff1f2" : "#eff6ff",
+                      }}
+                    >
+                      <span>현재가 vs SMA20</span>
+                      <strong>{formatTechnicalPercent(priceVsSma20Percent)}</strong>
+                      <small>단기 추세선 대비 위치</small>
+                    </div>
+
+                    <div
+                      className="mini-stat"
+                      style={{
+                        borderColor: priceVsSma60Percent != null && priceVsSma60Percent >= 0 ? "#fecaca" : "#bfdbfe",
+                        background: priceVsSma60Percent != null && priceVsSma60Percent >= 0 ? "#fff1f2" : "#eff6ff",
+                      }}
+                    >
+                      <span>현재가 vs SMA60</span>
+                      <strong>{formatTechnicalPercent(priceVsSma60Percent)}</strong>
+                      <small>중기 추세선 대비 위치</small>
+                    </div>
+
+                    <div
+                      className="mini-stat"
+                      style={{
+                        borderColor: "#facc15",
+                        background: "#fffbeb",
+                      }}
+                    >
+                      <span>RSI14</span>
+                      <strong>{formatTechnicalNumber(rsiForReason, 1)}</strong>
+                      <small>
+                        과열선 70까지 {formatTechnicalNumber(rsiToOverheatGap, 1)}p
+                      </small>
+                    </div>
+
+                    <div
+                      className="mini-stat"
+                      style={{
+                        borderColor: macdSignalGap != null && macdSignalGap >= 0 ? "#fecaca" : "#bfdbfe",
+                        background: macdSignalGap != null && macdSignalGap >= 0 ? "#fff1f2" : "#eff6ff",
+                      }}
+                    >
+                      <span>MACD - Signal</span>
+                      <strong>{formatTechnicalNumber(macdSignalGap, 2)}</strong>
+                      <small>0보다 크면 단기 모멘텀 우위</small>
+                    </div>
+
+                    <div
+                      className="mini-stat"
+                      style={{
+                        borderColor: "#facc15",
+                        background: "#fffbeb",
+                      }}
+                    >
+                      <span>BB 상단까지</span>
+                      <strong>{formatTechnicalPercent(bbUpperGapPercent)}</strong>
+                      <small>상단 저항까지 남은 거리</small>
+                    </div>
+
+                    <div
+                      className="mini-stat"
+                      style={{
+                        borderColor: "#e2e8f0",
+                        background: "#ffffff",
+                      }}
+                    >
+                      <span>BB 하단 대비</span>
+                      <strong>{formatTechnicalPercent(bbLowerGapPercent)}</strong>
+                      <small>하단 지지선과의 거리</small>
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 14,
+                      padding: 14,
+                      borderRadius: 16,
+                      border: `1px solid ${regimeBorder}`,
+                      background: regimeBackground,
+                    }}
+                  >
+                    <strong style={{ display: "block", color: regimeColor, marginBottom: 8 }}>
+                      왜 {technicalStrategy.regimeLabel}인가?
+                    </strong>
+                    <p style={{ margin: 0, lineHeight: 1.7 }}>
+                      {regimeSimpleReason}
+                    </p>
+                    <p style={{ margin: "8px 0 0", lineHeight: 1.7 }}>
+                      수치상으로는 현재가가 이동평균선 대비 어느 위치에 있는지, RSI가 과열선 70에 얼마나 가까운지,
+                      MACD가 Signal보다 얼마나 우위인지, 볼린저밴드 상단까지 남은 거리를 함께 봅니다.
+                    </p>
                   </div>
                 </div>
               ) : null}
