@@ -247,12 +247,36 @@ return (
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10, marginBottom: 14 }}>
-              <div className="mini-stat" style={{ background: "#fff1f2", borderColor: "#fecaca" }}><span>현재가 vs SMA20</span><strong style={{ color: "#dc2626" }}>{formatTechnicalPercent(priceVsSma20Percent)}</strong></div>
-              <div className="mini-stat" style={{ background: "#fff1f2", borderColor: "#fecaca" }}><span>현재가 vs SMA60</span><strong style={{ color: "#dc2626" }}>{formatTechnicalPercent(priceVsSma60Percent)}</strong></div>
-              <div className="mini-stat" style={{ background: "#fffbeb", borderColor: "#facc15" }}><span>RSI14</span><strong>{formatTechnicalNumber(rsiForReason, 1)}</strong><small>70까지 {formatTechnicalNumber(rsiToOverheatGap, 1)}p</small></div>
-              <div className="mini-stat" style={{ background: "#fffbeb", borderColor: "#facc15" }}><span>MACD - Signal</span><strong style={{ color: "#dc2626" }}>{formatTechnicalNumber(macdSignalGap, 2)}</strong></div>
-              <div className="mini-stat" style={{ background: "#fffbeb", borderColor: "#facc15" }}><span>BB 상단까지</span><strong style={{ color: "#dc2626" }}>{formatTechnicalPercent(bbUpperGapPercent)}</strong></div>
-              <div className="mini-stat" style={{ background: "#eff6ff", borderColor: "#bfdbfe" }}><span>BB 하단 대비</span><strong style={{ color: "#2563eb" }}>{formatTechnicalPercent(bbLowerGapPercent)}</strong></div>
+              <div className="mini-stat" style={{ background: "#fff1f2", borderColor: "#fecaca", minHeight: 68, display: "grid", gap: 4 }}>
+                <span>현재가 / SMA20</span>
+                <strong style={{ color: "#dc2626" }}>{formatTechnicalPercent(priceVsSma20Percent)}</strong>
+                <small>단기 추세선 대비</small>
+              </div>
+              <div className="mini-stat" style={{ background: "#fff1f2", borderColor: "#fecaca", minHeight: 68, display: "grid", gap: 4 }}>
+                <span>현재가 / SMA60</span>
+                <strong style={{ color: "#dc2626" }}>{formatTechnicalPercent(priceVsSma60Percent)}</strong>
+                <small>중기 추세선 대비</small>
+              </div>
+              <div className="mini-stat" style={{ background: "#fffbeb", borderColor: "#facc15", minHeight: 68, display: "grid", gap: 4 }}>
+                <span>RSI 14</span>
+                <strong>{formatTechnicalNumber(rsiForReason, 1)}</strong>
+                <small>과열선 70까지 {formatTechnicalNumber(rsiToOverheatGap, 1)}p</small>
+              </div>
+              <div className="mini-stat" style={{ background: "#fffbeb", borderColor: "#facc15", minHeight: 68, display: "grid", gap: 4 }}>
+                <span>MACD - Signal</span>
+                <strong style={{ color: "#dc2626" }}>{formatTechnicalNumber(macdSignalGap, 2)}</strong>
+                <small>0보다 크면 단기 우위</small>
+              </div>
+              <div className="mini-stat" style={{ background: "#fffbeb", borderColor: "#facc15", minHeight: 68, display: "grid", gap: 4 }}>
+                <span>BB 상단까지</span>
+                <strong style={{ color: "#dc2626" }}>{formatTechnicalPercent(bbUpperGapPercent)}</strong>
+                <small>상단 저항까지 거리</small>
+              </div>
+              <div className="mini-stat" style={{ background: "#eff6ff", borderColor: "#bfdbfe", minHeight: 68, display: "grid", gap: 4 }}>
+                <span>BB 하단 대비</span>
+                <strong style={{ color: "#2563eb" }}>{formatTechnicalPercent(bbLowerGapPercent)}</strong>
+                <small>하단 지지선과 거리</small>
+              </div>
             </div>
 
             <div style={{ transform: `scale(${sidewaysModalZoom})`, transformOrigin: "top left", width: `${100 / sidewaysModalZoom}%` }}>
@@ -288,18 +312,18 @@ return (
                     strokeDasharray="8 6"
                   />
                   <text x="500" y="205" fill="#b45309" fontSize="18" fontWeight="900" textAnchor="middle">횡보 판단 구간</text>
-                  <text x="500" y="230" fill="#92400e" fontSize="14" fontWeight="700" textAnchor="middle">상승 신호와 상단 부담이 동시에 확인</text>
+                  <text x="500" y="230" fill="#92400e" fontSize="14" fontWeight="700" textAnchor="middle">추세는 강하지만 상단 저항도 가까운 구간</text>
 
                   {[
-                    { index: sidewaysUpperIndex, value: bbUpperForReason, color: "#ef4444", title: "상승 신호", note: `BB 상단까지 ${formatTechnicalPercent(bbUpperGapPercent)}`, dx: -230, dy: -108 },
-                    { index: sidewaysMidIndex, value: closeForReason, color: "#f59e0b", title: "횡보 근거", note: `RSI ${formatTechnicalNumber(rsiForReason, 1)} · 70까지 ${formatTechnicalNumber(rsiToOverheatGap, 1)}p`, dx: -110, dy: -92 },
-                    { index: sidewaysLowIndex, value: bbLowerForReason, color: "#2563eb", title: "하락/지지", note: `BB 하단 대비 ${formatTechnicalPercent(bbLowerGapPercent)}`, dx: -20, dy: 82 },
-                    { index: sidewaysLastIndex, value: sidewaysBaseTarget, color: "#ec4899", title: "기준 추정가", note: formatStrategyPrice(sidewaysBaseTarget), dx: -90, dy: -34 },
-                    { index: Math.max(0, sidewaysLastIndex - 4), value: sidewaysLowerTarget, color: "#ec4899", title: "하단", note: formatStrategyPrice(sidewaysLowerTarget), dx: -90, dy: 92 },
-                    { index: Math.max(0, sidewaysLastIndex - 2), value: sidewaysUpperTarget, color: "#ec4899", title: "상단", note: formatStrategyPrice(sidewaysUpperTarget), dx: -90, dy: -146 },
+                    { index: sidewaysUpperIndex, value: bbUpperForReason, color: "#ef4444", title: "상승 신호", note: `BB 상단까지 ${formatTechnicalPercent(bbUpperGapPercent)}`, dx: -330, dy: -70 },
+                    { index: sidewaysMidIndex, value: closeForReason, color: "#f59e0b", title: "횡보 근거", note: `RSI ${formatTechnicalNumber(rsiForReason, 1)} / 70까지 ${formatTechnicalNumber(rsiToOverheatGap, 1)}p`, dx: -170, dy: -132 },
+                    { index: sidewaysLowIndex, value: bbLowerForReason, color: "#2563eb", title: "하락/지지", note: `BB 하단 대비 ${formatTechnicalPercent(bbLowerGapPercent)}`, dx: -40, dy: 112 },
+                    { index: sidewaysLastIndex, value: sidewaysBaseTarget, color: "#ec4899", title: "기준", note: formatStrategyPrice(sidewaysBaseTarget), dx: -50, dy: -8 },
+                    { index: Math.max(0, sidewaysLastIndex - 4), value: sidewaysLowerTarget, color: "#ec4899", title: "하단", note: formatStrategyPrice(sidewaysLowerTarget), dx: -80, dy: 108 },
+                    { index: Math.max(0, sidewaysLastIndex - 2), value: sidewaysUpperTarget, color: "#ec4899", title: "상단", note: formatStrategyPrice(sidewaysUpperTarget), dx: -20, dy: -138 },
                   ].map((marker, index) => {
                     const point = getSidewaysPoint(marker.index, marker.value);
-                    const boxX = Math.max(70, Math.min(900, point.x + marker.dx));
+                    const boxX = Math.max(48, Math.min(920, point.x + marker.dx));
                     const boxY = Math.max(24, Math.min(348, point.y + marker.dy));
 
                     return (
