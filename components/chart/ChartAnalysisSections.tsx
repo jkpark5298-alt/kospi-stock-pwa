@@ -47,6 +47,8 @@ export default function ChartAnalysisSections({ data, rows }: Props) {
     const technicalSummary = makeTechnicalSummary(data, latestRow, bbStatus, obvTrend);
   const technicalStrategy = useMemo(() => calculateTechnicalStrategy(rows), [rows]);
   const [activeTechnicalPanel, setActiveTechnicalPanel] = useState<"market" | "score" | "interpretation" | "price" | "signal">("market");
+  const [showSidewaysDetailModal, setShowSidewaysDetailModal] = useState(false);
+  const [sidewaysModalZoom, setSidewaysModalZoom] = useState(1);
   const regimeLabel = technicalStrategy.regimeLabel ?? "";
   const isSidewaysRegime = regimeLabel.includes("횡보");
   const isDownRegime = regimeLabel.includes("하락");
@@ -124,8 +126,217 @@ export default function ChartAnalysisSections({ data, rows }: Props) {
     closeForReason != null && bbLowerForReason != null && closeForReason !== 0
       ? ((closeForReason - bbLowerForReason) / closeForReason) * 100
       : null;
+
+  const sidewaysChartRows = rows.slice(-70);
+  const sidewaysChartValues = sidewaysChartRows
+    .flatMap((row: any) => [row.close, row.sma20, row.sma60, row.bbUpper, row.bbLower])
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+
+  const sidewaysMinValue = sidewaysChartValues.length ? Math.min(...sidewaysChartValues) : 0;
+  const sidewaysMaxValue = sidewaysChartValues.length ? Math.max(...sidewaysChartValues) : 1;
+  const sidewaysRangeValue = sidewaysMaxValue - sidewaysMinValue || 1;
+
+  const getSidewaysPoint = (index: number, value?: number | null) => {
+    const width = 940;
+    const height = 360;
+    const padLeft = 58;
+    const padRight = 48;
+    const padTop = 28;
+    const padBottom = 42;
+    const count = Math.max(1, sidewaysChartRows.length - 1);
+    const x = padLeft + ((width - padLeft - padRight) * index) / count;
+    const y =
+      padTop +
+      ((height - padTop - padBottom) *
+        (sidewaysMaxValue - (typeof value === "number" ? value : sidewaysMinValue))) /
+        sidewaysRangeValue;
+
+    return { x, y };
+  };
+
+  const makeSidewaysPath = (key: "close" | "sma20" | "sma60" | "bbUpper" | "bbLower") =>
+    sidewaysChartRows
+      .map((row: any, index) => {
+        const value = row?.[key];
+
+        if (typeof value !== "number" || !Number.isFinite(value)) return "";
+
+        const point = getSidewaysPoint(index, value);
+        return `${index === 0 ? "M" : "L"} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`;
+      })
+      .filter(Boolean)
+      .join(" ");
+
+  const findClosestSidewaysIndex = (targetValue?: number | null) => {
+    if (!sidewaysChartRows.length || targetValue == null || !Number.isFinite(targetValue)) {
+      return Math.max(0, sidewaysChartRows.length - 1);
+    }
+
+    let bestIndex = 0;
+    let bestGap = Number.POSITIVE_INFINITY;
+
+    sidewaysChartRows.forEach((row: any, index) => {
+      const close = pickTechnicalNumber(row?.close);
+
+      if (close == null) return;
+
+      const gap = Math.abs(close - targetValue);
+
+      if (gap < bestGap) {
+        bestGap = gap;
+        bestIndex = index;
+      }
+    });
+
+    return bestIndex;
+  };
+
+  const sidewaysLastIndex = Math.max(0, sidewaysChartRows.length - 1);
+  const sidewaysMidIndex = Math.max(0, Math.floor(sidewaysChartRows.length * 0.55));
+  const sidewaysEarlyIndex = Math.max(0, Math.floor(sidewaysChartRows.length * 0.2));
+  const sidewaysLowIndex = findClosestSidewaysIndex(bbLowerForReason);
+  const sidewaysUpperIndex = findClosestSidewaysIndex(bbUpperForReason);
+  const sidewaysBaseTarget = technicalStrategy.priceRange.basePrice;
+  const sidewaysLowerTarget = technicalStrategy.priceRange.lowerPrice;
+  const sidewaysUpperTarget = technicalStrategy.priceRange.upperPrice;
 return (
     <>
+      {showSidewaysDetailModal ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="횡보 장세 상세 보기"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1000,
+            background: "rgba(15, 23, 42, 0.52)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24,
+          }}
+          onClick={() => setShowSidewaysDetailModal(false)}
+        >
+          <div
+            style={{
+              width: "min(1320px, 98vw)",
+              maxHeight: "92vh",
+              overflow: "auto",
+              borderRadius: 24,
+              background: "#ffffff",
+              boxShadow: "0 24px 70px rgba(15, 23, 42, 0.35)",
+              padding: 24,
+            }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 16 }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 28, color: "#0f172a" }}>횡보 장세 상세 보기</h3>
+                <p style={{ margin: "6px 0 0", color: "#64748b", fontWeight: 700 }}>
+                  확대 가능 · 그래프에서 기준과 실제 수치를 한눈에 확인
+                </p>
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <button type="button" onClick={() => setSidewaysModalZoom((zoom) => Math.max(0.8, Number((zoom - 0.1).toFixed(1))))} style={{ width: 38, height: 38, borderRadius: 999, border: "1px solid #cbd5e1", background: "#ffffff", cursor: "pointer", fontWeight: 900 }}>-</button>
+                <strong style={{ minWidth: 52, textAlign: "center", color: "#475569" }}>{Math.round(sidewaysModalZoom * 100)}%</strong>
+                <button type="button" onClick={() => setSidewaysModalZoom((zoom) => Math.min(1.6, Number((zoom + 0.1).toFixed(1))))} style={{ width: 38, height: 38, borderRadius: 999, border: "1px solid #cbd5e1", background: "#ffffff", cursor: "pointer", fontWeight: 900 }}>+</button>
+                <button type="button" onClick={() => setShowSidewaysDetailModal(false)} style={{ width: 38, height: 38, borderRadius: 999, border: "1px solid #cbd5e1", background: "#ffffff", cursor: "pointer", fontWeight: 900 }}>×</button>
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10, marginBottom: 14 }}>
+              <div className="mini-stat" style={{ background: "#fff1f2", borderColor: "#fecaca" }}><span>현재가 vs SMA20</span><strong style={{ color: "#dc2626" }}>{formatTechnicalPercent(priceVsSma20Percent)}</strong></div>
+              <div className="mini-stat" style={{ background: "#fff1f2", borderColor: "#fecaca" }}><span>현재가 vs SMA60</span><strong style={{ color: "#dc2626" }}>{formatTechnicalPercent(priceVsSma60Percent)}</strong></div>
+              <div className="mini-stat" style={{ background: "#fffbeb", borderColor: "#facc15" }}><span>RSI14</span><strong>{formatTechnicalNumber(rsiForReason, 1)}</strong><small>70까지 {formatTechnicalNumber(rsiToOverheatGap, 1)}p</small></div>
+              <div className="mini-stat" style={{ background: "#fffbeb", borderColor: "#facc15" }}><span>MACD - Signal</span><strong style={{ color: "#dc2626" }}>{formatTechnicalNumber(macdSignalGap, 2)}</strong></div>
+              <div className="mini-stat" style={{ background: "#fffbeb", borderColor: "#facc15" }}><span>BB 상단까지</span><strong style={{ color: "#dc2626" }}>{formatTechnicalPercent(bbUpperGapPercent)}</strong></div>
+              <div className="mini-stat" style={{ background: "#eff6ff", borderColor: "#bfdbfe" }}><span>BB 하단 대비</span><strong style={{ color: "#2563eb" }}>{formatTechnicalPercent(bbLowerGapPercent)}</strong></div>
+            </div>
+
+            <div style={{ transform: `scale(${sidewaysModalZoom})`, transformOrigin: "top left", width: `${100 / sidewaysModalZoom}%` }}>
+              <div style={{ border: "1px solid #e2e8f0", borderRadius: 20, padding: 16, background: "#ffffff" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 18, marginBottom: 8 }}>
+                  <strong style={{ color: "#0f172a" }}>차트 설명</strong>
+                  <span style={{ color: "#ef4444", fontWeight: 800 }}>● 상승 사유</span>
+                  <span style={{ color: "#f59e0b", fontWeight: 800 }}>● 횡보 사유</span>
+                  <span style={{ color: "#2563eb", fontWeight: 800 }}>● 하락/지지</span>
+                  <span style={{ color: "#ec4899", fontWeight: 800 }}>● 추정가</span>
+                </div>
+
+                <svg viewBox="0 0 1040 500" width="100%" height="500" role="img">
+                  <rect x="0" y="0" width="1040" height="500" fill="#ffffff" />
+                  {[0, 1, 2, 3, 4].map((line) => (
+                    <line key={line} x1="58" x2="988" y1={30 + line * 72} y2={30 + line * 72} stroke="#e2e8f0" strokeDasharray="4 6" />
+                  ))}
+
+                  <path d={makeSidewaysPath("bbUpper")} fill="none" stroke="#c084fc" strokeWidth="2" strokeDasharray="7 6" opacity="0.7" />
+                  <path d={makeSidewaysPath("bbLower")} fill="none" stroke="#c084fc" strokeWidth="2" strokeDasharray="7 6" opacity="0.7" />
+                  <path d={makeSidewaysPath("sma20")} fill="none" stroke="#f97316" strokeWidth="3" />
+                  <path d={makeSidewaysPath("sma60")} fill="none" stroke="#22c55e" strokeWidth="3" />
+                  <path d={makeSidewaysPath("close")} fill="none" stroke="#2563eb" strokeWidth="3" />
+
+                  <rect
+                    x={getSidewaysPoint(sidewaysEarlyIndex, closeForReason).x}
+                    y="105"
+                    width={Math.max(300, getSidewaysPoint(sidewaysLastIndex, closeForReason).x - getSidewaysPoint(sidewaysEarlyIndex, closeForReason).x - 120)}
+                    height="205"
+                    fill="#fef3c7"
+                    opacity="0.42"
+                    stroke="#f59e0b"
+                    strokeDasharray="8 6"
+                  />
+                  <text x="500" y="205" fill="#b45309" fontSize="18" fontWeight="900" textAnchor="middle">횡보 판단 구간</text>
+                  <text x="500" y="230" fill="#92400e" fontSize="14" fontWeight="700" textAnchor="middle">상승 신호와 상단 부담이 동시에 확인</text>
+
+                  {[
+                    { index: sidewaysUpperIndex, value: bbUpperForReason, color: "#ef4444", title: "상승 신호", note: `BB 상단까지 ${formatTechnicalPercent(bbUpperGapPercent)}`, dx: -230, dy: -108 },
+                    { index: sidewaysMidIndex, value: closeForReason, color: "#f59e0b", title: "횡보 근거", note: `RSI ${formatTechnicalNumber(rsiForReason, 1)} · 70까지 ${formatTechnicalNumber(rsiToOverheatGap, 1)}p`, dx: -110, dy: -92 },
+                    { index: sidewaysLowIndex, value: bbLowerForReason, color: "#2563eb", title: "하락/지지", note: `BB 하단 대비 ${formatTechnicalPercent(bbLowerGapPercent)}`, dx: -20, dy: 82 },
+                    { index: sidewaysLastIndex, value: sidewaysBaseTarget, color: "#ec4899", title: "기준 추정가", note: formatStrategyPrice(sidewaysBaseTarget), dx: -90, dy: -34 },
+                    { index: Math.max(0, sidewaysLastIndex - 4), value: sidewaysLowerTarget, color: "#ec4899", title: "하단", note: formatStrategyPrice(sidewaysLowerTarget), dx: -90, dy: 92 },
+                    { index: Math.max(0, sidewaysLastIndex - 2), value: sidewaysUpperTarget, color: "#ec4899", title: "상단", note: formatStrategyPrice(sidewaysUpperTarget), dx: -90, dy: -146 },
+                  ].map((marker, index) => {
+                    const point = getSidewaysPoint(marker.index, marker.value);
+                    const boxX = Math.max(70, Math.min(900, point.x + marker.dx));
+                    const boxY = Math.max(24, Math.min(348, point.y + marker.dy));
+
+                    return (
+                      <g key={index}>
+                        <line x1={point.x} y1={point.y} x2={boxX + 70} y2={boxY + 34} stroke={marker.color} strokeWidth="2" opacity="0.75" />
+                        <circle cx={point.x} cy={point.y} r="7" fill="#ffffff" stroke={marker.color} strokeWidth="4" />
+                        <rect x={boxX} y={boxY} width="150" height="62" rx="10" fill="#ffffff" stroke={marker.color} strokeWidth="2" />
+                        <text x={boxX + 75} y={boxY + 24} fill={marker.color} fontSize="15" fontWeight="900" textAnchor="middle">{marker.title}</text>
+                        <text x={boxX + 75} y={boxY + 46} fill="#0f172a" fontSize="13" fontWeight="800" textAnchor="middle">{marker.note}</text>
+                      </g>
+                    );
+                  })}
+                </svg>
+              </div>
+
+              <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 12 }}>
+                <div style={{ border: "1px solid #facc15", background: "#fffbeb", borderRadius: 18, padding: 16 }}>
+                  <strong style={{ display: "block", color: "#d97706", fontSize: 18, marginBottom: 8 }}>왜 횡보 장세인가?</strong>
+                  <p style={{ margin: 0, lineHeight: 1.7, color: "#334155", fontWeight: 700 }}>
+                    현재가는 SMA20 대비 {formatTechnicalPercent(priceVsSma20Percent)}, SMA60 대비 {formatTechnicalPercent(priceVsSma60Percent)}로 추세선 위에 있습니다.
+                    다만 RSI가 {formatTechnicalNumber(rsiForReason, 1)}로 과열선 70에 가까워졌고,
+                    BB 상단까지 남은 거리가 {formatTechnicalPercent(bbUpperGapPercent)}에 불과해 상단 저항 부담이 있습니다.
+                    그래서 강한 상승 확정이 아니라 횡보 장세로 분류합니다.
+                  </p>
+                </div>
+
+                <div style={{ border: "1px solid #e2e8f0", background: "#ffffff", borderRadius: 18, padding: 16 }}>
+                  <strong style={{ display: "block", color: "#0f172a", fontSize: 18, marginBottom: 8 }}>대응 의미</strong>
+                  <p style={{ margin: 0, lineHeight: 1.7, color: "#475569", fontWeight: 700 }}>
+                    신규 진입은 한 번에 들어가기보다 기준가와 하단 구간을 나누어 확인하는 분할 접근이 적합합니다.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <section className="data-section">
         <Card>
           <SectionTitleSmall>기술적 기준 종합 해석</SectionTitleSmall>
@@ -140,7 +351,10 @@ return (
             >
               <button
                 type="button"
-                onClick={() => setActiveTechnicalPanel("market")}
+                onClick={() => {
+                  setActiveTechnicalPanel("market");
+                  setShowSidewaysDetailModal(true);
+                }}
                 style={{
                   textAlign: "left",
                   padding: 16,
