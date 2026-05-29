@@ -112,3 +112,36 @@ export const RISK_PENALTY_TABLE = {
     penalty: 10,
   },
 } as const;
+
+export const PRICE_RANGE_TABLE: Record<
+  MarketRegime,
+  {
+    regimeAdjustmentPercent: number;
+    volatilityMultiplierLower: number;
+    volatilityMultiplierUpper: number;
+    minBandPercent: number;
+    maxUpperCapPercent: number;
+  }
+> = {
+  uptrend: {
+    regimeAdjustmentPercent: 2.5,
+    volatilityMultiplierLower: 1.2,
+    volatilityMultiplierUpper: 2.2,
+    minBandPercent: 2.5,
+    maxUpperCapPercent: 18,
+  },
+  sideways: {
+    regimeAdjustmentPercent: 0,
+    volatilityMultiplierLower: 1.4,
+    volatilityMultiplierUpper: 1.6,
+    minBandPercent: 2.5,
+    maxUpperCapPercent: 12,
+  },
+  downtrend: {
+    regimeAdjustmentPercent: -2.5,
+    volatilityMultiplierLower: 1.8,
+    volatilityMultiplierUpper: 1.1,
+    minBandPercent: 3,
+    maxUpperCapPercent: 8,
+  },
+};

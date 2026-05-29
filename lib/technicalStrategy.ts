@@ -9,6 +9,7 @@ import type {
 import {
   INDICATOR_SCORE_TABLE,
   INTERPRETATION_TABLE,
+  PRICE_RANGE_TABLE,
   REGIME_BONUS_TABLE,
   REGIME_RULES,
   RISK_PENALTY_TABLE,
@@ -22,6 +23,39 @@ function isNumber(value: unknown): value is number {
 function clampScore(value: number) {
   return Math.max(0, Math.min(TECHNICAL_STRATEGY_MAX_SCORE, Math.round(value)));
 }
+
+function roundPrice(value: number) {
+  if (!Number.isFinite(value)) return null;
+  return Math.round(value / 10) * 10;
+}
+
+function averageAbsoluteDailyChangePercent(rows: ChartRow[]) {
+  const sorted = [...rows].sort((a, b) => a.date.localeCompare(b.date));
+  const changes: number[] = [];
+
+  for (let i = 1; i < sorted.length; i += 1) {
+    const prev = sorted[i - 1]?.close;
+    const curr = sorted[i]?.close;
+
+    if (isNumber(prev) && isNumber(curr) && prev > 0) {
+      changes.push(Math.abs((curr - prev) / prev));
+    }
+  }
+
+  if (!changes.length) return 0.025;
+
+  return changes.reduce((sum, value) => sum + value, 0) / changes.length;
+}
+
+function getNumericValues(
+  rows: ChartRow[],
+  key: "open" | "high" | "low" | "close" | "bbUpper" | "bbLower" | "sma20" | "sma60",
+) {
+  return rows
+    .map((row) => row[key])
+    .filter((value): value is number => isNumber(value));
+}
+
 
 function getLatestRow(rows: ChartRow[]) {
   if (!rows.length) return null;
@@ -286,6 +320,129 @@ function calculateRiskPenalties(regime: MarketRegime, latest: ChartRow): Strateg
   return penalties;
 }
 
+
+function calculateTechnicalPriceRange({
+  rows,
+  latest,
+  regime,
+  finalScore,
+}: {
+  rows: ChartRow[];
+  latest: ChartRow;
+  regime: MarketRegime;
+  finalScore: number;
+}) {
+  const currentPrice = latest.close;
+
+  if (!isNumber(currentPrice) || currentPrice <= 0) {
+    return {
+      currentPrice: null,
+      lowerPrice: null,
+      basePrice: null,
+      upperPrice: null,
+      lowerBasis: ["현재가 데이터가 부족합니다."],
+      baseBasis: ["현재가 데이터가 부족합니다."],
+      upperBasis: ["현재가 데이터가 부족합니다."],
+      confidence: "low" as const,
+      summary: "추정가 계산 데이터가 부족합니다.",
+    };
+  }
+
+  const sorted = [...rows].sort((a, b) => a.date.localeCompare(b.date));
+  const recentRows = sorted.slice(-60);
+  const rangeConfig = PRICE_RANGE_TABLE[regime];
+
+  const highs = getNumericValues(recentRows, "high");
+  const lows = getNumericValues(recentRows, "low");
+  const closes = getNumericValues(recentRows, "close");
+
+  const highCandidates = highs.length ? highs : closes;
+  const lowCandidates = lows.length ? lows : closes;
+
+  const recentHigh = highCandidates.length ? Math.max(...highCandidates) : currentPrice;
+  const recentLow = lowCandidates.length ? Math.min(...lowCandidates) : currentPrice;
+
+  const volatility = averageAbsoluteDailyChangePercent(recentRows);
+  const minBand = rangeConfig.minBandPercent / 100;
+
+  const volatilityLower =
+    currentPrice *
+    (1 - Math.max(volatility * rangeConfig.volatilityMultiplierLower, minBand));
+  const volatilityUpper =
+    currentPrice *
+    (1 + Math.max(volatility * rangeConfig.volatilityMultiplierUpper, minBand));
+
+  const lowerCandidates = [
+    recentLow,
+    latest.bbLower,
+    latest.sma20,
+    latest.sma60,
+    volatilityLower,
+  ].filter((value): value is number => isNumber(value) && value > 0 && value < currentPrice);
+
+  const upperCandidates = [
+    recentHigh,
+    latest.bbUpper,
+    volatilityUpper,
+  ].filter((value): value is number => isNumber(value) && value > currentPrice);
+
+  const lowerRaw = lowerCandidates.length
+    ? Math.max(...lowerCandidates)
+    : currentPrice * (1 - minBand);
+
+  const upperRaw = upperCandidates.length
+    ? Math.max(...upperCandidates)
+    : currentPrice * (1 + minBand);
+
+  const scoreAdjustmentPercent = (finalScore - 50) / 10;
+  const baseRaw =
+    currentPrice *
+    (1 + (rangeConfig.regimeAdjustmentPercent + scoreAdjustmentPercent) / 100);
+
+  const upperCap = currentPrice * (1 + rangeConfig.maxUpperCapPercent / 100);
+
+  const lowerPrice = roundPrice(Math.min(lowerRaw, currentPrice * 0.995));
+  const upperPrice = roundPrice(Math.min(Math.max(upperRaw, currentPrice * 1.01), upperCap));
+  const basePrice = roundPrice(
+    Math.max(
+      lowerPrice ?? currentPrice * 0.95,
+      Math.min(baseRaw, upperPrice ?? currentPrice * 1.05),
+    ),
+  );
+
+  const confidence: "high" | "medium" | "low" =
+    recentRows.length >= 50 && highs.length >= 30 && lows.length >= 30
+      ? "high"
+      : recentRows.length >= 30
+        ? "medium"
+        : "low";
+
+  return {
+    currentPrice: roundPrice(currentPrice),
+    lowerPrice,
+    basePrice,
+    upperPrice,
+    lowerBasis: [
+      "최근 60일 저가",
+      "볼린저밴드 하단",
+      "SMA20/SMA60",
+      "변동성 하단",
+    ],
+    baseBasis: [
+      "현재가",
+      "장세 보정",
+      "최종 점수 보정",
+    ],
+    upperBasis: [
+      "최근 60일 고가",
+      "볼린저밴드 상단",
+      "변동성 상단",
+    ],
+    confidence,
+    summary: `하단 ${lowerPrice?.toLocaleString() ?? "-"}원 / 기준 ${basePrice?.toLocaleString() ?? "-"}원 / 상단 ${upperPrice?.toLocaleString() ?? "-"}원`,
+  };
+}
+
 function getInterpretation(score: number): StrategyInterpretationRule {
   return (
     INTERPRETATION_TABLE.find((rule) => score >= rule.min && score <= rule.max) ??
@@ -313,6 +470,17 @@ export function calculateTechnicalStrategy(rows: ChartRow[]): TechnicalStrategyR
       rows: [],
       riskPenalties: [],
       latest: null,
+      priceRange: {
+        currentPrice: null,
+        lowerPrice: null,
+        basePrice: null,
+        upperPrice: null,
+        lowerBasis: [],
+        baseBasis: [],
+        upperBasis: [],
+        confidence: "low",
+        summary: "차트 데이터가 부족합니다.",
+      },
       summary: "차트 데이터가 부족합니다.",
     };
   }
@@ -335,6 +503,12 @@ export function calculateTechnicalStrategy(rows: ChartRow[]): TechnicalStrategyR
     .reduce((sum, penalty) => sum + penalty.penalty, 0);
   const finalScore = clampScore(commonScore + regimeBonus - riskPenalty);
   const interpretation = getInterpretation(finalScore);
+  const priceRange = calculateTechnicalPriceRange({
+    rows: sortedRows,
+    latest,
+    regime,
+    finalScore,
+  });
 
   return {
     available: true,
@@ -351,6 +525,7 @@ export function calculateTechnicalStrategy(rows: ChartRow[]): TechnicalStrategyR
     rows: scoreRows,
     riskPenalties,
     latest,
-    summary: `${regimeRule.label} / ${finalScore}점 / ${interpretation.label}`,
+    priceRange,
+    summary: `${regimeRule.label} / ${finalScore}점 / ${interpretation.label} / ${priceRange.summary}`,
   };
 }

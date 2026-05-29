@@ -43,6 +43,19 @@ export type StrategyRiskPenalty = {
   reason: string;
 };
 
+
+export type TechnicalStrategyPriceRange = {
+  currentPrice: number | null;
+  lowerPrice: number | null;
+  basePrice: number | null;
+  upperPrice: number | null;
+  lowerBasis: string[];
+  baseBasis: string[];
+  upperBasis: string[];
+  confidence: "high" | "medium" | "low";
+  summary: string;
+};
+
 export type TechnicalStrategyResult = {
   available: boolean;
   regime: MarketRegime;
@@ -58,5 +71,6 @@ export type TechnicalStrategyResult = {
   rows: StrategyScoreRow[];
   riskPenalties: StrategyRiskPenalty[];
   latest: ChartRow | null;
+  priceRange: TechnicalStrategyPriceRange;
   summary: string;
 };
