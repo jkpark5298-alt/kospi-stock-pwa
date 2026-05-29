@@ -1,5 +1,8 @@
 ﻿export type ScoreChartRow = {
   date: string;
+  open?: number | null;
+  high?: number | null;
+  low?: number | null;
   close: number | null;
   sma20?: number | null;
   sma60?: number | null;

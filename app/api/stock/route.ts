@@ -43,6 +43,9 @@ type StockMeta = {
 
 type ChartDataRow = {
   date: string;
+  open: number | null;
+  high: number | null;
+  low: number | null;
   close: number | null;
   sma20: number | null;
   sma60: number | null;
@@ -127,6 +130,51 @@ type SupplyData = {
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const stockCache = new Map<string, CacheEntry>();
+
+type KisDailyRowForStockApi = {
+  date: string;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  close: number | null;
+  volume: number | null;
+};
+
+async function getKisDailyRowsForStockApi(
+  request: NextRequest,
+  symbol: string,
+): Promise<Map<string, KisDailyRowForStockApi>> {
+  try {
+    const url = new URL("/api/kis/daily", request.nextUrl.origin);
+    url.searchParams.set("symbol", symbol);
+
+    const response = await fetch(url.toString(), {
+      method: "GET",
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      return new Map();
+    }
+
+    const payload = (await response.json()) as {
+      ok?: boolean;
+      rows?: KisDailyRowForStockApi[];
+    };
+
+    if (!Array.isArray(payload.rows)) {
+      return new Map();
+    }
+
+    return new Map(
+      payload.rows
+        .filter((row) => row.date)
+        .map((row) => [row.date, row]),
+    );
+  } catch {
+    return new Map();
+  }
+}
 
 const KNOWN_KOREAN_STOCK_NAMES: Record<string, string> = {
   "005930.KS": "삼성전자",
@@ -396,21 +444,30 @@ export async function GET(req: NextRequest) {
     const obvData = obv(closes, volumes);
     const forecast = simpleForecast(closes, 5);
 
-    const chartData: ChartDataRow[] = dates.map((date, i) => ({
-      date,
-      close: closes[i] ?? null,
-      sma20: sma20[i] ?? null,
-      sma60: sma60[i] ?? null,
-      rsi14: rsi14[i] ?? null,
-      macd: macdData.macdLine[i] ?? null,
-      signal: macdData.signalLine[i] ?? null,
-      histogram: macdData.histogram[i] ?? null,
-      bbUpper: bollinger.upper[i] ?? null,
-      bbMiddle: bollinger.middle[i] ?? null,
-      bbLower: bollinger.lower[i] ?? null,
-      volume: volumes[i] ?? 0,
-      obv: obvData[i] ?? null,
-    }));
+    const kisDailyByDate = await getKisDailyRowsForStockApi(req, symbol);
+
+    const chartData: ChartDataRow[] = dates.map((date, i) => {
+      const kisDaily = kisDailyByDate.get(date);
+
+      return {
+        date,
+        open: kisDaily?.open ?? null,
+        high: kisDaily?.high ?? null,
+        low: kisDaily?.low ?? null,
+        close: closes[i] ?? null,
+        sma20: sma20[i] ?? null,
+        sma60: sma60[i] ?? null,
+        rsi14: rsi14[i] ?? null,
+        macd: macdData.macdLine[i] ?? null,
+        signal: macdData.signalLine[i] ?? null,
+        histogram: macdData.histogram[i] ?? null,
+        bbUpper: bollinger.upper[i] ?? null,
+        bbMiddle: bollinger.middle[i] ?? null,
+        bbLower: bollinger.lower[i] ?? null,
+        volume: volumes[i] ?? 0,
+        obv: obvData[i] ?? null,
+      };
+    });
 
     const currentPrice = closes[closes.length - 1];
     const prevPrice = closes[closes.length - 2] ?? currentPrice;
@@ -581,7 +638,7 @@ export async function GET(req: NextRequest) {
         updatedAt: new Date().toISOString(),
         range,
         source:
-          "Yahoo Finance chart + KIS investor summary + KIS fundamentals + earnings growth placeholder + quant model",
+          "Yahoo Finance chart + KIS daily OHLCV + KIS investor summary + KIS fundamentals + earnings growth placeholder + quant model",
       },
     };
 
