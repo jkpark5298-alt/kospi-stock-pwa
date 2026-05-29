@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getKisStockFundamentals, normalizeDomesticStockCode } from "@/lib/kis";
+import { setFundamentalsCache } from "@/lib/fundamentalsCache";
 
 export const runtime = "nodejs";
 
@@ -11,24 +12,37 @@ export async function GET(req: NextRequest) {
   try {
     const fundamentals = await getKisStockFundamentals(symbol);
 
+    const fundamentalsData = {
+      marketCap: fundamentals.marketCap,
+      per: fundamentals.per,
+      pbr: fundamentals.pbr,
+      eps: fundamentals.eps,
+      bps: fundamentals.bps,
+      dividendYield: fundamentals.dividendYield,
+      foreignOwnershipRate: fundamentals.foreignOwnershipRate,
+      sharesOutstanding: fundamentals.sharesOutstanding,
+      high52w: fundamentals.high52w,
+      low52w: fundamentals.low52w,
+    };
+
+    const cachedFundamentals = setFundamentalsCache(symbol, fundamentalsData);
+
     return NextResponse.json({
       ok: true,
       message: "한투 재무·밸류에이션 데이터 조회 성공",
       source: "KIS",
       inputSymbol: symbol,
       normalizedCode,
-      data: {
-        marketCap: fundamentals.marketCap,
-        per: fundamentals.per,
-        pbr: fundamentals.pbr,
-        eps: fundamentals.eps,
-        bps: fundamentals.bps,
-        dividendYield: fundamentals.dividendYield,
-        foreignOwnershipRate: fundamentals.foreignOwnershipRate,
-        sharesOutstanding: fundamentals.sharesOutstanding,
-        high52w: fundamentals.high52w,
-        low52w: fundamentals.low52w,
-      },
+      data: fundamentalsData,
+      cache: cachedFundamentals
+        ? {
+            stored: true,
+            updatedAt: cachedFundamentals.updatedAt,
+          }
+        : {
+            stored: false,
+            updatedAt: null,
+          },
       analysisUse: {
         valuation: {
           available:

@@ -15,6 +15,10 @@ import {
 } from "@/lib/kis";
 import { calculateQuantModel } from "@/lib/quant";
 import {
+  getFundamentalsCache,
+  setFundamentalsCache,
+} from "@/lib/fundamentalsCache";
+import {
   calculateEarningsGrowthData,
   parseManualEarningsGrowthFromSearchParams,
   parseEarningsGrowthModeFromSearchParams,
@@ -734,8 +738,7 @@ async function getSupplyData(symbol: string): Promise<SupplyData> {
 }
 
 async function getFundamentalsData(symbol: string): Promise<FundamentalsData> {
-  const cacheKey = normalizeStockCode(symbol);
-  const cached = fundamentalsCache.get(cacheKey);
+  const cached = getFundamentalsCache(symbol);
 
   try {
     const fundamentals = await getKisStockFundamentals(symbol);
@@ -753,23 +756,13 @@ async function getFundamentalsData(symbol: string): Promise<FundamentalsData> {
       low52w: fundamentals.low52w,
     };
 
-    const hasUsableValue = Object.values(data).some(
-      (value) => typeof value === "number" && Number.isFinite(value),
-    );
-
-    if (hasUsableValue) {
-      fundamentalsCache.set(cacheKey, {
-        data,
-        updatedAt: new Date().toISOString(),
-        expiresAt: Date.now() + FUNDAMENTALS_CACHE_TTL_MS,
-      });
-    }
+    setFundamentalsCache(symbol, data);
 
     return data;
   } catch (error) {
     console.warn("KIS fundamentals unavailable:", error);
 
-    if (cached) {
+    if (cached?.data) {
       return cached.data;
     }
 
