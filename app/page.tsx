@@ -1095,55 +1095,9 @@ async function refreshConsensusAfterAnalyze(
 
 async function refreshKisFundamentalsAfterAnalyze(
   stock: StockResponse,
-  requestedSymbol: string,
+  _requestedSymbol: string,
 ): Promise<StockResponse> {
-  const targetSymbol = stock.symbol || stock.rawSymbol || requestedSymbol;
-
-  if (!targetSymbol || typeof window === "undefined") {
-    return stock;
-  }
-
-  try {
-    const response = await fetch(
-      `/api/kis/fundamentals?symbol=${encodeURIComponent(targetSymbol)}`,
-      { cache: "no-store" },
-    );
-    const payload = (await response.json()) as KisFundamentalsPayload;
-
-    if (!payload.ok || !payload.data || !hasUsableFundamentals(payload.data)) {
-      removeLocalCache(makeLocalCacheKey(FUNDAMENTALS_CACHE_PREFIX, targetSymbol));
-      return stock;
-    }
-
-    const savedAt = new Date().toISOString();
-    const normalized = normalizeFundamentals(payload.data);
-    const cachePayload: KisFundamentalsPayload = {
-      ...payload,
-      data: normalized,
-    };
-
-    writeLocalCache(makeLocalCacheKey(FUNDAMENTALS_CACHE_PREFIX, targetSymbol), {
-      savedAt,
-      data: cachePayload,
-    });
-
-    if (stock.symbol && stock.symbol !== targetSymbol) {
-      writeLocalCache(makeLocalCacheKey(FUNDAMENTALS_CACHE_PREFIX, stock.symbol), {
-        savedAt,
-        data: cachePayload,
-      });
-    }
-
-    return {
-      ...stock,
-      fundamentals: {
-        ...stock.fundamentals,
-        ...normalized,
-      },
-    };
-  } catch {
-    return stock;
-  }
+  return stock;
 }
 
 function normalizeFundamentals(value: Partial<Fundamentals>): Fundamentals {

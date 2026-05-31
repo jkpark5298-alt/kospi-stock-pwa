@@ -134,38 +134,19 @@ export default function FundamentalSnapshotSection({
       : "한투 재조회 대기";
 
   async function refreshFundamentals() {
-    if (!resolvedSymbol) return;
-
-    setIsLoading(true);
-
-    try {
-      const response = await fetch(
-        `/api/kis/fundamentals?symbol=${encodeURIComponent(resolvedSymbol)}`,
-        { cache: "no-store" },
-      );
-      const nextPayload = (await response.json()) as FundamentalsPayload;
-
-      setPayload(nextPayload);
-
-      if (nextPayload.ok && isUsableFundamentals(nextPayload.data)) {
-        const savedAt = new Date().toISOString();
-        setCachedAt(savedAt);
-        writeCache(cacheKey, { savedAt, data: nextPayload });
-      } else {
-        setCachedAt(null);
-        removeCache(cacheKey);
-      }
-    } catch (error) {
+    if (fallbackFundamentals && isUsableFundamentals(fallbackFundamentals)) {
       setPayload({
-        ok: false,
-        message: "한투 재무·밸류에이션 데이터를 불러오지 못했습니다.",
-        error: error instanceof Error ? error.message : String(error),
+        ok: true,
+        message: "분석 데이터 반영",
+        data: fallbackFundamentals,
       });
-      setCachedAt(null);
-      removeCache(cacheKey);
-    } finally {
-      setIsLoading(false);
+      setCachedAt(lastFetchedAt ?? null);
+      return;
     }
+
+    setPayload(null);
+    setCachedAt(null);
+    setIsLoading(false);
   }
 
   return (
@@ -177,10 +158,9 @@ export default function FundamentalSnapshotSection({
         </div>
 
         <p className="target-basis-summary">
-          분석하기를 누르면 한투 핵심 재조회가 자동으로 실행되고, 조회된
-          EPS·BPS·PER·PBR·시가총액 등을 이 영역에 반영합니다. 실적·밸류
-          기준가는 확인 가능한 산정값이 있으면 유지하고, 세부 재무 데이터는
-          자동 조회 결과를 우선 표시합니다.
+          분석하기 결과에 포함된 EPS·BPS·PER·PBR·시가총액 등을 이 영역에 반영합니다.
+          실적·밸류 기준가는 확인 가능한 산정값이 있으면 유지하고,
+          세부 재무 데이터는 /api/stock 응답과 캐시 데이터를 우선 표시합니다.
         </p>
 
         <div className="target-basis-box" style={{ marginTop: 16 }}>

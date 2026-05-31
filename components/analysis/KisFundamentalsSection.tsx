@@ -110,7 +110,8 @@ export default function KisFundamentalsSection({ symbol, name }: Props) {
       setFundamentals(cachedFundamentals.data);
       setFundamentalsCachedAt(cachedFundamentals.savedAt);
     } else {
-      refreshFundamentals();
+      setFundamentals(null);
+      setFundamentalsCachedAt(null);
     }
 
     if (cachedSupply) {
@@ -124,43 +125,13 @@ export default function KisFundamentalsSection({ symbol, name }: Props) {
   }, [fundamentalsCacheKey, supplyCacheKey, symbol]);
 
   async function refreshAll() {
-    await refreshFundamentals();
     await refreshSupply();
   }
 
   async function refreshFundamentals() {
-    if (!symbol) return;
-
-    setIsFundamentalsLoading(true);
-
-    try {
-      const response = await fetch(
-        `/api/kis/fundamentals?symbol=${encodeURIComponent(symbol)}`,
-        { cache: "no-store" },
-      );
-      const payload = (await response.json()) as FundamentalsResponse;
-
-      setFundamentals(payload);
-
-      if (payload.ok) {
-        const savedAt = new Date().toISOString();
-        setFundamentalsCachedAt(savedAt);
-        writeCache(fundamentalsCacheKey, { savedAt, data: payload });
-      } else {
-        setFundamentalsCachedAt(null);
-        removeCache(fundamentalsCacheKey);
-      }
-    } catch (error) {
-      setFundamentals({
-        ok: false,
-        message: "한투 재무·밸류에이션 데이터를 불러오지 못했습니다.",
-        error: error instanceof Error ? error.message : String(error),
-      });
-      setFundamentalsCachedAt(null);
-      removeCache(fundamentalsCacheKey);
-    } finally {
-      setIsFundamentalsLoading(false);
-    }
+    setFundamentals(null);
+    setFundamentalsCachedAt(null);
+    setIsFundamentalsLoading(false);
   }
 
   async function refreshSupply() {
