@@ -147,6 +147,7 @@ export default function SummaryAbcOverviewSection({ data }: Props) {
   const range = targetPrice?.technicalTargetRange ?? null;
   const finalRange = targetPrice?.finalTargetRange ?? null;
   const valuationRange = targetPrice?.valuationTargetRange ?? null;
+  const apiValuationRange = data?.score?.targetPrice?.valuationTargetRange ?? null;
   const targetModes = Array.isArray(targetPrice?.targetModes)
     ? targetPrice.targetModes
     : [];

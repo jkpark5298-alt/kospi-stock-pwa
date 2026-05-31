@@ -214,7 +214,7 @@ return (
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            padding: 24,
+            padding: "clamp(8px, 3vw, 24px)",
           }}
           onClick={() => setShowSidewaysDetailModal(false)}
         >
@@ -232,9 +232,9 @@ return (
           >
             <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 16 }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: 28, color: "#0f172a" }}>횡보 장세 상세 보기</h3>
+                <h3 style={{ margin: 0, fontSize: "clamp(22px, 5vw, 28px)", color: "#0f172a" }}>횡보 장세 상세 보기</h3>
                 <p style={{ margin: "6px 0 0", color: "#64748b", fontWeight: 700 }}>
-                  확대 가능 · 그래프에서 기준과 실제 수치를 한눈에 확인
+                  확대 가능 · 아이폰에서는 좌우로 밀어 그래프와 수치를 확인
                 </p>
               </div>
 
@@ -246,41 +246,41 @@ return (
               </div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10, marginBottom: 14 }}>
-              <div className="mini-stat" style={{ background: "#fff1f2", borderColor: "#fecaca", minHeight: 68, display: "grid", gap: 4 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))", gap: 12, marginBottom: 16 }}>
+              <div className="mini-stat" style={{ background: "#fff1f2", borderColor: "#fecaca", minHeight: 86, display: "grid", gap: 6, alignContent: "start", wordBreak: "keep-all", lineHeight: 1.35 }}>
                 <span>현재가 / SMA20</span>
                 <strong style={{ color: "#dc2626" }}>{formatTechnicalPercent(priceVsSma20Percent)}</strong>
                 <small>단기 추세선 대비</small>
               </div>
-              <div className="mini-stat" style={{ background: "#fff1f2", borderColor: "#fecaca", minHeight: 68, display: "grid", gap: 4 }}>
+              <div className="mini-stat" style={{ background: "#fff1f2", borderColor: "#fecaca", minHeight: 86, display: "grid", gap: 6, alignContent: "start", wordBreak: "keep-all", lineHeight: 1.35 }}>
                 <span>현재가 / SMA60</span>
                 <strong style={{ color: "#dc2626" }}>{formatTechnicalPercent(priceVsSma60Percent)}</strong>
                 <small>중기 추세선 대비</small>
               </div>
-              <div className="mini-stat" style={{ background: "#fffbeb", borderColor: "#facc15", minHeight: 68, display: "grid", gap: 4 }}>
+              <div className="mini-stat" style={{ background: "#fffbeb", borderColor: "#facc15", minHeight: 86, display: "grid", gap: 6, alignContent: "start", wordBreak: "keep-all", lineHeight: 1.35 }}>
                 <span>RSI 14</span>
                 <strong>{formatTechnicalNumber(rsiForReason, 1)}</strong>
                 <small>과열선 70까지 {formatTechnicalNumber(rsiToOverheatGap, 1)}p</small>
               </div>
-              <div className="mini-stat" style={{ background: "#fffbeb", borderColor: "#facc15", minHeight: 68, display: "grid", gap: 4 }}>
+              <div className="mini-stat" style={{ background: "#fffbeb", borderColor: "#facc15", minHeight: 86, display: "grid", gap: 6, alignContent: "start", wordBreak: "keep-all", lineHeight: 1.35 }}>
                 <span>MACD - Signal</span>
                 <strong style={{ color: "#dc2626" }}>{formatTechnicalNumber(macdSignalGap, 2)}</strong>
                 <small>0보다 크면 단기 우위</small>
               </div>
-              <div className="mini-stat" style={{ background: "#fffbeb", borderColor: "#facc15", minHeight: 68, display: "grid", gap: 4 }}>
+              <div className="mini-stat" style={{ background: "#fffbeb", borderColor: "#facc15", minHeight: 86, display: "grid", gap: 6, alignContent: "start", wordBreak: "keep-all", lineHeight: 1.35 }}>
                 <span>BB 상단까지</span>
                 <strong style={{ color: "#dc2626" }}>{formatTechnicalPercent(bbUpperGapPercent)}</strong>
                 <small>상단 저항까지 거리</small>
               </div>
-              <div className="mini-stat" style={{ background: "#eff6ff", borderColor: "#bfdbfe", minHeight: 68, display: "grid", gap: 4 }}>
+              <div className="mini-stat" style={{ background: "#eff6ff", borderColor: "#bfdbfe", minHeight: 86, display: "grid", gap: 6, alignContent: "start", wordBreak: "keep-all", lineHeight: 1.35 }}>
                 <span>BB 하단 대비</span>
                 <strong style={{ color: "#2563eb" }}>{formatTechnicalPercent(bbLowerGapPercent)}</strong>
                 <small>하단 지지선과 거리</small>
               </div>
             </div>
 
-            <div style={{ transform: `scale(${sidewaysModalZoom})`, transformOrigin: "top left", width: `${100 / sidewaysModalZoom}%` }}>
-              <div style={{ border: "1px solid #e2e8f0", borderRadius: 20, padding: 16, background: "#ffffff" }}>
+            <div style={{ transform: `scale(${sidewaysModalZoom})`, transformOrigin: "top left", width: `${100 / sidewaysModalZoom}%`, marginTop: 4 }}>
+              <div style={{ border: "1px solid #e2e8f0", borderRadius: 20, padding: 16, background: "#ffffff", overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 18, marginBottom: 8 }}>
                   <strong style={{ color: "#0f172a" }}>차트 설명</strong>
                   <span style={{ color: "#ef4444", fontWeight: 800 }}>● 상승 사유</span>
@@ -289,7 +289,7 @@ return (
                   <span style={{ color: "#ec4899", fontWeight: 800 }}>● 추정가</span>
                 </div>
 
-                <svg viewBox="0 0 1040 500" width="100%" height="500" role="img">
+                <svg viewBox="0 0 1040 500" width="100%" height="500" role="img" style={{ minWidth: 900, display: "block" }}>
                   <rect x="0" y="0" width="1040" height="500" fill="#ffffff" />
                   {[0, 1, 2, 3, 4].map((line) => (
                     <line key={line} x1="58" x2="988" y1={30 + line * 72} y2={30 + line * 72} stroke="#e2e8f0" strokeDasharray="4 6" />
@@ -315,24 +315,24 @@ return (
                   <text x="500" y="230" fill="#92400e" fontSize="14" fontWeight="700" textAnchor="middle">추세는 강하지만 상단 저항도 가까운 구간</text>
 
                   {[
-                    { index: sidewaysUpperIndex, value: bbUpperForReason, color: "#ef4444", title: "상승 신호", note: `BB 상단까지 ${formatTechnicalPercent(bbUpperGapPercent)}`, dx: -330, dy: -70 },
+                    { index: sidewaysUpperIndex, value: bbUpperForReason, color: "#ef4444", title: "상승", note: `BB 상단까지 ${formatTechnicalPercent(bbUpperGapPercent)}`, dx: -360, dy: -92 },
                     { index: sidewaysMidIndex, value: closeForReason, color: "#f59e0b", title: "횡보 근거", note: `RSI ${formatTechnicalNumber(rsiForReason, 1)} / 70까지 ${formatTechnicalNumber(rsiToOverheatGap, 1)}p`, dx: -170, dy: -132 },
                     { index: sidewaysLowIndex, value: bbLowerForReason, color: "#2563eb", title: "하락/지지", note: `BB 하단 대비 ${formatTechnicalPercent(bbLowerGapPercent)}`, dx: -40, dy: 112 },
-                    { index: sidewaysLastIndex, value: sidewaysBaseTarget, color: "#ec4899", title: "기준", note: formatStrategyPrice(sidewaysBaseTarget), dx: -50, dy: -8 },
+                    { index: sidewaysLastIndex, value: sidewaysBaseTarget, color: "#ec4899", title: "기준", note: formatStrategyPrice(sidewaysBaseTarget), dx: 16, dy: 38 },
                     { index: Math.max(0, sidewaysLastIndex - 4), value: sidewaysLowerTarget, color: "#ec4899", title: "하단", note: formatStrategyPrice(sidewaysLowerTarget), dx: -80, dy: 108 },
-                    { index: Math.max(0, sidewaysLastIndex - 2), value: sidewaysUpperTarget, color: "#ec4899", title: "상단", note: formatStrategyPrice(sidewaysUpperTarget), dx: -20, dy: -138 },
+                    { index: Math.max(0, sidewaysLastIndex - 2), value: sidewaysUpperTarget, color: "#ec4899", title: "상단", note: formatStrategyPrice(sidewaysUpperTarget), dx: 16, dy: -118 },
                   ].map((marker, index) => {
                     const point = getSidewaysPoint(marker.index, marker.value);
-                    const boxX = Math.max(48, Math.min(920, point.x + marker.dx));
+                    const boxX = Math.max(40, Math.min(860, point.x + marker.dx));
                     const boxY = Math.max(24, Math.min(348, point.y + marker.dy));
 
                     return (
                       <g key={index}>
                         <line x1={point.x} y1={point.y} x2={boxX + 70} y2={boxY + 34} stroke={marker.color} strokeWidth="2" opacity="0.75" />
-                        <circle cx={point.x} cy={point.y} r="7" fill="#ffffff" stroke={marker.color} strokeWidth="4" />
-                        <rect x={boxX} y={boxY} width="150" height="62" rx="10" fill="#ffffff" stroke={marker.color} strokeWidth="2" />
+                        <circle cx={point.x} cy={point.y} r="7" fill="rgba(255,255,255,0.92)" stroke={marker.color} strokeWidth="4" />
+                        <rect x={boxX} y={boxY} width="150" height="62" rx="10" fill="rgba(255,255,255,0.92)" stroke={marker.color} strokeWidth="2" />
                         <text x={boxX + 75} y={boxY + 24} fill={marker.color} fontSize="15" fontWeight="900" textAnchor="middle">{marker.title}</text>
-                        <text x={boxX + 75} y={boxY + 46} fill="#0f172a" fontSize="13" fontWeight="800" textAnchor="middle">{marker.note}</text>
+                        <text x={boxX + 75} y={boxY + 46} fill="#0f172a" fontSize="11" fontWeight="800" textAnchor="middle">{marker.note}</text>
                       </g>
                     );
                   })}
