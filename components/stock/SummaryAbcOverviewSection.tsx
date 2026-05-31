@@ -76,6 +76,7 @@ const KIS_CACHE_TTL_MS = 10 * 60 * 1000;
 export default function SummaryAbcOverviewSection({ data }: Props) {
   const symbol = data?.symbol ?? null;
   const name = data?.name ?? null;
+  const apiFundamentals = data?.fundamentals ?? null;
 
   const storageKey = useMemo(() => makeConsensusStorageKey(symbol, name), [symbol, name]);
   const fundamentalsCacheKey = useMemo(
@@ -101,6 +102,19 @@ export default function SummaryAbcOverviewSection({ data }: Props) {
       return;
     }
 
+    if (isUsableFundamentals(apiFundamentals)) {
+      setKisFundamentals(apiFundamentals);
+      writeCache(fundamentalsCacheKey, {
+        savedAt: new Date().toISOString(),
+        data: {
+          ok: true,
+          data: apiFundamentals,
+          message: "api stock fundamentals",
+        },
+      });
+      return;
+    }
+
     const cached = readCache<FundamentalsPayload>(fundamentalsCacheKey);
 
     if (cached?.data?.ok && isUsableFundamentals(cached.data.data)) {
@@ -108,40 +122,8 @@ export default function SummaryAbcOverviewSection({ data }: Props) {
       return;
     }
 
-    let isMounted = true;
-
-    async function fetchFundamentals() {
-      try {
-        const response = await fetch(
-          `/api/kis/fundamentals?symbol=${encodeURIComponent(symbol)}`,
-          { cache: "no-store" },
-        );
-        const payload = (await response.json()) as FundamentalsPayload;
-
-        if (!isMounted) return;
-
-        if (payload.ok && isUsableFundamentals(payload.data)) {
-          setKisFundamentals(payload.data);
-          writeCache(fundamentalsCacheKey, {
-            savedAt: new Date().toISOString(),
-            data: payload,
-          });
-        } else {
-          setKisFundamentals(null);
-        }
-      } catch {
-        if (isMounted) {
-          setKisFundamentals(null);
-        }
-      }
-    }
-
-    fetchFundamentals();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [fundamentalsCacheKey, symbol]);
+    setKisFundamentals(null);
+  }, [apiFundamentals, fundamentalsCacheKey, symbol]);
 
   const targetPrice = data?.score?.targetPrice ?? null;
   const range = targetPrice?.technicalTargetRange ?? null;
@@ -164,7 +146,7 @@ export default function SummaryAbcOverviewSection({ data }: Props) {
     getNumber(range?.currentPrice) ??
     null;
 
-  const usableFundamentals = getUsableFundamentals(data?.fundamentals, kisFundamentals);
+  const usableFundamentals = getUsableFundamentals(apiFundamentals, kisFundamentals);
 
   const chartRows = Array.isArray(data?.chartData) ? data.chartData : [];
   const technicalStrategy = useMemo(() => calculateTechnicalStrategy(chartRows), [chartRows]);
