@@ -16,7 +16,9 @@ import {
 import { calculateQuantModel } from "@/lib/quant";
 import {
   getFundamentalsCache,
+  getFundamentalsCacheFromSupabase,
   setFundamentalsCache,
+  setFundamentalsCacheToSupabase,
 } from "@/lib/fundamentalsCache";
 import {
   calculateEarningsGrowthData,
@@ -663,7 +665,7 @@ export async function GET(req: NextRequest) {
         updatedAt: new Date().toISOString(),
         range,
         source:
-          "Yahoo Finance chart + KIS daily OHLCV + KIS investor summary + KIS fundamentals + earnings growth placeholder + quant model",
+          "Yahoo Finance chart + KIS daily OHLCV + KIS investor summary + KIS/Supabase fundamentals + earnings growth placeholder + quant model",
       },
     };
 
@@ -757,6 +759,7 @@ async function getFundamentalsData(symbol: string): Promise<FundamentalsData> {
     };
 
     setFundamentalsCache(symbol, data);
+    await setFundamentalsCacheToSupabase(symbol, data);
 
     return data;
   } catch (error) {
@@ -764,6 +767,12 @@ async function getFundamentalsData(symbol: string): Promise<FundamentalsData> {
 
     if (cached?.data) {
       return cached.data;
+    }
+
+    const supabaseCached = await getFundamentalsCacheFromSupabase(symbol);
+
+    if (supabaseCached?.data) {
+      return supabaseCached.data;
     }
 
     return EMPTY_FUNDAMENTALS;

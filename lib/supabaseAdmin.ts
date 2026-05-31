@@ -70,7 +70,7 @@ function buildResult(
   };
 }
 
-async function supabaseFetch(path: string, init?: RequestInit) {
+export async function supabaseFetch(path: string, init?: RequestInit) {
   const { url, serviceRoleKey } = getSupabaseConfig();
 
   const response = await fetch(`${url}${SUPABASE_REST_PATH}${path}`, {

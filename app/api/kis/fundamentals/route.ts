@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getKisStockFundamentals, normalizeDomesticStockCode } from "@/lib/kis";
-import { setFundamentalsCache } from "@/lib/fundamentalsCache";
+import { setFundamentalsCache, setFundamentalsCacheToSupabase } from "@/lib/fundamentalsCache";
 
 export const runtime = "nodejs";
 
@@ -26,6 +26,7 @@ export async function GET(req: NextRequest) {
     };
 
     const cachedFundamentals = setFundamentalsCache(symbol, fundamentalsData);
+    await setFundamentalsCacheToSupabase(symbol, fundamentalsData);
 
     return NextResponse.json({
       ok: true,
