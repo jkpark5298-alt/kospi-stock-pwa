@@ -669,6 +669,64 @@ export async function GET(req: NextRequest) {
       },
     };
 
+    const valuationRangeForText =
+      responseData?.score?.targetPrice?.valuationTargetRange ?? null;
+
+    if (valuationRangeForText) {
+      const k = (...codes: number[]) => String.fromCharCode(...codes);
+      const perText =
+        typeof valuationRangeForText.perAdjustment === "number"
+          ? valuationRangeForText.perAdjustment.toFixed(2)
+          : "";
+      const pbrText =
+        typeof valuationRangeForText.pbrAdjustment === "number"
+          ? valuationRangeForText.pbrAdjustment.toFixed(2)
+          : "";
+
+      (responseData.meta as any).valuationTextFix = "v12k-inline-charcode";
+
+      if (valuationRangeForText.valuationTarget != null) {
+        valuationRangeForText.method =
+          "EPS/PER + BPS/PBR " + k(48372, 51221, 32, 54217, 44512);
+
+        valuationRangeForText.reasons = [
+          "EPS " +
+            String.fromCharCode(215) +
+            " " +
+            k(54788, 51116) +
+            " PER " +
+            String.fromCharCode(215) +
+            " PER " +
+            k(48372, 51221, 44228, 49688) +
+            " " +
+            perText +
+            k(47484, 32, 48152, 50689, 54664, 49845, 45768, 45796, 46),
+          "BPS " +
+            String.fromCharCode(215) +
+            " " +
+            k(54788, 51116) +
+            " PBR " +
+            String.fromCharCode(215) +
+            " PBR " +
+            k(48372, 51221, 44228, 49688) +
+            " " +
+            pbrText +
+            k(47484, 32, 48152, 50689, 54664, 49845, 45768, 45796, 46),
+          k(
+            48184, 47448, 50640, 51060, 49496, 32,
+            52628, 51221, 32,
+            51452, 44032, 44032, 32,
+            54788, 51116, 44032, 32,
+            45824, 48708, 32,
+            44284, 46020, 54616, 44172, 32,
+            48268, 50612, 51648, 51648, 32,
+            50506, 46020, 47197, 32,
+            50504, 51221, 54868, 54664, 49845, 45768, 45796, 46,
+          ),
+        ];
+      }
+    }
+
     stockCache.set(cacheKey, {
       data: responseData,
       expiresAt: Date.now() + CACHE_TTL_MS,
@@ -945,6 +1003,8 @@ function withCacheMeta(
     warning?: string;
   },
 ) {
+  normalizeValuationTargetTextSafe(data);
+
   return {
     ...data,
     cached: options.cached,
@@ -1020,4 +1080,234 @@ function getPeriodStart(range: string) {
   }
 
   return d;
+}
+
+
+function repairMojibakeText(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+
+  const looksBroken = /[ÃÂÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]/.test(value);
+
+  if (!looksBroken) return value;
+
+  try {
+    return Buffer.from(value, "latin1").toString("utf8");
+  } catch {
+    return value;
+  }
+}
+
+function repairValuationTargetText(data: any) {
+  const valuationRange = data?.score?.targetPrice?.valuationTargetRange;
+
+  if (!valuationRange) return data;
+
+  if (typeof valuationRange.method === "string") {
+    valuationRange.method = repairMojibakeText(valuationRange.method) as string;
+  }
+
+  if (Array.isArray(valuationRange.reasons)) {
+    valuationRange.reasons = valuationRange.reasons.map((reason: unknown) =>
+      repairMojibakeText(reason),
+    );
+  }
+
+  return data;
+}
+
+
+function normalizeValuationTargetText(data: any) {
+  const valuationRange = data?.score?.targetPrice?.valuationTargetRange;
+
+  if (!valuationRange) return data;
+
+  const perAdjustment =
+    typeof valuationRange.perAdjustment === "number"
+      ? valuationRange.perAdjustment.toFixed(2)
+      : null;
+
+  const pbrAdjustment =
+    typeof valuationRange.pbrAdjustment === "number"
+      ? valuationRange.pbrAdjustment.toFixed(2)
+      : null;
+
+  if (valuationRange.valuationTarget != null) {
+    valuationRange.method = "EPS/PER + BPS/PBR 보정 평균";
+
+    const reasons: string[] = [];
+
+    if (valuationRange.epsTarget != null) {
+      reasons.push(
+        perAdjustment
+          ? `EPS × 현재 PER × PER 보정계수 ${perAdjustment}를 반영했습니다.`
+          : "EPS와 PER을 바탕으로 EPS 기준 추정 주가를 계산했습니다.",
+      );
+    } else {
+      reasons.push("EPS 또는 PER 데이터가 부족해 EPS 기준 추정 주가는 제외했습니다.");
+    }
+
+    if (valuationRange.bpsTarget != null) {
+      reasons.push(
+        pbrAdjustment
+          ? `BPS × 현재 PBR × PBR 보정계수 ${pbrAdjustment}를 반영했습니다.`
+          : "BPS와 PBR을 바탕으로 BPS 기준 추정 주가를 계산했습니다.",
+      );
+    } else {
+      reasons.push("BPS 또는 PBR 데이터가 부족해 BPS 기준 추정 주가는 제외했습니다.");
+    }
+
+    reasons.push("밸류에이션 추정 주가가 현재가 대비 과도하게 벌어지지 않도록 안정화했습니다.");
+
+    valuationRange.reasons = reasons;
+    return data;
+  }
+
+  valuationRange.method = "밸류에이션 추정 주가 계산 대기";
+  valuationRange.reasons = [
+    "EPS 또는 PER 데이터가 부족해 EPS 기준 추정 주가는 제외했습니다.",
+    "BPS 또는 PBR 데이터가 부족해 BPS 기준 추정 주가는 제외했습니다.",
+  ];
+
+  return data;
+}
+
+
+function normalizeValuationTargetTextSafe(data: any) {
+  const valuationRange = data?.score?.targetPrice?.valuationTargetRange;
+
+  if (!valuationRange) return data;
+
+  const k = (...codes: number[]) => String.fromCharCode(...codes);
+
+  const methodText =
+    "EPS/PER + BPS/PBR " +
+    k(48372, 51221, 32, 54217, 44512);
+
+  const waitingText = k(
+    48184, 47448, 50640, 51060, 49496, 32,
+    52628, 51221, 32,
+    51452, 44032, 32,
+    44228, 49328, 32,
+    45824, 44592,
+  );
+
+  const epsMissing =
+    "EPS " +
+    k(46608, 45716) +
+    " PER " +
+    k(
+      45936, 51060, 53552, 44032, 32,
+      48512, 51313, 54644, 32,
+    ) +
+    "EPS " +
+    k(
+      44592, 51456, 32,
+      52628, 51221, 32,
+      51452, 44032, 45716, 32,
+      51228, 50808, 54664, 49845, 45768, 45796, 46,
+    );
+
+  const bpsMissing =
+    "BPS " +
+    k(46608, 45716) +
+    " PBR " +
+    k(
+      45936, 51060, 53552, 44032, 32,
+      48512, 51313, 54644, 32,
+    ) +
+    "BPS " +
+    k(
+      44592, 51456, 32,
+      52628, 51221, 32,
+      51452, 44032, 45716, 32,
+      51228, 50808, 54664, 49845, 45768, 45796, 46,
+    );
+
+  const stabilizeText = k(
+    48184, 47448, 50640, 51060, 49496, 32,
+    52628, 51221, 32,
+    51452, 44032, 44032, 32,
+    54788, 51116, 44032, 32,
+    45824, 48708, 32,
+    44284, 46020, 54616, 44172, 32,
+    48268, 50612, 51648, 51648, 32,
+    50506, 46020, 47197, 32,
+    50504, 51221, 54868, 54664, 49845, 45768, 45796, 46,
+  );
+
+  const perAdjustment =
+    typeof valuationRange.perAdjustment === "number"
+      ? valuationRange.perAdjustment.toFixed(2)
+      : null;
+
+  const pbrAdjustment =
+    typeof valuationRange.pbrAdjustment === "number"
+      ? valuationRange.pbrAdjustment.toFixed(2)
+      : null;
+
+  if (valuationRange.valuationTarget != null) {
+    valuationRange.method = methodText;
+
+    const reasons: string[] = [];
+
+    if (valuationRange.epsTarget != null) {
+      reasons.push(
+        perAdjustment
+          ? "EPS " +
+              String.fromCharCode(215) +
+              " " +
+              k(54788, 51116) +
+              " PER " +
+              String.fromCharCode(215) +
+              " PER " +
+              k(48372, 51221, 44228, 49688) +
+              " " +
+              perAdjustment +
+              k(47484, 32, 48152, 50689, 54664, 49845, 45768, 45796, 46)
+          : "EPS" +
+              k(50752) +
+              " PER" +
+              k(51012, 32, 48148, 53461, 51004, 47196) +
+              " EPS " +
+              k(44592, 51456, 32, 52628, 51221, 32, 51452, 44032, 47484, 32, 44228, 49328, 54664, 49845, 45768, 45796, 46),
+      );
+    } else {
+      reasons.push(epsMissing);
+    }
+
+    if (valuationRange.bpsTarget != null) {
+      reasons.push(
+        pbrAdjustment
+          ? "BPS " +
+              String.fromCharCode(215) +
+              " " +
+              k(54788, 51116) +
+              " PBR " +
+              String.fromCharCode(215) +
+              " PBR " +
+              k(48372, 51221, 44228, 49688) +
+              " " +
+              pbrAdjustment +
+              k(47484, 32, 48152, 50689, 54664, 49845, 45768, 45796, 46)
+          : "BPS" +
+              k(50752) +
+              " PBR" +
+              k(51012, 32, 48148, 53461, 51004, 47196) +
+              " BPS " +
+              k(44592, 51456, 32, 52628, 51221, 32, 51452, 44032, 47484, 32, 44228, 49328, 54664, 49845, 45768, 45796, 46),
+      );
+    } else {
+      reasons.push(bpsMissing);
+    }
+
+    reasons.push(stabilizeText);
+
+    valuationRange.reasons = reasons;
+    return data;
+  }
+
+  valuationRange.method = waitingText;
+  valuationRange.reasons = [epsMissing, bpsMissing];
+
+  return data;
 }

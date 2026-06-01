@@ -1205,16 +1205,16 @@ function calculateValuationTargetRange(
 
   if (eps != null && eps > 0 && per != null && per > 0 && perAdjustment != null) {
     epsTarget = roundPrice(eps * per * perAdjustment);
-    reasons.push(`EPS \\u00d7 \\ud604\\uc7ac PER \\u00d7 PER \\ubcf4\\uc815\\uacc4\\uc218 ${perAdjustment.toFixed(2)}\\ub97c \\ubc18\\uc601\\ud588\\uc2b5\\ub2c8\\ub2e4.`);
+    reasons.push(`EPS \u00d7 \ud604\uc7ac PER \u00d7 PER \ubcf4\uc815\uacc4\uc218 ${perAdjustment.toFixed(2)}\ub97c \ubc18\uc601\ud588\uc2b5\ub2c8\ub2e4.`);
   } else {
-    reasons.push("\\u0045\\u0050\\u0053 \\ub610\\ub294 \\u0050\\u0045\\u0052 \\ub370\\uc774\\ud130\\uac00 \\ubd80\\uc871\\ud574 \\u0045\\u0050\\u0053 \\uae30\\uc900 \\ucd94\\uc815 \\uc8fc\\uac00\\ub294 \\uc81c\\uc678\\ud588\\uc2b5\\ub2c8\\ub2e4.");
+    reasons.push("\u0045\u0050\u0053 \ub610\ub294 \u0050\u0045\u0052 \ub370\uc774\ud130\uac00 \ubd80\uc871\ud574 \u0045\u0050\u0053 \uae30\uc900 \ucd94\uc815 \uc8fc\uac00\ub294 \uc81c\uc678\ud588\uc2b5\ub2c8\ub2e4.");
   }
 
   if (bps != null && bps > 0 && pbr != null && pbr > 0 && pbrAdjustment != null) {
     bpsTarget = roundPrice(bps * pbr * pbrAdjustment);
-    reasons.push(`BPS \\u00d7 \\ud604\\uc7ac PBR \\u00d7 PBR \\ubcf4\\uc815\\uacc4\\uc218 ${pbrAdjustment.toFixed(2)}\\ub97c \\ubc18\\uc601\\ud588\\uc2b5\\ub2c8\\ub2e4.`);
+    reasons.push(`BPS \u00d7 \ud604\uc7ac PBR \u00d7 PBR \ubcf4\uc815\uacc4\uc218 ${pbrAdjustment.toFixed(2)}\ub97c \ubc18\uc601\ud588\uc2b5\ub2c8\ub2e4.`);
   } else {
-    reasons.push("\\u0042\\u0050\\u0053 \\ub610\\ub294 \\u0050\\u0042\\u0052 \\ub370\\uc774\\ud130\\uac00 \\ubd80\\uc871\\ud574 \\u0042\\u0050\\u0053 \\uae30\\uc900 \\ucd94\\uc815 \\uc8fc\\uac00\\ub294 \\uc81c\\uc678\\ud588\\uc2b5\\ub2c8\\ub2e4.");
+    reasons.push("\u0042\u0050\u0053 \ub610\ub294 \u0050\u0042\u0052 \ub370\uc774\ud130\uac00 \ubd80\uc871\ud574 \u0042\u0050\u0053 \uae30\uc900 \ucd94\uc815 \uc8fc\uac00\ub294 \uc81c\uc678\ud588\uc2b5\ub2c8\ub2e4.");
   }
 
   const targets = [epsTarget, bpsTarget].filter(
@@ -1228,7 +1228,7 @@ function calculateValuationTargetRange(
       valuationTarget: null,
       perAdjustment,
       pbrAdjustment,
-      method: "\\ubc38\\ub958\\uc5d0\\uc774\\uc158 \\ucd94\\uc815 \\uc8fc\\uac00 \\uacc4\\uc0b0 \\ub300\\uae30",
+      method: "\ubc38\ub958\uc5d0\uc774\uc158 \ucd94\uc815 \uc8fc\uac00 \uacc4\uc0b0 \ub300\uae30",
       reasons,
     };
   }
@@ -1240,7 +1240,7 @@ function calculateValuationTargetRange(
   const cappedValuationTarget = clampValuationTarget(valuationTarget, currentPrice);
 
   if (cappedValuationTarget !== valuationTarget) {
-    reasons.push("\\ubc38\\ub958\\uc5d0\\uc774\\uc158 \\ucd94\\uc815 \\uc8fc\\uac00\\uac00 \\ud604\\uc7ac\\uac00 \\ub300\\ube44 \\uacfc\\ub3c4\\ud558\\uac8c \\ubc8c\\uc5b4\\uc9c0\\uc9c0 \\uc54a\\ub3c4\\ub85d \\uc548\\uc815\\ud654\\ud588\\uc2b5\\ub2c8\\ub2e4.");
+    reasons.push("\ubc38\ub958\uc5d0\uc774\uc158 \ucd94\uc815 \uc8fc\uac00\uac00 \ud604\uc7ac\uac00 \ub300\ube44 \uacfc\ub3c4\ud558\uac8c \ubc8c\uc5b4\uc9c0\uc9c0 \uc54a\ub3c4\ub85d \uc548\uc815\ud654\ud588\uc2b5\ub2c8\ub2e4.");
   }
 
   return {
@@ -1249,7 +1249,7 @@ function calculateValuationTargetRange(
     valuationTarget: cappedValuationTarget,
     perAdjustment,
     pbrAdjustment,
-    method: "EPS/PER + BPS/PBR \\ubcf4\\uc815 \\ud3c9\\uade0",
+    method: "EPS/PER + BPS/PBR \ubcf4\uc815 \ud3c9\uade0",
     reasons,
   };
 }
